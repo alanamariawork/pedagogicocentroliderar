@@ -38,6 +38,27 @@ export async function api<T = Reg>(metodo: string, caminho: string, corpo?: unkn
   return json as T
 }
 
+/** Envia um arquivo como corpo cru; o nome vai no cabeçalho. */
+export async function enviarArquivo<T = Reg>(caminho: string, arquivo: File): Promise<T> {
+  let r: Response
+  try {
+    r = await fetch(`/api${caminho}`, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/octet-stream', 'X-Requested-With': 'diamante-business', 'X-Nome-Arquivo': encodeURIComponent(arquivo.name) },
+      body: arquivo,
+    })
+  } catch {
+    throw new ErroApi(0, 'Sem conexão com o servidor. Verifique sua internet e tente novamente.')
+  }
+  const json = await r.json().catch(() => ({}))
+  if (!r.ok) {
+    if (r.status === 401) aoExpirar?.()
+    throw new ErroApi(r.status, `${arquivo.name}: ${(json as { erro?: string }).erro ?? 'não foi possível enviar o arquivo.'}`)
+  }
+  return json as T
+}
+
 export const get = <T = Reg>(c: string) => api<T>('GET', c)
 export const post = <T = Reg>(c: string, b: unknown = {}) => api<T>('POST', c, b)
 export const put = <T = Reg>(c: string, b: unknown = {}) => api<T>('PUT', c, b)

@@ -6,7 +6,8 @@ import { Selo, SeloCadeado, SeloNaoIncluido, TOM_ATIVIDADE } from '../components
 import { useFeedback } from '../components/Feedback'
 import { Dialog } from '../components/Dialog'
 import { FormSenha } from './Conta'
-import { post, useDados, type Reg } from '../lib/api'
+import { enviarArquivo, post, useDados, type Reg } from '../lib/api'
+import { EscolherArquivos, ListaAnexos } from '../components/Anexos'
 import { SITUACAO_ATIVIDADE, SITUACAO_MATRICULA, cx } from '../lib/format'
 import { useSessao } from '../state/Sessao'
 import { formatarData, hojeSP } from '../../shared/datas'
@@ -154,6 +155,15 @@ function Conteudo({ dados, recarregar }: { dados: Reg; recarregar: () => void })
                     <LinkIcon className="size-3.5" aria-hidden /> Abrir material
                   </a>
                 )}
+                {(() => {
+                  const ultimo = (a.evidencias as Reg[] | undefined)?.at(-1)
+                  return ultimo?.anexos?.length ? (
+                    <div className="mt-2">
+                      <p className="text-xs text-ink-muted">Arquivos do seu último envio:</p>
+                      <ListaAnexos anexos={ultimo.anexos} base="/api/portal/anexos" />
+                    </div>
+                  ) : null
+                })()}
                 {a.situacao === 'em_revisao' && revisao?.comentario && (
                   <p className="mt-2 rounded bg-warning-soft px-3 py-2 text-sm text-warning">Pedido de revisão: {revisao.comentario}</p>
                 )}
@@ -335,6 +345,7 @@ function Ajuda({ texto }: { texto: string }) {
 function DialogEvidencia({ atividade, onFechar, onConcluir }: { atividade: Reg; onFechar: () => void; onConcluir: () => void }) {
   const fb = useFeedback()
   const { valores, campo } = useValores({ texto: '', link: '' })
+  const [arquivos, setArquivos] = useState<File[]>([])
   return (
     <FormDialog
       aberto
@@ -343,7 +354,10 @@ function DialogEvidencia({ atividade, onFechar, onConcluir }: { atividade: Reg; 
       rotulo="Enviar"
       onFechar={onFechar}
       onEnviar={async () => {
-        await post(`/portal/atividades/${atividade.id}/evidencias`, { texto: valores.texto || null, link: valores.link || null })
+        if (!valores.texto.trim() && !valores.link.trim() && !arquivos.length) throw new Error('Escreva o que você fez, cole um link ou anexe um arquivo.')
+        const anexos: string[] = []
+        for (const f of arquivos) anexos.push((await enviarArquivo<{ id: string }>(`/portal/atividades/${atividade.id}/anexos`, f)).id)
+        await post(`/portal/atividades/${atividade.id}/evidencias`, { texto: valores.texto || null, link: valores.link || null, anexos })
         fb.sucesso('Enviado! A equipe vai analisar.')
         onConcluir()
       }}
@@ -354,6 +368,7 @@ function DialogEvidencia({ atividade, onFechar, onConcluir }: { atividade: Reg; 
       <Campo rotulo="Link (opcional)" dica="Ex.: documento, planilha ou vídeo compartilhado.">
         {(p) => <input type="url" inputMode="url" className="field-control" placeholder="https://" {...p} value={valores.link} onChange={campo('link')} />}
       </Campo>
+      <EscolherArquivos arquivos={arquivos} onMudar={setArquivos} onErro={fb.erro} />
     </FormDialog>
   )
 }

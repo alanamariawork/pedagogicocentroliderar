@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { ListaAnexos } from '../components/Anexos'
 import { BadgeCheck } from 'lucide-react'
 import { Carregando, EstadoErro, EstadoVazio, Secao, Vazio } from '../components/Estados'
 import { Selo, IdAluna } from '../components/Selos'
@@ -50,6 +51,7 @@ export function Validacoes() {
                           Abrir link da evidência
                         </a>
                       )}
+                      <ListaAnexos anexos={a.ultima_evidencia.anexos} base="/api/anexos" />
                       <p className="text-xs text-ink-muted">
                         {a.ultima_evidencia.data_execucao && `Executada em ${formatarData(a.ultima_evidencia.data_execucao)} · `}
                         {a.ultima_evidencia.registrada_por_equipe ? 'Registrada pela equipe' : 'Enviada pela aluna'} · {a.evidencias} evidência(s)

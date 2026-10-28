@@ -279,6 +279,17 @@ CREATE TABLE IF NOT EXISTS evidencias (
   registrada_por_equipe INTEGER NOT NULL DEFAULT 0,
   autor_id TEXT, criado_em TEXT NOT NULL
 );
+-- Arquivos anexados ao envio de uma atividade. Ficam no próprio banco (BLOB): o backup do
+-- arquivo .db leva junto os anexos. evidencia_id fica nulo até o envio ser concluído.
+CREATE TABLE IF NOT EXISTS anexos (
+  id TEXT PRIMARY KEY,
+  atividade_id TEXT NOT NULL REFERENCES atividades(id),
+  evidencia_id TEXT REFERENCES evidencias(id),
+  nome TEXT NOT NULL, tipo TEXT NOT NULL, tamanho INTEGER NOT NULL,
+  conteudo BLOB NOT NULL,
+  autor_id TEXT NOT NULL, criado_em TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ix_anexos_evidencia ON anexos(evidencia_id);
 CREATE TABLE IF NOT EXISTS validacoes (
   id TEXT PRIMARY KEY,
   alvo_tipo TEXT NOT NULL CHECK (alvo_tipo IN ('atividade','etapa_liberacao','etapa_conclusao','conquista')),

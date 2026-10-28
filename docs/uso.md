@@ -52,7 +52,7 @@ O portal mostra:
 - **Quanto já concluí:** o percentual da trilha (cada etapa vale o mesmo; a etapa em andamento conta pelas atividades validadas).
 - **Minha trilha:** as etapas lado a lado na horizontal. No celular, a aluna desliza para o lado, e a trilha já abre na etapa em andamento.
 - As etapas. As liberadas mostram atividades e materiais. As bloqueadas mostram um cadeado e dizem o que falta para liberar.
-- O botão "Enviar o que fiz", para mandar um texto ou link para validação. Quando a equipe pede revisão, o comentário aparece aqui.
+- O botão "Enviar o que fiz", para mandar um texto, um link e/ou até 5 arquivos (PDF, foto, Word, Excel, PowerPoint, texto, áudio ou vídeo MP4, de até 10 MB cada) para validação. A equipe baixa os arquivos na fila de **Validações** e na aba **Jornada** da ficha. Quando a equipe pede revisão, o comentário aparece aqui.
 - Os encontros. O resumo compartilhável só aparece depois que o encontro foi realizado.
 - Os formatos que não fazem parte do contrato, marcados como **"Não incluído no contrato"**, um selo diferente do cadeado pedagógico.
 - **Meu crescimento:** um gráfico das conquistas validadas somadas ao longo do tempo, com a linha do tempo ao lado, sem comparação com outras alunas.

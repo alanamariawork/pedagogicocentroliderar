@@ -381,4 +381,46 @@ describe('Permissões e segurança', () => {
     const nova = elisa.matriculas.find((m: J) => m.matricula_anterior_id)
     expect(nova.itens.find((i: J) => i.origem === 'ajuste').contratada).toBe(1)
   })
+
+  it('a aluna anexa arquivos ao enviar uma atividade e só ela e a equipe conseguem baixá-los', async () => {
+    const portal = await c.carla.ok('GET', '/portal')
+    const atv = portal.jornada.etapas
+      .filter((e: J) => e.situacao === 'liberada')
+      .flatMap((e: J) => e.atividades)
+      .find((a: J) => a.situacao === 'pendente' || a.situacao === 'em_execucao' || a.situacao === 'em_revisao')
+    expect(atv).toBeTruthy()
+    const subir = (cli: Cliente, nome: string, conteudo: string, semCabecalho = false) =>
+      fetch(`${base}/portal/atividades/${atv.id}/anexos`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/octet-stream', Cookie: cli.cookie, 'X-Nome-Arquivo': encodeURIComponent(nome), ...(semCabecalho ? {} : { 'X-Requested-With': 'diamante-business' }) },
+        body: Buffer.from(conteudo),
+      })
+    expect((await subir(c.carla, 'virus.exe', 'MZ')).status).toBe(400)
+    expect((await subir(c.carla, 'pagina.html', '<script>')).status).toBe(400)
+    expect((await subir(c.carla, 'plano.pdf', '%PDF-1.4', true)).status).toBe(403) // CSRF
+    expect((await subir(c.beatriz, 'plano.pdf', '%PDF-1.4')).status).toBe(404) // atividade de outra aluna
+    const r = await subir(c.carla, 'Plano de ação ✓.pdf', '%PDF-1.4 teste')
+    expect(r.status).toBe(201)
+    const anexo = (await r.json()) as J
+    // Ainda solto: ninguém baixa antes do envio ser concluído
+    expect((await fetch(`${base}/anexos/${anexo.id}`, { headers: { Cookie: c.admin.cookie } })).status).toBe(404)
+    await c.carla.ok('POST', `/portal/atividades/${atv.id}/evidencias`, { anexos: [anexo.id] })
+    // Depois de enviada, a atividade não recebe arquivos novos
+    const r2 = await subir(c.carla, 'outro.png', 'png')
+    expect(r2.status).toBe(409)
+    const baixar = (cli: Cliente, caminho: string) => fetch(`${base}${caminho}/${anexo.id}`, { headers: { Cookie: cli.cookie } })
+    const propria = await baixar(c.carla, '/portal/anexos')
+    expect(propria.status).toBe(200)
+    expect(await propria.text()).toBe('%PDF-1.4 teste')
+    expect(propria.headers.get('content-disposition')).toMatch(/^attachment;/)
+    expect(propria.headers.get('content-type')).toBe('application/pdf')
+    expect((await baixar(c.beatriz, '/portal/anexos')).status).toBe(404)
+    expect((await baixar(c.beatriz, '/anexos')).status).toBe(403)
+    expect((await baixar(c.coord, '/anexos')).status).toBe(200)
+    // A equipe vê o anexo na fila de validações e na jornada
+    const fila = await c.coord.ok('GET', '/validacoes/pendentes')
+    const item = fila.atividades.find((a: J) => a.id === atv.id)
+    expect(item.ultima_evidencia.anexos.map((x: J) => x.nome)).toEqual(['Plano de ação ✓.pdf'])
+    expect(item.ultima_evidencia.anexos[0].conteudo).toBeUndefined()
+  })
 })

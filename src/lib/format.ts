@@ -71,3 +71,9 @@ export function plural(n: number, um: string, varios: string) {
 export function idAluna(codigo: number | null | undefined): string {
   return codigo ? `#${String(codigo).padStart(3, '0')}` : 'sem ID'
 }
+
+export function tamanhoArquivo(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1).replace('.', ',')} MB`
+}

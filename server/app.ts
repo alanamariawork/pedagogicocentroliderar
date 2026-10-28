@@ -42,6 +42,7 @@ export function criarApp(db: BD) {
   api.use((_req, _res, next) => next(new ErroHttp(404, 'Endereço não encontrado.')))
   api.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
     if (err instanceof ErroHttp) return res.status(err.status).json({ erro: err.message })
+    if ((err as { type?: string })?.type === 'entity.too.large') return res.status(413).json({ erro: 'O arquivo passa de 10 MB. Envie um arquivo menor ou compartilhe por link.' })
     if (err instanceof SyntaxError) return res.status(400).json({ erro: 'Dados enviados em formato inválido.' })
     const msg = (err as Error)?.message ?? ''
     if (msg.includes('FOREIGN KEY')) return res.status(400).json({ erro: 'Um dos registros selecionados não existe mais. Recarregue a página.' })

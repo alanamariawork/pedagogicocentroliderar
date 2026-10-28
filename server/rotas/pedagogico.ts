@@ -4,6 +4,7 @@ import { agoraIso, novoId, type BD } from '../db'
 import { ErroHttp, exigir, exigirEquipe, tem } from '../auth'
 import { auditar, booleano, data, dataObrig, escopoMatriculas, exigirAcessoMatricula, hoje, id, idObrig, link, texto, textoObrig, validar } from '../servicos'
 import { criaCiclo } from '../../shared/calculos'
+import { anexosPorEvidencia, entregarAnexo } from '../anexos'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Linha = Record<string, any>
@@ -30,6 +31,8 @@ export function montarJornada(db: BD, matriculaId: string, opcoes: { paraAluna: 
   const evidencias = db
     .prepare('SELECT ev.*, u.nome AS autor_nome FROM evidencias ev LEFT JOIN usuarios u ON u.id = ev.autor_id WHERE ev.atividade_id IN (SELECT id FROM atividades WHERE matricula_id = ?) ORDER BY ev.criado_em')
     .all(matriculaId) as Linha[]
+  const anexos = anexosPorEvidencia(db, evidencias.map((ev) => ev.id as string))
+  for (const ev of evidencias) ev.anexos = anexos.get(ev.id) ?? []
   const validacoes = db
     .prepare(`SELECT v.*, u.nome AS autor_nome FROM validacoes v LEFT JOIN usuarios u ON u.id = v.autor_id WHERE v.matricula_id = ? ORDER BY v.criado_em`)
     .all(matriculaId) as Linha[]
@@ -323,6 +326,15 @@ export function rotasPedagogico(db: BD) {
     res.status(201).json({ ok: true })
   })
 
+  /** Download de um anexo enviado pela aluna, para quem pode ver a jornada dela. */
+  r.get('/anexos/:id', (req, res) => {
+    exigir(req, 'jornada:ver')
+    const an = db.prepare('SELECT * FROM anexos WHERE id = ? AND evidencia_id IS NOT NULL').get(req.params.id) as Linha | undefined
+    if (!an) throw new ErroHttp(404, 'Arquivo não encontrado.')
+    carregarAtividade(req, an.atividade_id)
+    entregarAnexo(res, an)
+  })
+
   r.post('/atividades/:id/validar', (req, res) => {
     exigir(req, 'jornada:validar')
     const a = carregarAtividade(req, req.params.id as string)
@@ -353,11 +365,12 @@ export function rotasPedagogico(db: BD) {
          WHERE ${esc.sql} AND a.situacao = 'enviada' ORDER BY a.atualizado_em`,
       )
       .all(esc.params) as Linha[]
-    const ultimaEvidencia = db.prepare('SELECT texto, link, data_execucao, registrada_por_equipe FROM evidencias WHERE atividade_id = ? ORDER BY criado_em DESC LIMIT 1')
+    const ultimaEvidencia = db.prepare('SELECT id, texto, link, data_execucao, registrada_por_equipe FROM evidencias WHERE atividade_id = ? ORDER BY criado_em DESC LIMIT 1')
+    const comAnexos = (ev: Linha | undefined) => (ev ? { ...ev, anexos: anexosPorEvidencia(db, [ev.id]).get(ev.id) ?? [] } : null)
     const conquistas = db
       .prepare(`SELECT c.*, p.nome AS pessoa_nome, p.codigo AS pessoa_codigo, p.id AS pessoa_id FROM conquistas c JOIN matriculas m ON m.id = c.matricula_id JOIN pessoas p ON p.id = m.pessoa_id WHERE ${esc.sql} AND c.validada = 0 ORDER BY c.data`)
       .all(esc.params)
-    res.json({ atividades: atividades.map((a) => ({ ...a, ultima_evidencia: ultimaEvidencia.get(a.id) ?? null })), conquistas })
+    res.json({ atividades: atividades.map((a) => ({ ...a, ultima_evidencia: comAnexos(ultimaEvidencia.get(a.id) as Linha | undefined) })), conquistas })
   })
 
   /* ---------------- Conquistas (RF09) ---------------- */

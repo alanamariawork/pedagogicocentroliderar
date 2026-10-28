@@ -51,7 +51,7 @@ Depois disso, cadastre o restante pela própria tela: em **Configurações**, os
 | `SENHA_DEMO` | `diamante2026` | Senha dos usuários da demonstração |
 | `HOJE_FIXO` | — | Fixa a data "de hoje" (AAAA-MM-DD), útil em testes |
 
-O código não guarda nenhum segredo. **Backup:** copie o arquivo do banco (e os arquivos `-wal`/`-shm`, se existirem) com o servidor parado.
+O código não guarda nenhum segredo. **Backup:** os arquivos anexados pelas alunas ficam dentro do banco, então basta copiar o arquivo do banco (e os arquivos `-wal`/`-shm`, se existirem) com o servidor parado.
 
 ### Publicar
 
@@ -60,7 +60,7 @@ Nada foi publicado. Para publicar, você precisa de um servidor com Node, disco 
 ## Testes
 
 ```bash
-npm test          # 31 testes: 24 de aceite (CA01–CA16 + segurança) e 7 de cálculo
+npm test          # 32 testes: 25 de aceite (CA01–CA16 + segurança) e 7 de cálculo
 npm run typecheck
 ```
 

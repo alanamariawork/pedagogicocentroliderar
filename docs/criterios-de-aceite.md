@@ -1,6 +1,6 @@
 # O que foi testado
 
-## Testes automáticos (`npm test`: 31 testes, todos passando)
+## Testes automáticos (`npm test`: 32 testes, todos passando)
 
 Os testes de aceite (`tests/aceite.test.ts`) sobem o servidor real com um banco em memória e a demonstração. Depois, fazem as chamadas pela API com cada perfil.
 
@@ -27,6 +27,7 @@ Além desses, há testes de segurança e consistência:
 - CSRF.
 - O Suporte/CS não vê anotações pedagógicas privadas.
 - O perfil Comercial não existe e não pode ser criado.
+- Anexos: só tipos permitidos, upload exige o cabeçalho CSRF, a aluna não anexa nem baixa arquivos de outra aluna, e a equipe vê os anexos na fila de validações.
 - Cada aluna recebe um ID sequencial na primeira matrícula; a renovação mantém o ID e a busca encontra pelo ID.
 - A mentora só vê as próprias matrículas.
 - O sistema impede ciclos entre etapas.

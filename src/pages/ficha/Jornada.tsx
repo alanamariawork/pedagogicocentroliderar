@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { ListaAnexos } from '../../components/Anexos'
 import { CheckCircle2, ExternalLink, Plus } from 'lucide-react'
 import { Carregando, EstadoErro, Secao, Vazio } from '../../components/Estados'
 import { Campo, FormDialog, Opcoes, useValores } from '../../components/Form'
@@ -147,6 +148,7 @@ export function JornadaAluna({ m }: { m: Reg }) {
                                 link
                               </a>
                             )}
+                            <ListaAnexos anexos={ev.anexos} base="/api/anexos" />
                             <span className="text-ink-muted">
                               {' '}
                               · {ev.registrada_por_equipe ? `registrada pela equipe (${ev.autor_nome})` : 'enviada pela aluna'} · executada em {formatarData(ev.data_execucao)}

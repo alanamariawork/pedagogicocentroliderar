@@ -40,7 +40,7 @@ tests/             testes de aceite e de cálculo (Vitest)
   - A quantidade só muda via `ajustes_obrigacao`: ajuste, exceção, transferência ou cancelamento.
 - `ocorrencias` 1—N `ocorrencia_historico`, `contatos` e `impedimentos`, e 0—1 `reservas` ativa.
 - `reservas`: uma trigger do banco impede duas reservas ativas sobrepostas para a mesma profissional. O agendamento roda em transação imediata.
-- `trilhas`, `pilares`, `etapas` e `etapa_prerequisitos` formam o modelo. `jornadas`, `jornada_etapas`, `atividades`, `evidencias` e `validacoes` formam o progresso individual.
+- `trilhas`, `pilares`, `etapas` e `etapa_prerequisitos` formam o modelo. `jornadas`, `jornada_etapas`, `atividades`, `evidencias` e `validacoes` formam o progresso individual. `anexos` guarda os arquivos de cada envio (BLOB no próprio banco). O upload é feito antes do envio, ainda solto, e só fica visível depois de vinculado à evidência. A aluna baixa só os próprios arquivos (`/api/portal/anexos/:id`); a equipe baixa com `jornada:ver` e respeitando o escopo da mentora (`/api/anexos/:id`). O download sai como `attachment` com CSP `sandbox`.
 - `conquistas`, `pausas`, `feedbacks`, `anotacoes`, `decisoes_pendentes` e `auditoria`.
 
 As datas são gravadas como `AAAA-MM-DD`, os horários de agenda como `AAAA-MM-DDTHH:MM` (hora local de São Paulo) e os carimbos de auditoria em ISO UTC.

@@ -4,6 +4,7 @@ import { agoraIso, novoId, type BD } from '../db'
 import { ErroHttp } from '../auth'
 import { auditar, config, hoje, link, texto, validar } from '../servicos'
 import { montarJornada } from './pedagogico'
+import { ANEXOS_POR_ENVIO, corpoDoArquivo, entregarAnexo, guardarAnexo, vincularAnexos } from '../anexos'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Linha = Record<string, any>
@@ -108,15 +109,37 @@ export function rotasPortal(db: BD) {
   r.post('/portal/atividades/:id/evidencias', (req, res) => {
     const a = atividadeDaAluna(req, req.params.id as string)
     if (a.situacao === 'validada') throw new ErroHttp(409, 'Esta atividade já foi validada.')
-    const d = validar(z.object({ texto: texto(4000), link: link() }), req.body)
-    if (!d.texto && !d.link) throw new ErroHttp(400, 'Escreva o que você fez ou cole um link.')
+    const d = validar(z.object({ texto: texto(4000), link: link(), anexos: z.array(z.string().max(64)).max(ANEXOS_POR_ENVIO).optional() }), req.body)
+    const anexos = d.anexos ?? []
+    if (!d.texto && !d.link && !anexos.length) throw new ErroHttp(400, 'Escreva o que você fez, cole um link ou anexe um arquivo.')
     db.transaction(() => {
+      const evId = novoId()
       db.prepare('INSERT INTO evidencias (id, atividade_id, texto, link, data_execucao, registrada_por_equipe, autor_id, criado_em) VALUES (?,?,?,?,?,0,?,?)').run(
-        novoId(), a.id, d.texto ?? null, d.link ?? null, hoje(), req.usuario!.id, agoraIso())
+        evId, a.id, d.texto ?? null, d.link ?? null, hoje(), req.usuario!.id, agoraIso())
+      vincularAnexos(db, req, a.id as string, evId, anexos)
       db.prepare("UPDATE atividades SET situacao='enviada', atualizado_em=? WHERE id=?").run(agoraIso(), a.id)
       auditar(db, req, { entidade: 'atividade', entidade_id: a.id as string, acao: 'evidencia_enviada_pela_aluna', matricula_id: a.matricula_id as string })
     })()
     res.status(201).json({ ok: true })
+  })
+
+  /** Upload de um arquivo (corpo cru, nome no cabeçalho X-Nome-Arquivo). Vira parte do envio em /evidencias. */
+  r.post('/portal/atividades/:id/anexos', corpoDoArquivo, (req, res) => {
+    const a = atividadeDaAluna(req, req.params.id as string)
+    if (a.situacao === 'validada' || a.situacao === 'enviada') throw new ErroHttp(409, 'Esta atividade não está aberta para envio.')
+    res.status(201).json(guardarAnexo(db, req, a.id as string))
+  })
+
+  /** Download de um anexo que a própria aluna enviou. */
+  r.get('/portal/anexos/:id', (req, res) => {
+    const an = db
+      .prepare(
+        `SELECT an.* FROM anexos an JOIN atividades a ON a.id = an.atividade_id JOIN matriculas m ON m.id = a.matricula_id
+         WHERE an.id = ? AND an.evidencia_id IS NOT NULL AND m.pessoa_id = ?`,
+      )
+      .get(req.params.id, req.usuario!.pessoa_id)
+    if (!an) throw new ErroHttp(404, 'Arquivo não encontrado.')
+    entregarAnexo(res, an as Record<string, unknown>)
   })
 
   return r
