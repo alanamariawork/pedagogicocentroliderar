@@ -1,0 +1,100 @@
+@import 'tailwindcss';
+
+/*
+ * TEMA — sugestão visual (não é identidade oficial): tons claros, vinho e
+ * detalhes dourados discretos. Toda a interface usa estas variáveis; para aplicar
+ * a identidade oficial, troque apenas os valores abaixo.
+ */
+@theme {
+  --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font-display: 'Iowan Old Style', 'Palatino Linotype', Palatino, Georgia, serif;
+
+  --color-brand-50: #f8eef1;
+  --color-brand-100: #f0dbe2;
+  --color-brand-500: #8a3352;
+  --color-brand-600: #722642;
+  --color-brand-700: #5e1a33;
+  --color-brand-contrast: #ffffff;
+
+  --color-gold: #9a7738;
+  --color-gold-soft: #f6efe1;
+  --color-gold-line: #dcc89f;
+
+  --color-canvas: #faf7f4;
+  --color-surface: #ffffff;
+  --color-surface-muted: #f4efea;
+  --color-line: #e8e1da;
+  --color-line-strong: #cfc4b9;
+  --color-ink: #2a1d22;
+  --color-ink-soft: #46363c;
+  --color-ink-muted: #6b5b61;
+  --color-focus: #8a3352;
+
+  --color-sidebar: #3b1222;
+  --color-sidebar-ink: #f6ece6;
+  --color-sidebar-muted: #d2bcc3;
+  --color-sidebar-active: #561b31;
+
+  --color-success: #2e6b45;
+  --color-success-soft: #ebf5ee;
+  --color-danger: #a8302a;
+  --color-danger-soft: #fbefed;
+  --color-warning: #7d5300;
+  --color-warning-soft: #fdf5e6;
+  --color-info: #2f5d86;
+  --color-info-soft: #edf3f9;
+
+  --radius-card: 0.85rem;
+  --radius-control: 0.5rem;
+  --shadow-card: 0 1px 2px rgb(42 29 34 / 0.04), 0 2px 10px rgb(42 29 34 / 0.04);
+  --shadow-overlay: 0 16px 40px rgb(42 29 34 / 0.2);
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  background: var(--color-canvas);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+:where(a, button, input, select, textarea, summary, [tabindex]:not([tabindex='-1'])):focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+@utility field-control {
+  @apply w-full rounded-[var(--radius-control)] border border-line-strong bg-surface px-3 py-2 text-sm text-ink placeholder:text-ink-muted/70 disabled:bg-surface-muted aria-[invalid=true]:border-danger;
+}
+@utility btn {
+  @apply inline-flex items-center justify-center gap-2 rounded-[var(--radius-control)] px-3.5 py-2 text-sm font-medium whitespace-nowrap transition-colors disabled:cursor-not-allowed disabled:opacity-60;
+}
+@utility btn-primary {
+  @apply btn bg-brand-700 text-brand-contrast hover:bg-brand-600;
+}
+@utility btn-secondary {
+  @apply btn border border-line-strong bg-surface text-ink-soft hover:bg-surface-muted;
+}
+@utility btn-ghost {
+  @apply btn text-ink-soft hover:bg-surface-muted;
+}
+@utility btn-danger {
+  @apply btn bg-danger text-white hover:opacity-90;
+}
+@utility btn-sm {
+  @apply px-2.5 py-1.5 text-xs;
+}
+@utility card {
+  @apply rounded-[var(--radius-card)] border border-line bg-surface shadow-[var(--shadow-card)];
+}
+@utility eyebrow {
+  @apply text-[11px] font-semibold tracking-[0.08em] text-ink-muted uppercase;
+}
+@utility tabela {
+  @apply w-full text-left text-sm [&_td]:border-t [&_td]:border-line [&_td]:px-3 [&_td]:py-2.5 [&_td]:align-top [&_th]:px-3 [&_th]:py-2 [&_th]:text-xs [&_th]:font-semibold [&_th]:text-ink-muted [&_th]:whitespace-nowrap;
+}
