@@ -1,6 +1,6 @@
-# Efeito Diamante | Gestão da Jornada
+# Diamante Business | Gestão da Jornada
 
-Sistema interno do Centro Liderar (Grupo Mendes) para acompanhar as mentoradas do programa Efeito Diamante. Ele cobre matrículas, entregáveis contratados, entregas do mês, agenda e capacidade, contatos e impedimentos, a jornada pedagógica com validação humana, conquistas, satisfação e o portal da aluna.
+Sistema interno do Centro Liderar (Grupo Mendes) para acompanhar as mentoradas do programa Diamante Business. Ele cobre matrículas, entregáveis contratados, entregas do mês, agenda e capacidade, contatos e impedimentos, a jornada pedagógica com validação humana, conquistas, satisfação e o portal da aluna.
 
 É um piloto funcional, não uma maquete. Os dados ficam gravados em banco, o login é real e as permissões são verificadas no servidor em cada requisição.
 
@@ -12,7 +12,7 @@ Você precisa de **Node.js 20.11 ou mais recente**.
 
 ```bash
 npm install
-npm run seed            # cria data/efeito-diamante.db com a demonstração
+npm run seed            # cria data/diamante-business.db com a demonstração
 npm run dev             # API em 127.0.0.1:3001 e tela em http://localhost:5173
 ```
 
@@ -25,8 +25,7 @@ Usuários da demonstração (a senha é `diamante2026` para todos):
 | Administração | admin@demo.local |
 | Coordenação pedagógica | coordenacao@demo.local |
 | Suporte/CS | suporte@demo.local |
-| Comercial | comercial@demo.local |
-| Mentora (só vê as próprias alunas) | mentora@demo.local |
+| Mentora (vê só a própria agenda e as próprias alunas) | mentora@demo.local |
 | Alunas (portal) | beatriz@, carla@, daniela@, elisa@, fernanda@, gabriela@demo.local |
 
 ### Uso real (sem demonstração)
@@ -45,7 +44,7 @@ Depois disso, cadastre o restante pela própria tela: em **Configurações**, os
 | Variável | Padrão | Para quê |
 |---|---|---|
 | `PORT` / `HOST` | `3001` / `127.0.0.1` | Endereço do servidor |
-| `DB_PATH` | `data/efeito-diamante.db` | Arquivo do banco SQLite |
+| `DB_PATH` | `data/diamante-business.db` | Arquivo do banco SQLite |
 | `NODE_ENV=production` | — | Liga o cookie `Secure` (exige HTTPS) |
 | `COOKIE_SECURE` | segue `NODE_ENV` | Use `false` para testar o build de produção por HTTP local |
 | `TRUST_PROXY` | `false` | `true` se estiver atrás de um proxy HTTPS |
@@ -61,7 +60,7 @@ Nada foi publicado. Para publicar, você precisa de um servidor com Node, disco 
 ## Testes
 
 ```bash
-npm test          # 29 testes: 22 de aceite (CA01–CA16 + segurança) e 7 de cálculo
+npm test          # 31 testes: 24 de aceite (CA01–CA16 + segurança) e 7 de cálculo
 npm run typecheck
 ```
 

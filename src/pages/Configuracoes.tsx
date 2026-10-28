@@ -16,7 +16,7 @@ const CADASTROS: { nome: string; titulo: string; descricao: string; campos: Camp
   {
     nome: 'programas',
     titulo: 'Programas',
-    descricao: 'Programas oferecidos (ex.: Efeito Diamante).',
+    descricao: 'Programas oferecidos (ex.: Diamante Business).',
     campos: [
       { chave: 'nome', rotulo: 'Nome', obrigatorio: true },
       { chave: 'descricao', rotulo: 'Descrição' },

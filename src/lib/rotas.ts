@@ -6,6 +6,7 @@ export type PaginaId =
   | 'alunas'
   | 'ficha'
   | 'agenda'
+  | 'minhas-alunas'
   | 'validacoes'
   | 'alertas'
   | 'jornada'
@@ -21,7 +22,7 @@ export interface Rota {
   aba?: string
 }
 
-const VALIDAS = new Set<PaginaId>(['visao-geral', 'entregas', 'alunas', 'ficha', 'agenda', 'validacoes', 'alertas', 'jornada', 'pacotes', 'configuracoes', 'decisoes', 'conta', 'portal'])
+const VALIDAS = new Set<PaginaId>(['visao-geral', 'entregas', 'alunas', 'ficha', 'agenda', 'minhas-alunas', 'validacoes', 'alertas', 'jornada', 'pacotes', 'configuracoes', 'decisoes', 'conta', 'portal'])
 
 export function lerRota(hash = window.location.hash): Rota | null {
   const [pagina, id, aba] = hash.replace(/^#\/?/, '').split('/')

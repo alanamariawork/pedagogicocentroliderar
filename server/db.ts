@@ -349,14 +349,34 @@ CREATE INDEX IF NOT EXISTS ix_auditoria_matricula ON auditoria(matricula_id);
 CREATE INDEX IF NOT EXISTS ix_auditoria_pessoa ON auditoria(pessoa_id);
 `
 
-export function abrirBanco(caminho = process.env.DB_PATH ?? 'data/efeito-diamante.db'): BD {
+export function abrirBanco(caminho = process.env.DB_PATH ?? 'data/diamante-business.db'): BD {
   if (caminho !== ':memory:') mkdirSync(dirname(caminho), { recursive: true })
   const db = new Database(caminho)
   db.pragma('journal_mode = WAL')
   db.pragma('foreign_keys = ON')
   db.pragma('busy_timeout = 5000')
   db.exec(ESQUEMA)
+  migrar(db)
   return db
+}
+
+/** Ajustes em bancos criados por versões anteriores. Cada passo pode rodar várias vezes. */
+function migrar(db: BD) {
+  const colunas = db.prepare("SELECT name FROM pragma_table_info('pessoas')").all() as { name: string }[]
+  if (!colunas.some((c) => c.name === 'codigo')) {
+    db.exec('ALTER TABLE pessoas ADD COLUMN codigo INTEGER')
+    // ID da aluna = ordem de matrícula (primeira matrícula registrada).
+    const ordem = db
+      .prepare('SELECT p.id FROM pessoas p JOIN matriculas m ON m.pessoa_id = p.id GROUP BY p.id ORDER BY MIN(m.criado_em), p.criado_em')
+      .all() as { id: string }[]
+    const up = db.prepare('UPDATE pessoas SET codigo = ? WHERE id = ?')
+    db.transaction(() => ordem.forEach((p, n) => up.run(n + 1, p.id)))()
+  }
+  db.exec('CREATE UNIQUE INDEX IF NOT EXISTS ux_pessoas_codigo ON pessoas(codigo)')
+  // O perfil Comercial deixou de existir: acessos antigos ficam desativados (o histórico é preservado).
+  db.exec("UPDATE usuarios SET ativo = 0 WHERE perfil = 'comercial' AND ativo = 1")
+  db.exec("DELETE FROM sessoes WHERE usuario_id IN (SELECT id FROM usuarios WHERE perfil = 'comercial')")
+  db.exec("DELETE FROM perfil_permissoes WHERE perfil = 'comercial'")
 }
 
 export const novoId = () => randomUUID()

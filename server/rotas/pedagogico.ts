@@ -346,7 +346,7 @@ export function rotasPedagogico(db: BD) {
     const esc = escopoMatriculas(req)
     const atividades = db
       .prepare(
-        `SELECT a.*, p.nome AS pessoa_nome, p.id AS pessoa_id, e.titulo AS etapa_titulo, uv.nome AS validador_nome,
+        `SELECT a.*, p.nome AS pessoa_nome, p.codigo AS pessoa_codigo, p.id AS pessoa_id, e.titulo AS etapa_titulo, uv.nome AS validador_nome,
            (SELECT COUNT(*) FROM evidencias ev WHERE ev.atividade_id = a.id) AS evidencias
          FROM atividades a JOIN jornada_etapas je ON je.id = a.jornada_etapa_id JOIN etapas e ON e.id = je.etapa_id
          JOIN matriculas m ON m.id = a.matricula_id JOIN pessoas p ON p.id = m.pessoa_id LEFT JOIN usuarios uv ON uv.id = je.validador_id
@@ -355,7 +355,7 @@ export function rotasPedagogico(db: BD) {
       .all(esc.params) as Linha[]
     const ultimaEvidencia = db.prepare('SELECT texto, link, data_execucao, registrada_por_equipe FROM evidencias WHERE atividade_id = ? ORDER BY criado_em DESC LIMIT 1')
     const conquistas = db
-      .prepare(`SELECT c.*, p.nome AS pessoa_nome, p.id AS pessoa_id FROM conquistas c JOIN matriculas m ON m.id = c.matricula_id JOIN pessoas p ON p.id = m.pessoa_id WHERE ${esc.sql} AND c.validada = 0 ORDER BY c.data`)
+      .prepare(`SELECT c.*, p.nome AS pessoa_nome, p.codigo AS pessoa_codigo, p.id AS pessoa_id FROM conquistas c JOIN matriculas m ON m.id = c.matricula_id JOIN pessoas p ON p.id = m.pessoa_id WHERE ${esc.sql} AND c.validada = 0 ORDER BY c.data`)
       .all(esc.params)
     res.json({ atividades: atividades.map((a) => ({ ...a, ultima_evidencia: ultimaEvidencia.get(a.id) ?? null })), conquistas })
   })

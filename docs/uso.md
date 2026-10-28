@@ -37,17 +37,25 @@ As datas aparecem no formato DD/MM/AAAA e no horário de Brasília (America/Sao_
 
 **Decisões pendentes** lista as questões que a direção ou a coordenação ainda precisam decidir.
 
+**Mentora** vê um menu próprio com duas abas:
+- **Minha agenda:** só os horários e encontros da mentora que entrou.
+- **Alunas da agenda:** um cartão por aluna com encontros com ela, em ordem de ID: vigência, trilha e progresso, próximo e último encontro, encontros em aberto (com as ações de agendar, realizar, registrar contato etc.) e a última anotação, com o botão para registrar uma nova.
+
+Cada aluna tem um **ID** (#001, #002…) que segue a ordem de matrícula. As listas são ordenadas por ele e a busca aceita o ID.
+
 **Configurações** tem os cadastros, os parâmetros (a janela de "próxima do término" e o texto de ajuda do portal), os usuários (inclusive a redefinição de senha) e as regras de acesso por perfil.
 
-## Aluna (portal, pensado para o celular)
+## Aluna (portal, celular e computador)
 
 O portal mostra:
 - O próximo passo, a trilha, o pilar e a vigência.
+- **Quanto já concluí:** o percentual da trilha (cada etapa vale o mesmo; a etapa em andamento conta pelas atividades validadas).
+- **Minha trilha:** no computador, as etapas lado a lado na horizontal; no celular, uma embaixo da outra.
 - As etapas. As liberadas mostram atividades e materiais. As bloqueadas mostram um cadeado e dizem o que falta para liberar.
 - O botão "Enviar o que fiz", para mandar um texto ou link para validação. Quando a equipe pede revisão, o comentário aparece aqui.
 - Os encontros. O resumo compartilhável só aparece depois que o encontro foi realizado.
 - Os formatos que não fazem parte do contrato, marcados como **"Não incluído no contrato"**, um selo diferente do cadeado pedagógico.
-- As conquistas validadas, em uma linha do tempo sem ranking.
+- **Meu crescimento:** um gráfico das conquistas validadas somadas ao longo do tempo, com a linha do tempo ao lado, sem comparação com outras alunas.
 - Como pedir ajuda, e a troca de senha.
 
 A aluna só acessa os próprios dados, inclusive se tentar abrir um endereço ou chamar a API diretamente.

@@ -18,7 +18,7 @@ class Cliente {
   constructor(private base: string) {}
   async req(metodo: string, caminho: string, corpo?: unknown, semCabecalho = false) {
     const headers: Record<string, string> = { 'Content-Type': 'application/json', Cookie: this.cookie }
-    if (!semCabecalho) headers['X-Requested-With'] = 'efeito-diamante'
+    if (!semCabecalho) headers['X-Requested-With'] = 'diamante-business'
     const r = await fetch(this.base + caminho, { method: metodo, headers, body: corpo === undefined ? undefined : JSON.stringify(corpo) })
     const set = r.headers.get('set-cookie')
     if (set) this.cookie = set.split(';')[0]
@@ -60,7 +60,6 @@ beforeAll(async () => {
     admin: 'admin@demo.local',
     coord: 'coordenacao@demo.local',
     suporte: 'suporte@demo.local',
-    comercial: 'comercial@demo.local',
     mentora: 'mentora@demo.local',
     beatriz: 'beatriz@demo.local',
     carla: 'carla@demo.local',
@@ -314,14 +313,33 @@ describe('Permissões e segurança', () => {
     expect(r.status).toBe(403)
   })
 
-  it('comercial não vê notas internas nem anotações pedagógicas', async () => {
+  it('suporte não vê anotações pedagógicas privadas', async () => {
     const carla = await pessoaPorNome('Carla')
     await c.coord.ok('POST', `/matriculas/${(await c.admin.ok('GET', `/pessoas/${carla.id}`)).matriculas[0].id}/anotacoes`, { tipo: 'pedagogica', texto: 'Anotação pedagógica privada (teste)' })
-    const r = await c.comercial.req('GET', `/pessoas/${carla.id}`)
-    const texto = JSON.stringify(r.corpo)
-    expect(texto).not.toContain('Anotação pedagógica privada')
-    expect(texto).not.toContain('Nota interna de demonstração')
-    expect(texto).toContain('condicoes_comerciais')
+    const r = await c.suporte.req('GET', `/pessoas/${carla.id}`)
+    expect(r.status).toBe(200)
+    expect(JSON.stringify(r.corpo)).not.toContain('Anotação pedagógica privada')
+  })
+
+  it('o perfil Comercial não existe mais e não pode ser criado', async () => {
+    const r = await c.admin.req('POST', '/usuarios', { nome: 'Teste', email: 'comercial-novo@demo.local', perfil: 'comercial', senha_inicial: 'senhaForte123' })
+    expect(r.status).toBe(400)
+  })
+
+  it('cada aluna recebe um ID sequencial na primeira matrícula e a lista segue o ID', async () => {
+    const lista = (await c.admin.ok('GET', '/pessoas')) as unknown as J[]
+    const codigos = lista.map((p) => p.codigo).filter((x) => x != null) as number[]
+    expect(codigos).toEqual([...codigos].sort((a, b) => a - b))
+    expect(new Set(codigos).size).toBe(codigos.length)
+    const max = Math.max(...codigos)
+    const nova = await c.admin.ok('POST', '/pessoas', { nome: 'Teste ID', matricula: { data_inicio: hoje, itens_extras: [] } })
+    const ficha = await c.admin.ok('GET', `/pessoas/${nova.id}`)
+    expect(ficha.pessoa.codigo).toBe(max + 1)
+    // Renovação mantém o mesmo ID
+    await c.admin.ok('POST', '/matriculas', { pessoa_id: nova.id, data_inicio: hoje, matricula_anterior_id: ficha.matriculas[0].id, itens_extras: [] })
+    expect((await c.admin.ok('GET', `/pessoas/${nova.id}`)).pessoa.codigo).toBe(max + 1)
+    const busca = (await c.admin.ok('GET', `/pessoas?busca=%23${String(max + 1).padStart(3, '0')}`)) as unknown as J[]
+    expect(busca.map((p) => p.id)).toEqual([nova.id])
   })
 
   it('mentora só vê matrículas em que atende', async () => {

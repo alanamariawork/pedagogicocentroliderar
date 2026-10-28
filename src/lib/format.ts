@@ -66,3 +66,8 @@ export const HISTORICO_OCORRENCIA: Record<string, string> = {
 export function plural(n: number, um: string, varios: string) {
   return `${n} ${n === 1 ? um : varios}`
 }
+
+/** ID da aluna (ordem de matrícula), sempre com três dígitos: #001. */
+export function idAluna(codigo: number | null | undefined): string {
+  return codigo ? `#${String(codigo).padStart(3, '0')}` : 'sem ID'
+}

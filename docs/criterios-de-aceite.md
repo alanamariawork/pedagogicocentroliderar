@@ -1,6 +1,6 @@
 # O que foi testado
 
-## Testes automáticos (`npm test`: 29 testes, todos passando)
+## Testes automáticos (`npm test`: 31 testes, todos passando)
 
 Os testes de aceite (`tests/aceite.test.ts`) sobem o servidor real com um banco em memória e a demonstração. Depois, fazem as chamadas pela API com cada perfil.
 
@@ -25,7 +25,9 @@ Os testes de aceite (`tests/aceite.test.ts`) sobem o servidor real com um banco 
 
 Além desses, há testes de segurança e consistência:
 - CSRF.
-- O perfil comercial não vê notas.
+- O Suporte/CS não vê anotações pedagógicas privadas.
+- O perfil Comercial não existe e não pode ser criado.
+- Cada aluna recebe um ID sequencial na primeira matrícula; a renovação mantém o ID e a busca encontra pelo ID.
 - A mentora só vê as próprias matrículas.
 - O sistema impede ciclos entre etapas.
 - Desmarcar libera o horário sem reduzir a obrigação.
@@ -41,7 +43,7 @@ Os testes de cálculo (`tests/calculos.test.ts`) cobrem:
 
 ## Verificação no navegador (Chromium)
 
-Foram abertas todas as telas com os perfis Administração, Mentora, Comercial e Suporte (desktop e celular de 390 px) e o portal de quatro alunas no celular. As seis fichas foram abertas em todas as abas. Não houve erro de JavaScript nem falha de carregamento.
+Foram abertas todas as telas com os perfis Administração, Coordenação, Mentora e Suporte (desktop e celular de 390 px) e o portal das alunas no celular e no computador (1360 px). Também foram conferidas as abas da Mentora (Minha agenda e Alunas da agenda). As seis fichas foram abertas em todas as abas. Não houve erro de JavaScript nem falha de carregamento.
 
 Fluxos executados clicando na tela, todos concluídos:
 1. Agendar um encontro pela tela Entregas do mês, escolhendo um horário livre.

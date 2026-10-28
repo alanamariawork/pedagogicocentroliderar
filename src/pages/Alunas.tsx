@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Plus, Search, Users } from 'lucide-react'
 import { Carregando, EstadoErro, EstadoVazio } from '../components/Estados'
-import { Selo, TOM_MATRICULA } from '../components/Selos'
+import { IdAluna, Selo, TOM_MATRICULA } from '../components/Selos'
 import { DialogMatricula } from '../forms/FormMatricula'
 import { useDados, type Reg } from '../lib/api'
 import { SITUACAO_CONTRATO, SITUACAO_MATRICULA } from '../lib/format'
@@ -32,7 +32,7 @@ export function Alunas() {
             Buscar
           </label>
           <Search className="pointer-events-none absolute top-2.5 left-3 size-4 text-ink-muted" aria-hidden />
-          <input id="busca" type="search" placeholder="Buscar por nome, e-mail ou telefone" className="field-control pl-9" value={busca} onChange={(e) => setBusca(e.target.value)} />
+          <input id="busca" type="search" placeholder="Buscar por ID, nome, e-mail ou telefone" className="field-control pl-9" value={busca} onChange={(e) => setBusca(e.target.value)} />
         </div>
         <label className="text-xs text-ink-muted">
           Situação
@@ -59,10 +59,11 @@ export function Alunas() {
         <Carregando />
       ) : dados.length === 0 ? (
         <EstadoVazio icone={Users} titulo={termo || situacao ? 'Nenhuma aluna encontrada com esses filtros.' : 'Nenhuma aluna cadastrada ainda.'} acao={pode('alunas:editar') && pode('matriculas:criar') && !termo ? 'Cadastrar a primeira aluna' : undefined} onAcao={() => setNovo(true)}>
-          <p className="mt-1 max-w-md text-xs text-ink-muted">Cada pessoa pode ter várias matrículas (inicial e renovações), cada uma com vigência e entregáveis próprios.</p>
+          <p className="mt-1 max-w-md text-xs text-ink-muted">Cada aluna recebe um ID na primeira matrícula, em ordem de matrícula. Cada pessoa pode ter várias matrículas (inicial e renovações), cada uma com vigência e entregáveis próprios.</p>
         </EstadoVazio>
       ) : (
         <div className="card overflow-hidden">
+          <p className="border-b border-line px-4 py-2 text-xs text-ink-muted">Ordenadas pelo ID, que segue a ordem de matrícula.</p>
           {carregando && <p className="px-4 pt-2 text-xs text-ink-muted">Atualizando…</p>}
           <ul className="divide-y divide-line">
             {dados.map((p) => {
@@ -72,6 +73,7 @@ export function Alunas() {
                   <a href={href({ pagina: 'ficha', id: p.id })} className="flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-3 hover:bg-surface-muted/60">
                     <div className="min-w-48 flex-1">
                       <p className="font-medium text-ink">
+                        <IdAluna codigo={p.codigo} />
                         {p.nome} {p.demonstracao ? <Selo tom="info">Demonstração</Selo> : null}
                       </p>
                       <p className="text-xs text-ink-muted">

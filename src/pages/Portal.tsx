@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { CalendarDays, CheckCircle2, Gem, KeyRound, LifeBuoy, Link as LinkIcon, LogOut, Sparkles } from 'lucide-react'
 import { Carregando, EstadoErro } from '../components/Estados'
 import { Campo, FormDialog, useValores } from '../components/Form'
@@ -9,7 +9,7 @@ import { FormSenha } from './Conta'
 import { post, useDados, type Reg } from '../lib/api'
 import { SITUACAO_ATIVIDADE, SITUACAO_MATRICULA, cx } from '../lib/format'
 import { useSessao } from '../state/Sessao'
-import { formatarData } from '../../shared/datas'
+import { formatarData, hojeSP } from '../../shared/datas'
 
 const SITUACAO_ENCONTRO_ALUNA: Record<string, string> = {
   prevista: 'Previsto',
@@ -27,18 +27,18 @@ export function Portal() {
   const { dados, erro, recarregar } = useDados('/portal')
   const [senha, setSenha] = useState(false)
   useEffect(() => {
-    document.title = 'Minha jornada · Efeito Diamante'
+    document.title = 'Minha jornada · Diamante Business'
   }, [])
 
   return (
     <div className="min-h-screen bg-canvas">
       <header className="sticky top-0 z-30 border-b border-line bg-surface/95 backdrop-blur">
-        <div className="mx-auto flex max-w-3xl items-center gap-3 px-4 py-3">
+        <div className="mx-auto flex max-w-3xl items-center lg:max-w-6xl gap-3 px-4 py-3">
           <span className="inline-flex size-9 items-center justify-center rounded-full border border-gold-line text-gold">
             <Gem className="size-4.5" aria-hidden />
           </span>
           <div className="min-w-0 flex-1 leading-tight">
-            <p className="font-display text-[15px] font-semibold text-brand-700">Efeito Diamante</p>
+            <p className="font-display text-[15px] font-semibold text-brand-700">Diamante Business</p>
             <p className="text-[11px] text-ink-muted">Minha jornada</p>
           </div>
           <button type="button" className="btn-ghost p-2" aria-label="Alterar senha" onClick={() => setSenha(true)}>
@@ -49,7 +49,7 @@ export function Portal() {
           </button>
         </div>
       </header>
-      <main className="mx-auto max-w-3xl space-y-4 px-4 py-5">
+      <main className="mx-auto max-w-3xl space-y-4 px-4 py-5 lg:max-w-6xl">
         {eu?.trocar_senha && (
           <p role="status" className="rounded-[var(--radius-control)] border border-gold-line bg-gold-soft px-3 py-2 text-sm">
             Sua senha foi criada pela equipe.{' '}
@@ -97,6 +97,82 @@ function Conteudo({ dados, recarregar }: { dados: Reg; recarregar: () => void })
     }
   }
 
+  const etapa = (e: Reg) => (
+    <>
+      <div className="flex flex-wrap items-center gap-2">
+        {e.situacao === 'concluida' ? <CheckCircle2 className="size-5 text-success" aria-hidden /> : null}
+        <h3 className="font-medium text-ink">{e.titulo}</h3>
+        {e.situacao === 'bloqueada' ? <SeloCadeado /> : e.situacao === 'concluida' ? <Selo tom="sucesso">Concluída</Selo> : <Selo tom="vinho">Liberada</Selo>}
+      </div>
+      <p className="text-xs text-ink-muted">
+        {[e.trilha_nome, e.pilar_nome].filter(Boolean).join(' · ')} · {e.prazo_individual ? `Prazo: ${formatarData(e.prazo_individual)}` : 'Sem prazo definido'}
+      </p>
+      {e.objetivo && <p className="mt-1 text-sm text-ink-soft">{e.objetivo}</p>}
+      {e.situacao !== 'bloqueada' && <p className="mt-1 text-xs text-ink-muted">{e.progresso.texto}</p>}
+      {e.falta.length > 0 && e.situacao === 'bloqueada' && (
+        <div className="mt-2 rounded bg-surface-muted px-3 py-2 text-xs text-ink-soft">
+          <p className="font-medium">O que falta para liberar:</p>
+          <ul className="list-disc pl-4">
+            {(e.falta as string[]).map((f) => (
+              <li key={f}>{f}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {e.situacao !== 'bloqueada' && (e.links as Reg[]).length > 0 && (
+        <ul className="mt-2 flex flex-wrap gap-2">
+          {(e.links as Reg[]).map((l) => (
+            <li key={l.url}>
+              <a href={l.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-sm text-brand-700 underline">
+                <LinkIcon className="size-3.5" aria-hidden /> {l.titulo}
+              </a>
+            </li>
+          ))}
+        </ul>
+      )}
+      {e.situacao !== 'bloqueada' && (e.atividades as Reg[]).length > 0 && (
+        <ul className="mt-3 space-y-2">
+          {(e.atividades as Reg[]).map((a) => {
+            const revisao = [...(a.validacoes as Reg[])].reverse().find((v) => v.decisao === 'em_revisao')
+            return (
+              <li key={a.id} className="rounded border border-line bg-surface p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-sm font-medium">{a.titulo}</p>
+                  <Selo tom={TOM_ATIVIDADE[a.situacao]}>{SITUACAO_ATIVIDADE[a.situacao]}</Selo>
+                </div>
+                {a.descricao && <p className="mt-1 text-sm text-ink-soft">{a.descricao}</p>}
+                <p className="text-xs text-ink-muted">{a.prazo ? `Prazo: ${formatarData(a.prazo)}` : 'Sem prazo definido'}</p>
+                {a.link && (
+                  <a href={a.link} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-sm text-brand-700 underline">
+                    <LinkIcon className="size-3.5" aria-hidden /> Abrir material
+                  </a>
+                )}
+                {a.situacao === 'em_revisao' && revisao?.comentario && (
+                  <p className="mt-2 rounded bg-warning-soft px-3 py-2 text-sm text-warning">Pedido de revisão: {revisao.comentario}</p>
+                )}
+                {e.situacao === 'liberada' && a.situacao !== 'validada' && (
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {a.situacao === 'pendente' && (
+                      <button type="button" className="btn-secondary btn-sm" onClick={() => void iniciar(a)}>
+                        Comecei
+                      </button>
+                    )}
+                    {a.situacao !== 'enviada' && (
+                      <button type="button" className="btn-primary btn-sm" onClick={() => setEnviar(a)}>
+                        {a.situacao === 'em_revisao' ? 'Enviar novamente' : 'Enviar o que fiz'}
+                      </button>
+                    )}
+                    {a.situacao === 'enviada' && <p className="text-xs text-ink-muted">Enviada. Aguardando validação da equipe.</p>}
+                  </div>
+                )}
+              </li>
+            )
+          })}
+        </ul>
+      )}
+    </>
+  )
+
   return (
     <>
       <section className="rounded-[var(--radius-card)] bg-gradient-to-br from-brand-700 to-brand-500 p-5 text-white shadow-sm">
@@ -132,92 +208,50 @@ function Conteudo({ dados, recarregar }: { dados: Reg; recarregar: () => void })
         </dl>
       </section>
 
+      <Progresso etapas={etapas} />
+
       <section className="card p-4">
-        <h2 className="font-display text-lg font-semibold">Minha jornada</h2>
+        <h2 className="font-display text-lg font-semibold">Minha trilha</h2>
         {!jornada ? (
           <p className="mt-2 text-sm text-ink-muted">Sua jornada ainda está sendo preparada pela equipe pedagógica.</p>
         ) : etapas.length === 0 ? (
           <p className="mt-2 text-sm text-ink-muted">Nenhuma etapa definida ainda.</p>
         ) : (
-          <ol className="mt-3 space-y-3">
-            {etapas.map((e) => (
-              <li key={e.id} className={cx('rounded-[var(--radius-control)] border p-3', e.situacao === 'liberada' ? 'border-brand-500/40 bg-brand-50/40' : 'border-line')}>
-                <div className="flex flex-wrap items-center gap-2">
-                  {e.situacao === 'concluida' ? <CheckCircle2 className="size-5 text-success" aria-hidden /> : null}
-                  <h3 className="font-medium text-ink">{e.titulo}</h3>
-                  {e.situacao === 'bloqueada' ? <SeloCadeado /> : e.situacao === 'concluida' ? <Selo tom="sucesso">Concluída</Selo> : <Selo tom="vinho">Liberada</Selo>}
-                </div>
-                <p className="text-xs text-ink-muted">
-                  {[e.trilha_nome, e.pilar_nome].filter(Boolean).join(' · ')} · {e.prazo_individual ? `Prazo: ${formatarData(e.prazo_individual)}` : 'Sem prazo definido'}
-                </p>
-                {e.objetivo && <p className="mt-1 text-sm text-ink-soft">{e.objetivo}</p>}
-                {e.situacao !== 'bloqueada' && <p className="mt-1 text-xs text-ink-muted">{e.progresso.texto}</p>}
-                {e.falta.length > 0 && e.situacao === 'bloqueada' && (
-                  <div className="mt-2 rounded bg-surface-muted px-3 py-2 text-xs text-ink-soft">
-                    <p className="font-medium">O que falta para liberar:</p>
-                    <ul className="list-disc pl-4">
-                      {(e.falta as string[]).map((f) => (
-                        <li key={f}>{f}</li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-                {e.situacao !== 'bloqueada' && (e.links as Reg[]).length > 0 && (
-                  <ul className="mt-2 flex flex-wrap gap-2">
-                    {(e.links as Reg[]).map((l) => (
-                      <li key={l.url}>
-                        <a href={l.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-sm text-brand-700 underline">
-                          <LinkIcon className="size-3.5" aria-hidden /> {l.titulo}
-                        </a>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-                {e.situacao !== 'bloqueada' && (e.atividades as Reg[]).length > 0 && (
-                  <ul className="mt-3 space-y-2">
-                    {(e.atividades as Reg[]).map((a) => {
-                      const revisao = [...(a.validacoes as Reg[])].reverse().find((v) => v.decisao === 'em_revisao')
-                      return (
-                        <li key={a.id} className="rounded border border-line bg-surface p-3">
-                          <div className="flex flex-wrap items-center justify-between gap-2">
-                            <p className="text-sm font-medium">{a.titulo}</p>
-                            <Selo tom={TOM_ATIVIDADE[a.situacao]}>{SITUACAO_ATIVIDADE[a.situacao]}</Selo>
-                          </div>
-                          {a.descricao && <p className="mt-1 text-sm text-ink-soft">{a.descricao}</p>}
-                          <p className="text-xs text-ink-muted">{a.prazo ? `Prazo: ${formatarData(a.prazo)}` : 'Sem prazo definido'}</p>
-                          {a.link && (
-                            <a href={a.link} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-sm text-brand-700 underline">
-                              <LinkIcon className="size-3.5" aria-hidden /> Abrir material
-                            </a>
-                          )}
-                          {a.situacao === 'em_revisao' && revisao?.comentario && (
-                            <p className="mt-2 rounded bg-warning-soft px-3 py-2 text-sm text-warning">Pedido de revisão: {revisao.comentario}</p>
-                          )}
-                          {e.situacao === 'liberada' && a.situacao !== 'validada' && (
-                            <div className="mt-2 flex flex-wrap gap-2">
-                              {a.situacao === 'pendente' && (
-                                <button type="button" className="btn-secondary btn-sm" onClick={() => void iniciar(a)}>
-                                  Comecei
-                                </button>
-                              )}
-                              {a.situacao !== 'enviada' && (
-                                <button type="button" className="btn-primary btn-sm" onClick={() => setEnviar(a)}>
-                                  {a.situacao === 'em_revisao' ? 'Enviar novamente' : 'Enviar o que fiz'}
-                                </button>
-                              )}
-                              {a.situacao === 'enviada' && <p className="text-xs text-ink-muted">Enviada. Aguardando validação da equipe.</p>}
-                            </div>
-                          )}
-                        </li>
-                      )
-                    })}
-                  </ul>
-                )}
-              </li>
-            ))}
-          </ol>
+          <>
+            {/* Celular: etapas empilhadas */}
+            <ol className="mt-3 space-y-3 lg:hidden">
+              {etapas.map((e) => (
+                <li key={e.id} className={cx('rounded-[var(--radius-control)] border p-3', e.situacao === 'liberada' ? 'border-brand-500/40 bg-brand-50/40' : 'border-line')}>
+                  {etapa(e)}
+                </li>
+              ))}
+            </ol>
+            {/* Computador: a trilha na horizontal, da primeira à última etapa */}
+            <div className="mt-4 hidden overflow-x-auto pb-2 lg:block">
+              <ol className="flex min-w-max gap-4" aria-label="Etapas da trilha, da primeira à última">
+                {etapas.map((e, n) => (
+                  <li key={e.id} className="flex w-72 shrink-0 flex-col">
+                    <div className="mb-3 flex items-center gap-2" aria-hidden>
+                      <span
+                        className={cx(
+                          'inline-flex size-8 shrink-0 items-center justify-center rounded-full border-2 text-sm font-semibold',
+                          e.situacao === 'concluida' ? 'border-success bg-success text-white' : e.situacao === 'liberada' ? 'border-brand-700 bg-brand-700 text-white' : 'border-line-strong bg-surface text-ink-muted',
+                        )}
+                      >
+                        {e.situacao === 'concluida' ? <CheckCircle2 className="size-4" /> : n + 1}
+                      </span>
+                      {n < etapas.length - 1 && <span className={cx('h-0.5 flex-1 rounded-full', e.situacao === 'concluida' ? 'bg-success' : 'bg-line-strong')} />}
+                    </div>
+                    <div className={cx('flex-1 rounded-[var(--radius-control)] border p-3', e.situacao === 'liberada' ? 'border-brand-500/40 bg-brand-50/40' : 'border-line')}>{etapa(e)}</div>
+                  </li>
+                ))}
+              </ol>
+            </div>
+          </>
         )}
       </section>
+
+      <Crescimento conquistas={dados.conquistas as Reg[]} inicio={m.data_inicio} />
 
       <section className="card p-4">
         <h2 className="font-display flex items-center gap-2 text-lg font-semibold">
@@ -278,26 +312,6 @@ function Conteudo({ dados, recarregar }: { dados: Reg; recarregar: () => void })
       </section>
 
       <section className="card p-4">
-        <h2 className="font-display flex items-center gap-2 text-lg font-semibold">
-          <Sparkles className="size-5 text-gold" aria-hidden /> Minhas conquistas
-        </h2>
-        {(dados.conquistas as Reg[]).length === 0 ? (
-          <p className="mt-2 text-sm text-ink-muted">Suas conquistas validadas pela equipe vão aparecer aqui.</p>
-        ) : (
-          <ol className="mt-3 space-y-3 border-l-2 border-gold-line pl-4">
-            {(dados.conquistas as Reg[]).map((c) => (
-              <li key={c.id} className="relative">
-                <span className="absolute top-1.5 -left-[1.4rem] size-3 rounded-full border-2 border-gold bg-surface" aria-hidden />
-                <p className="font-medium">{c.titulo}</p>
-                <p className="text-xs text-ink-muted">{formatarData(c.data)}</p>
-                {c.resultado_percebido && <p className="text-sm text-ink-soft">{c.resultado_percebido}</p>}
-              </li>
-            ))}
-          </ol>
-        )}
-      </section>
-
-      <section className="card p-4">
         <Ajuda texto={dados.ajuda} />
       </section>
 
@@ -341,5 +355,183 @@ function DialogEvidencia({ atividade, onFechar, onConcluir }: { atividade: Reg; 
         {(p) => <input type="url" inputMode="url" className="field-control" placeholder="https://" {...p} value={valores.link} onChange={campo('link')} />}
       </Campo>
     </FormDialog>
+  )
+}
+
+/** Quanto da trilha já foi concluído: cada etapa vale o mesmo; a etapa em andamento conta pelas atividades validadas. */
+export function percentualTrilha(etapas: Reg[]): number {
+  if (etapas.length === 0) return 0
+  const soma = etapas.reduce((t, e) => {
+    if (e.situacao === 'concluida') return t + 1
+    if (e.situacao === 'liberada' && e.progresso?.total) return t + e.progresso.validadas / e.progresso.total
+    return t
+  }, 0)
+  return Math.round((soma / etapas.length) * 100)
+}
+
+function Progresso({ etapas }: { etapas: Reg[] }) {
+  if (etapas.length === 0) return null
+  const pct = percentualTrilha(etapas)
+  const concluidas = etapas.filter((e) => e.situacao === 'concluida').length
+  return (
+    <section className="card p-4" aria-labelledby="titulo-progresso">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h2 id="titulo-progresso" className="font-display text-lg font-semibold">
+          Quanto já concluí
+        </h2>
+        <p className="text-sm text-ink-muted">
+          {concluidas} de {etapas.length} etapa(s) concluída(s)
+        </p>
+      </div>
+      <p className="font-display mt-1 text-4xl font-semibold text-brand-700 tabular-nums">
+        {pct}%<span className="ml-2 align-middle font-sans text-sm font-normal text-ink-muted">da trilha</span>
+      </p>
+      <div className="mt-3 flex gap-0.5" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100} aria-label={`${pct}% da trilha concluída`}>
+        {etapas.map((e) => {
+          const parte = e.situacao === 'concluida' ? 100 : e.situacao === 'liberada' && e.progresso?.total ? (e.progresso.validadas / e.progresso.total) * 100 : 0
+          return (
+            <div key={e.id} className="min-w-0 flex-1">
+              <div className="h-3 overflow-hidden rounded-[4px] bg-surface-muted">
+                <div className={cx('h-full', e.situacao === 'concluida' ? 'bg-success' : 'bg-brand-500')} style={{ width: `${parte}%` }} />
+              </div>
+              <p className={cx('mt-1 hidden truncate text-xs lg:block', e.situacao === 'bloqueada' ? 'text-ink-muted' : 'text-ink-soft')} title={e.titulo}>
+                {e.titulo}
+              </p>
+            </div>
+          )
+        })}
+      </div>
+      <p className="mt-2 text-xs text-ink-muted">Cada etapa vale o mesmo. A etapa em andamento avança conforme a equipe valida suas atividades.</p>
+    </section>
+  )
+}
+
+/** Crescimento: conquistas validadas acumuladas ao longo do tempo (uma série, sem ranking). */
+function Crescimento({ conquistas, inicio }: { conquistas: Reg[]; inicio: string }) {
+  const ref = useRef<HTMLDivElement>(null)
+  const [largura, setLargura] = useState(640)
+  const [foco, setFoco] = useState<number | null>(null)
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const ro = new ResizeObserver(([e]) => setLargura(Math.max(280, Math.floor(e.contentRect.width))))
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+  const pontos = [...conquistas].sort((a, b) => String(a.data).localeCompare(String(b.data)))
+  const hoje = hojeSP()
+
+  return (
+    <section className="card p-4" aria-labelledby="titulo-crescimento">
+      <h2 id="titulo-crescimento" className="font-display flex items-center gap-2 text-lg font-semibold">
+        <Sparkles className="size-5 text-gold" aria-hidden /> Meu crescimento
+      </h2>
+      <p className="text-xs text-ink-muted">Conquistas validadas pela equipe, somadas ao longo do tempo. Sem comparação com outras alunas.</p>
+      {pontos.length === 0 ? (
+        <p className="mt-3 text-sm text-ink-muted">Suas conquistas validadas vão aparecer aqui e formar sua curva de crescimento.</p>
+      ) : (
+        <div className="mt-3 grid gap-4 lg:grid-cols-[1fr_20rem]">
+          <div ref={ref} className="relative min-w-0">
+            <Grafico pontos={pontos} inicio={inicio < pontos[0].data ? inicio : pontos[0].data} fim={hoje > pontos[pontos.length - 1].data ? hoje : pontos[pontos.length - 1].data} largura={largura} foco={foco} setFoco={setFoco} />
+          </div>
+          <ol className="space-y-3 border-l-2 border-gold-line pl-4">
+            {[...pontos].reverse().map((c) => {
+              const n = pontos.indexOf(c)
+              return (
+                <li key={c.id} className={cx('relative rounded px-1', foco === n && 'bg-gold-soft')} onMouseEnter={() => setFoco(n)} onMouseLeave={() => setFoco(null)}>
+                  <span className="absolute top-1.5 -left-[1.45rem] size-3 rounded-full border-2 border-gold bg-surface" aria-hidden />
+                  <p className="font-medium">{c.titulo}</p>
+                  <p className="text-xs text-ink-muted">{formatarData(c.data)}</p>
+                  {c.resultado_percebido && <p className="text-sm text-ink-soft">{c.resultado_percebido}</p>}
+                </li>
+              )
+            })}
+          </ol>
+        </div>
+      )}
+    </section>
+  )
+}
+
+function Grafico({ pontos, inicio, fim, largura, foco, setFoco }: { pontos: Reg[]; inicio: string; fim: string; largura: number; foco: number | null; setFoco: (n: number | null) => void }) {
+  const altura = 200
+  const m = { esq: 32, dir: 16, topo: 16, base: 28 }
+  const w = largura - m.esq - m.dir
+  const h = altura - m.topo - m.base
+  const t0 = Date.parse(inicio + 'T12:00:00Z')
+  const t1 = Math.max(Date.parse(fim + 'T12:00:00Z'), t0 + 86_400_000)
+  const total = pontos.length
+  const yMax = Math.max(total, 1)
+  const x = (d: string) => m.esq + ((Date.parse(d + 'T12:00:00Z') - t0) / (t1 - t0)) * w
+  const y = (v: number) => m.topo + h - (v / yMax) * h
+  // Linha em degraus: o total sobe no dia de cada conquista.
+  let caminho = `M${x(inicio)},${y(0)}`
+  pontos.forEach((p, i) => {
+    caminho += ` H${x(p.data)} V${y(i + 1)}`
+  })
+  caminho += ` H${x(fim)}`
+  const area = `${caminho} V${y(0)} H${x(inicio)} Z`
+  const passo = Math.max(1, Math.ceil(yMax / 4))
+  const ticksY = Array.from({ length: Math.floor(yMax / passo) + 1 }, (_, i) => i * passo)
+  // Marcas do eixo X: primeiro dia de cada mês no intervalo (no máximo 6).
+  const meses: string[] = []
+  for (let d = new Date(t0); d.getTime() <= t1; d.setUTCMonth(d.getUTCMonth() + 1, 1)) meses.push(d.toISOString().slice(0, 7) + '-01')
+  const salto = Math.ceil(meses.length / 6)
+  const ticksX = meses.filter((mm, i) => i % salto === 0 && Date.parse(mm + 'T12:00:00Z') >= t0)
+  const nomeMes = (d: string) => new Intl.DateTimeFormat('pt-BR', { month: 'short', timeZone: 'UTC' }).format(new Date(d + 'T12:00:00Z')).replace('.', '')
+  const ativo = foco !== null ? pontos[foco] : null
+
+  return (
+    <>
+      <svg width={largura} height={altura} role="img" aria-label={`Crescimento: ${total} conquista(s) validada(s) desde ${formatarData(inicio)}`} className="block max-w-full">
+        {ticksY.map((v) => (
+          <g key={v}>
+            <line x1={m.esq} x2={m.esq + w} y1={y(v)} y2={y(v)} stroke="var(--color-line)" strokeWidth={1} />
+            <text x={m.esq - 8} y={y(v)} dy="0.32em" textAnchor="end" className="fill-ink-muted text-[11px] tabular-nums">
+              {v}
+            </text>
+          </g>
+        ))}
+        {ticksX.map((d) => (
+          <text key={d} x={x(d)} y={altura - 8} textAnchor="middle" className="fill-ink-muted text-[11px]">
+            {nomeMes(d)}
+          </text>
+        ))}
+        <path d={area} fill="var(--color-brand-50)" />
+        <path d={caminho} fill="none" stroke="var(--color-brand-500)" strokeWidth={2} strokeLinejoin="round" />
+        {pontos.map((p, i) => (
+          <g key={p.id}>
+            <circle cx={x(p.data)} cy={y(i + 1)} r={foco === i ? 7 : 5} fill="var(--color-brand-500)" stroke="var(--color-surface)" strokeWidth={2} />
+            <circle
+              cx={x(p.data)}
+              cy={y(i + 1)}
+              r={14}
+              fill="transparent"
+              tabIndex={0}
+              aria-label={`${p.titulo}, ${formatarData(p.data)}`}
+              onMouseEnter={() => setFoco(i)}
+              onMouseLeave={() => setFoco(null)}
+              onFocus={() => setFoco(i)}
+              onBlur={() => setFoco(null)}
+              className="cursor-pointer outline-none"
+            />
+          </g>
+        ))}
+        <text x={Math.min(x(pontos[total - 1].data) + 10, m.esq + w)} y={y(total) - 8} textAnchor={x(pontos[total - 1].data) + 10 > m.esq + w - 90 ? 'end' : 'start'} className="fill-ink-soft text-xs font-medium">
+          {total} conquista{total === 1 ? '' : 's'}
+        </text>
+      </svg>
+      {ativo && foco !== null && (
+        <div
+          className="pointer-events-none absolute z-10 w-56 rounded-[var(--radius-control)] border border-line bg-surface px-3 py-2 text-xs shadow-[var(--shadow-overlay)]"
+          style={{ left: Math.min(Math.max(x(ativo.data) - 112, 0), largura - 224), top: Math.max(y(foco + 1) - 76, 0) }}
+        >
+          <p className="font-medium text-ink">{ativo.titulo}</p>
+          <p className="text-ink-muted">
+            {formatarData(ativo.data)} · {foco + 1}ª conquista
+          </p>
+        </div>
+      )}
+    </>
   )
 }

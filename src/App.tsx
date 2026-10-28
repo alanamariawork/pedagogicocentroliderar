@@ -29,6 +29,7 @@ import { EntregasMes } from './pages/EntregasMes'
 import { Alunas } from './pages/Alunas'
 import { Ficha } from './pages/Ficha'
 import { Agenda } from './pages/Agenda'
+import { AlunasDaAgenda } from './pages/AlunasDaAgenda'
 import { Validacoes } from './pages/Validacoes'
 import { Alertas } from './pages/Alertas'
 import { ModeloPedagogico } from './pages/ModeloPedagogico'
@@ -38,7 +39,7 @@ import { Decisoes } from './pages/Decisoes'
 import { Conta } from './pages/Conta'
 import { Portal } from './pages/Portal'
 
-export const NOME_SISTEMA = 'Efeito Diamante | Gestão da Jornada'
+export const NOME_SISTEMA = 'Diamante Business | Gestão da Jornada'
 
 interface ItemMenu {
   id: PaginaId
@@ -60,12 +61,19 @@ const MENU: ItemMenu[] = [
   { id: 'configuracoes', nome: 'Configurações', icone: Settings, permissoes: ['config:editar', 'usuarios:admin', 'pedagogico:configurar'] },
 ]
 
+// A mentora vê só a própria agenda e o resumo das alunas que atende.
+const MENU_MENTORA: ItemMenu[] = [
+  { id: 'agenda', nome: 'Minha agenda', icone: CalendarClock },
+  { id: 'minhas-alunas', nome: 'Alunas da agenda', icone: Users },
+]
+
 const NOME_PAGINA: Record<PaginaId, string> = {
   entregas: 'Entregas do mês',
   'visao-geral': 'Visão geral',
   alunas: 'Alunas e matrículas',
   ficha: 'Ficha da aluna',
   agenda: 'Capacidade e agenda',
+  'minhas-alunas': 'Alunas da agenda',
   validacoes: 'Validações',
   alertas: 'Alertas',
   jornada: 'Trilhas e etapas',
@@ -106,7 +114,7 @@ function Marca({ claro }: { claro?: boolean }) {
         <Gem className="size-4.5" aria-hidden />
       </span>
       <div className="leading-tight">
-        <p className={cx('font-display text-[15px] font-semibold', claro ? 'text-white' : 'text-brand-700')}>Efeito Diamante</p>
+        <p className={cx('font-display text-[15px] font-semibold', claro ? 'text-white' : 'text-brand-700')}>Diamante Business</p>
         <p className={cx('text-[11px] tracking-wide', claro ? 'text-sidebar-muted' : 'text-ink-muted')}>Gestão da Jornada</p>
       </div>
     </div>
@@ -168,13 +176,15 @@ function Equipe() {
   const { eu, pode, sair } = useSessao()
   const rotaAtual = useRota()
   const [menuAberto, setMenuAberto] = useState(false)
-  const itens = MENU.filter((m) => !m.permissoes || m.permissoes.some((p) => pode(p)))
+  const ehMentora = eu!.perfil === 'mentora'
+  const itens = ehMentora ? MENU_MENTORA : MENU.filter((m) => !m.permissoes || m.permissoes.some((p) => pode(p)))
+  const nomePagina = (p: PaginaId) => (ehMentora && p === 'agenda' ? 'Minha agenda' : NOME_PAGINA[p])
   const inicial: Rota = { pagina: itens[0]?.id ?? 'conta' }
   const rota = rotaAtual && rotaAtual.pagina !== 'portal' ? rotaAtual : inicial
   const tituloRef = useRef<HTMLHeadingElement>(null)
 
   useEffect(() => {
-    document.title = `${NOME_PAGINA[rota.pagina]} · ${NOME_SISTEMA}`
+    document.title = `${nomePagina(rota.pagina)} · ${NOME_SISTEMA}`
     setMenuAberto(false)
   }, [rota.pagina, rota.id])
 
@@ -249,9 +259,9 @@ function Equipe() {
                 <Menu className="size-5" aria-hidden />
               </button>
               <div className="min-w-0 flex-1">
-                <p className="eyebrow">Efeito Diamante</p>
+                <p className="eyebrow">Diamante Business</p>
                 <h1 ref={tituloRef} tabIndex={-1} className="truncate font-display text-xl font-semibold text-ink outline-none">
-                  {NOME_PAGINA[rota.pagina]}
+                  {nomePagina(rota.pagina)}
                 </h1>
               </div>
             </div>
@@ -289,6 +299,8 @@ function Pagina({ rota }: { rota: Rota }) {
       return <Ficha key={rota.id} pessoaId={rota.id!} aba={rota.aba} />
     case 'agenda':
       return <Agenda />
+    case 'minhas-alunas':
+      return <AlunasDaAgenda />
     case 'validacoes':
       return <Validacoes />
     case 'alertas':

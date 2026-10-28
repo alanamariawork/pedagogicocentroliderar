@@ -62,3 +62,9 @@ export function Atraso({ atraso }: { atraso: { tipo: string; dias?: number } | u
   if (atraso.tipo === 'em_dia') return <Selo tom="sucesso">No prazo</Selo>
   return null
 }
+
+/** ID da aluna (ordem de matrícula). */
+export function IdAluna({ codigo, className }: { codigo: number | null | undefined; className?: string }) {
+  if (!codigo) return null
+  return <span className={`mr-1.5 font-mono text-xs font-normal text-ink-muted tabular-nums ${className ?? ''}`}>#{String(codigo).padStart(3, '0')}</span>
+}

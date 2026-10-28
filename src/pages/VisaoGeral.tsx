@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { SlidersHorizontal } from 'lucide-react'
 import { Carregando, EstadoErro, Secao, Vazio } from '../components/Estados'
 import { Filtros, SeletorMes, paraQuery, type ValoresFiltro } from '../components/Filtros'
-import { Atraso } from '../components/Selos'
+import { Atraso, IdAluna } from '../components/Selos'
 import { useDados, type Reg } from '../lib/api'
 import { cx } from '../lib/format'
 import { href } from '../lib/rotas'
@@ -56,6 +56,8 @@ export function VisaoGeral() {
               {dados.proximas_termino.map((m: Reg) => (
                 <li key={m.id} className="flex items-center justify-between gap-3 py-2 text-sm">
                   <a className="font-medium text-brand-700 hover:underline" href={href({ pagina: 'ficha', id: m.pessoa_id })}>
+                    <IdAluna codigo={m.pessoa_codigo} />
+
                     {m.pessoa_nome}
                   </a>
                   <span className="text-right text-ink-muted">
@@ -77,6 +79,8 @@ export function VisaoGeral() {
                 <li key={o.id} className="py-2 text-sm">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <a className="font-medium text-brand-700 hover:underline" href={href({ pagina: 'ficha', id: o.pessoa_id })}>
+                      <IdAluna codigo={o.pessoa_codigo} />
+
                       {o.pessoa_nome}
                     </a>
                     <Atraso atraso={o.atraso} />
@@ -99,6 +103,8 @@ export function VisaoGeral() {
               {dados.contatos_pendentes.map((c: Reg) => (
                 <li key={c.id} className="py-2 text-sm">
                   <a className="font-medium text-brand-700 hover:underline" href={href({ pagina: 'ficha', id: c.pessoa_id })}>
+                    <IdAluna codigo={c.pessoa_codigo} />
+
                     {c.pessoa_nome}
                   </a>
                   <p className="text-xs text-ink-muted">
@@ -141,6 +147,8 @@ export function VisaoGeral() {
             {dados.pendencias_cadastro.map((p: Reg, n: number) => (
               <li key={n} className="flex gap-2 py-1">
                 <a className="shrink-0 font-medium text-brand-700 hover:underline" href={href({ pagina: 'ficha', id: p.pessoa_id })}>
+                  <IdAluna codigo={p.pessoa_codigo} />
+
                   {p.pessoa_nome}
                 </a>
                 <span className="text-ink-muted">{p.descricao}</span>

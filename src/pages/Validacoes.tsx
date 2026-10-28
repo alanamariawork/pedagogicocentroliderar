@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { BadgeCheck } from 'lucide-react'
 import { Carregando, EstadoErro, EstadoVazio, Secao, Vazio } from '../components/Estados'
-import { Selo } from '../components/Selos'
+import { Selo, IdAluna } from '../components/Selos'
 import { DialogValidar } from './ficha/Jornada'
 import { DialogValidarConquista } from './ficha/Registros'
 import { useDados, type Reg } from '../lib/api'
@@ -35,6 +35,8 @@ export function Validacoes() {
                   <p className="font-medium text-ink">{a.titulo}</p>
                   <p className="text-xs text-ink-muted">
                     <a className="text-brand-700 underline" href={href({ pagina: 'ficha', id: a.pessoa_id, aba: 'jornada' })}>
+                      <IdAluna codigo={a.pessoa_codigo} />
+
                       {a.pessoa_nome}
                     </a>{' '}
                     · {a.etapa_titulo} · enviada em {formatarCarimbo(a.atualizado_em)}
@@ -80,6 +82,8 @@ export function Validacoes() {
                   <p className="font-medium text-ink">{c.titulo}</p>
                   <p className="text-xs text-ink-muted">
                     <a className="text-brand-700 underline" href={href({ pagina: 'ficha', id: c.pessoa_id, aba: 'conquistas' })}>
+                      <IdAluna codigo={c.pessoa_codigo} />
+
                       {c.pessoa_nome}
                     </a>{' '}
                     · {formatarData(c.data)}

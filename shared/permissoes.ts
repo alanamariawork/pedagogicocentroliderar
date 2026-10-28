@@ -3,7 +3,7 @@
  * Os valores abaixo são o PADRÃO inicial; a Administração pode alterá-los em
  * Configurações → Regras de acesso (gravado no banco e aplicado no servidor).
  */
-export const PERFIS = ['admin', 'coordenacao', 'suporte', 'mentora', 'comercial', 'aluna'] as const
+export const PERFIS = ['admin', 'coordenacao', 'suporte', 'mentora', 'aluna'] as const
 export type Perfil = (typeof PERFIS)[number]
 
 export const NOME_PERFIL: Record<Perfil, string> = {
@@ -11,7 +11,6 @@ export const NOME_PERFIL: Record<Perfil, string> = {
   coordenacao: 'Coordenação pedagógica',
   suporte: 'Suporte/CS',
   mentora: 'Mentora',
-  comercial: 'Comercial',
   aluna: 'Aluna',
 }
 
@@ -78,16 +77,6 @@ export const PERMISSOES_PADRAO: Record<Perfil, Permissao[]> = {
     'jornada:ver',
     'jornada:editar',
     'conquistas:editar',
-  ],
-  // Comercial não acessa notas internas nem anotações pedagógicas por padrão.
-  comercial: [
-    'alunas:ver',
-    'alunas:editar',
-    'matriculas:criar',
-    'comercial:ver',
-    'comercial:editar',
-    'entregas:ver',
-    'indicadores:ver',
   ],
   // A aluna usa apenas o portal (/api/portal), sempre limitado aos próprios dados.
   aluna: [],

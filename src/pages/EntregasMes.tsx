@@ -2,10 +2,10 @@ import { useState } from 'react'
 import { CalendarCheck2, Download, MoreHorizontal, SlidersHorizontal } from 'lucide-react'
 import { Carregando, EstadoErro, Vazio } from '../components/Estados'
 import { Filtros, SeletorMes, paraQuery, type ValoresFiltro } from '../components/Filtros'
-import { Atraso, Selo, TOM_OCORRENCIA } from '../components/Selos'
+import { Atraso, Selo, TOM_OCORRENCIA, IdAluna } from '../components/Selos'
 import { DialogoAcao, acoesDisponiveis, type AcaoOcorrencia } from '../forms/AcoesOcorrencia'
 import { baixarCsv, useDados, type Reg } from '../lib/api'
-import { SITUACAO_MATRICULA, SITUACAO_OCORRENCIA, cx } from '../lib/format'
+import { SITUACAO_MATRICULA, SITUACAO_OCORRENCIA, cx, idAluna } from '../lib/format'
 import { href } from '../lib/rotas'
 import { useSessao } from '../state/Sessao'
 import { NOME_GRUPO } from '../../shared/calculos'
@@ -36,12 +36,12 @@ export function EntregasMes() {
   const exportar = () => {
     if (!dados) return
     const linhas: (string | number | null)[][] = [
-      ['Grupo', 'Aluna', 'Vigência', 'Entregável', 'Nº', 'Profissional', 'Prevista', 'Agendada', 'Realizada', 'Duração (min)', 'Situação', 'Atraso', 'Motivo do impedimento', 'Quem deve agir', 'Último contato', 'Próxima tentativa', 'Entregas restantes'],
+      ['Grupo', 'ID', 'Aluna', 'Vigência', 'Entregável', 'Nº', 'Profissional', 'Prevista', 'Agendada', 'Realizada', 'Duração (min)', 'Situação', 'Atraso', 'Motivo do impedimento', 'Quem deve agir', 'Último contato', 'Próxima tentativa', 'Entregas restantes'],
     ]
     for (const g of GRUPOS)
       for (const o of dados.grupos[g] as Reg[])
         linhas.push([
-          NOME_GRUPO[g], o.pessoa_nome, `${formatarData(o.data_inicio)} a ${formatarData(o.data_fim)}`, o.item_descricao, o.numero, o.profissional_nome ?? 'Sem profissional',
+          NOME_GRUPO[g], idAluna(o.pessoa_codigo), o.pessoa_nome, `${formatarData(o.data_inicio)} a ${formatarData(o.data_fim)}`, o.item_descricao, o.numero, o.profissional_nome ?? 'Sem profissional',
           formatarData(o.data_prevista), formatarData(o.data_agendada), formatarData(o.data_realizada), o.duracao_efetiva ?? 'sem duração', SITUACAO_OCORRENCIA[o.situacao],
           o.atraso?.tipo === 'vencida' ? `${o.atraso.dias} dias` : o.atraso?.tipo === 'sem_previsao' ? 'Sem previsão' : '', o.impedimento_motivo ?? '',
           o.impedimento_responsavel_nome ?? o.responsavel_resolucao_nome ?? '', formatarData(o.ultimo_contato), formatarData(o.proxima_tentativa), o.entregas_restantes,
@@ -215,6 +215,8 @@ export function TabelaEntregas({ linhas, onAcao, pode, ocultarAluna }: { linhas:
                 {!ocultarAluna && (
                   <td>
                     <a className="font-medium text-brand-700 hover:underline" href={href({ pagina: 'ficha', id: o.pessoa_id })}>
+                      <IdAluna codigo={o.pessoa_codigo} />
+
                       {o.pessoa_nome}
                     </a>
                     <span className="block text-xs text-ink-muted">
@@ -271,6 +273,8 @@ export function TabelaEntregas({ linhas, onAcao, pode, ocultarAluna }: { linhas:
               <div className="min-w-0">
                 {!ocultarAluna && (
                   <a className="font-medium text-brand-700" href={href({ pagina: 'ficha', id: o.pessoa_id })}>
+                    <IdAluna codigo={o.pessoa_codigo} />
+
                     {o.pessoa_nome}
                   </a>
                 )}
@@ -304,7 +308,7 @@ export function TabelaEntregas({ linhas, onAcao, pode, ocultarAluna }: { linhas:
   )
 }
 
-function MenuAcoes({ o, onAcao, pode }: { o: Reg; onAcao: (a: AcaoOcorrencia, o: Reg) => void; pode: (p: never) => boolean }) {
+export function MenuAcoes({ o, onAcao, pode }: { o: Reg; onAcao: (a: AcaoOcorrencia, o: Reg) => void; pode: (p: never) => boolean }) {
   const acoes = acoesDisponiveis(o, pode)
   if (acoes.length === 0) return null
   return (

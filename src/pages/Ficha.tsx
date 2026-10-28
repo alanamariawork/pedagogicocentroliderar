@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { ArrowLeft, Pencil, Plus } from 'lucide-react'
 import { Carregando, EstadoErro, Secao, Vazio } from '../components/Estados'
 import { Campo, FormDialog, Opcoes, useValores } from '../components/Form'
-import { Selo, TOM_MATRICULA } from '../components/Selos'
+import { IdAluna, Selo, TOM_MATRICULA } from '../components/Selos'
 import { useFeedback } from '../components/Feedback'
 import { DialogMatricula } from '../forms/FormMatricula'
 import { post, put, useDados, type Reg } from '../lib/api'
@@ -49,6 +49,7 @@ export function Ficha({ pessoaId, aba = 'resumo' }: { pessoaId: string; aba?: st
       <div className="card flex flex-wrap items-start justify-between gap-4 p-4">
         <div>
           <h2 className="font-display text-2xl font-semibold text-ink">
+            <IdAluna codigo={pessoa.codigo} className="align-middle text-sm" />
             {pessoa.nome} {pessoa.demonstracao ? <Selo tom="info">Demonstração</Selo> : null}
           </h2>
           <p className="text-sm text-ink-muted">{[pessoa.email, pessoa.telefone, pessoa.cidade].filter(Boolean).join(' · ') || 'Sem contato cadastrado'}</p>

@@ -46,7 +46,7 @@ function Resumo({ o }: { o: Reg }) {
   return (
     <div className="rounded-[var(--radius-control)] bg-surface-muted px-3 py-2 text-sm">
       <p className="font-medium text-ink">
-        {o.pessoa_nome} · {o.item_descricao} nº {o.numero}
+        {o.pessoa_codigo ? `#${String(o.pessoa_codigo).padStart(3, '0')} ` : ''}{o.pessoa_nome} · {o.item_descricao} nº {o.numero}
       </p>
       <p className="text-xs text-ink-muted">
         Previsão: {o.data_prevista ? formatarData(o.data_prevista) : 'sem previsão'} · {o.profissional_nome ?? 'Sem profissional'} · {o.duracao_efetiva ? formatarHoras(o.duracao_efetiva) : 'sem duração'}

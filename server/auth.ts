@@ -136,7 +136,7 @@ export function carregarUsuario(db: BD) {
 
 /** Proteção contra CSRF: toda alteração precisa do cabeçalho enviado pelo próprio app. */
 export function exigirCabecalhoApp(req: Request, _res: Response, next: NextFunction) {
-  if (req.method !== 'GET' && req.method !== 'HEAD' && req.get('X-Requested-With') !== 'efeito-diamante') {
+  if (req.method !== 'GET' && req.method !== 'HEAD' && req.get('X-Requested-With') !== 'diamante-business') {
     throw new ErroHttp(403, 'Requisição recusada: origem não reconhecida.')
   }
   next()

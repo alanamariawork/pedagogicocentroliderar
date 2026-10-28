@@ -20,14 +20,15 @@ tests/             testes de aceite e de cálculo (Vitest)
 
 - **Senhas:** guardadas com hash scrypt e sal, com no mínimo 10 caracteres, letras e números. O login tem limite de tentativas.
 - **Sessão:** usa um token aleatório num cookie `httpOnly` e `SameSite=Lax`, que dura 12 horas. O banco guarda só o hash do token. Trocar senha, perfil ou desativar o usuário encerra as sessões abertas.
-- **CSRF:** toda requisição que altera dados precisa do cabeçalho `X-Requested-With: efeito-diamante`.
+- **CSRF:** toda requisição que altera dados precisa do cabeçalho `X-Requested-With: diamante-business`.
 - **Permissões:** a matriz perfil × permissão fica no banco e a administração pode editá-la. Cada rota confere a permissão no servidor. Ver, editar, validar e administrar são permissões separadas.
 - **Mentora:** só vê matrículas em que atende. A restrição é feita no SQL (`escopoMatriculas`).
 - **Aluna:**
   - Só usa `/api/portal`, sempre filtrado pelo próprio `pessoa_id`.
   - Um registro de outra pessoa responde 404, para não revelar que ele existe.
   - O portal não devolve notas internas nem anotações.
-- **Comercial:** por padrão, não recebe notas internas nem anotações pedagógicas. O servidor remove esses campos da resposta.
+- **Perfis:** Administração, Coordenação pedagógica, Suporte/CS, Mentora e Aluna. O Suporte/CS não recebe anotações pedagógicas privadas; o servidor remove esses campos da resposta. Usuários antigos com o perfil Comercial são desativados na migração.
+- **ID da aluna:** `pessoas.codigo`, sequencial e único, atribuído na primeira matrícula (ordem em que a matrícula foi registrada). A renovação mantém o ID. As listas são ordenadas por ele.
 - **Cabeçalhos de segurança e auditoria:** a API envia cabeçalhos de segurança e `Cache-Control: no-store`. Cada alteração vai para a tabela `auditoria` com o autor e a data.
 
 ## Modelo de dados (principais)

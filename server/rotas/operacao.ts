@@ -374,7 +374,7 @@ export function rotasOperacao(db: BD) {
            AND (@pilar_id IS NULL OR jj.pilar_id = @pilar_id)
            AND (@situacao IS NULL OR m.situacao = @situacao)
            AND (@situacao IS NOT NULL OR m.situacao IN ('ativa','pausada'))
-         ORDER BY p.nome COLLATE NOCASE, i.criado_em, o.numero`,
+         ORDER BY p.codigo IS NULL, p.codigo, p.nome COLLATE NOCASE, i.criado_em, o.numero`,
       )
       .all({
         programa_id: f.programa_id ?? null,
@@ -493,7 +493,7 @@ export function rotasOperacao(db: BD) {
     const esc = escopoMatriculas(req)
     const reservas = db
       .prepare(
-        `SELECT r.*, pr.nome AS profissional_nome, o.situacao AS ocorrencia_situacao, o.matricula_id, i.descricao AS item_descricao, pe.nome AS pessoa_nome, pe.id AS pessoa_id,
+        `SELECT r.*, pr.nome AS profissional_nome, o.situacao AS ocorrencia_situacao, o.matricula_id, i.descricao AS item_descricao, pe.nome AS pessoa_nome, pe.codigo AS pessoa_codigo, pe.id AS pessoa_id,
            CASE WHEN ${esc.sql} THEN 1 ELSE 0 END AS visivel
          FROM reservas r JOIN profissionais pr ON pr.id = r.profissional_id JOIN ocorrencias o ON o.id = r.ocorrencia_id
          JOIN itens_contratados i ON i.id = o.item_id JOIN matriculas m ON m.id = o.matricula_id JOIN pessoas pe ON pe.id = m.pessoa_id
@@ -503,7 +503,7 @@ export function rotasOperacao(db: BD) {
     res.json({
       disponibilidades,
       // Horários de outras alunas aparecem só como "Reservado", sem nome, para quem não tem acesso à matrícula.
-      reservas: reservas.map((r) => (r.visivel ? r : { ...r, pessoa_nome: 'Reservado', pessoa_id: null, item_descricao: null, matricula_id: null })),
+      reservas: reservas.map((r) => (r.visivel ? r : { ...r, pessoa_nome: 'Reservado', pessoa_codigo: null, pessoa_id: null, item_descricao: null, matricula_id: null })),
     })
   })
 
@@ -543,6 +543,55 @@ export function rotasOperacao(db: BD) {
     res.json({ ok: true })
   })
 
+  /* ---------------- Alunas da agenda de uma profissional (perfil Mentora) ---------------- */
+
+  r.get('/mentora/alunas', (req, res) => {
+    exigir(req, 'entregas:ver')
+    const q = validar(z.object({ profissional_id: z.string().uuid().optional() }), req.query)
+    const prof = req.usuario!.perfil === 'mentora' ? req.usuario!.profissional_id : (q.profissional_id ?? null)
+    if (!prof) return res.json({ profissional: null, alunas: [] })
+    const profissional = db.prepare('SELECT id, nome, especialidade FROM profissionais WHERE id = ?').get(prof) ?? null
+    const h = hoje()
+    const esc = escopoMatriculas(req)
+    const ocorrencias = (db
+      .prepare(
+        `${SQL_OCORRENCIAS} WHERE ${esc.sql} AND COALESCE(o.profissional_id, i.profissional_id) = @prof AND m.situacao IN ('ativa','pausada') AND o.situacao <> 'cancelada'
+         ORDER BY p.codigo IS NULL, p.codigo, COALESCE(o.data_realizada, substr(o.data_agendada,1,10), o.data_prevista, '9999'), o.numero`,
+      )
+      .all({ prof, ...esc.params }) as Linha[]).map((o): Linha => ({ ...filtrarNotas(req, o), atraso: indicadorAtraso(o as never, h), entregas_restantes: Math.max((o.item_contratada as number) - (o.item_realizadas as number), 0) }))
+    const jornada = db.prepare(
+      `SELECT t.nome AS trilha_nome, pl.nome AS pilar_nome,
+         (SELECT COUNT(*) FROM atividades a WHERE a.matricula_id = j.matricula_id) AS total,
+         (SELECT COUNT(*) FROM atividades a WHERE a.matricula_id = j.matricula_id AND a.situacao = 'validada') AS validadas,
+         (SELECT COUNT(*) FROM atividades a WHERE a.matricula_id = j.matricula_id AND a.situacao = 'enviada') AS aguardando
+       FROM jornadas j LEFT JOIN trilhas t ON t.id = j.trilha_id LEFT JOIN pilares pl ON pl.id = j.pilar_id WHERE j.matricula_id = ?`,
+    )
+    const ultimaNota = db.prepare("SELECT texto, criado_em FROM anotacoes WHERE matricula_id = ? AND tipo IN (" + [tem(req, 'notas:internas') && "'operacional'", tem(req, 'notas:pedagogicas') && "'pedagogica'"].filter(Boolean).concat("''").join(',') + ") ORDER BY criado_em DESC LIMIT 1")
+    const porMatricula = new Map<string, Linha[]>()
+    for (const o of ocorrencias) porMatricula.set(o.matricula_id as string, [...(porMatricula.get(o.matricula_id as string) ?? []), o])
+    const alunas = [...porMatricula.entries()].map(([mid, ocs]) => {
+      const o0 = ocs[0]
+      const abertas = ocs.filter((o) => o.situacao !== 'realizada')
+      const realizadas = ocs.filter((o) => o.situacao === 'realizada').sort((a, b) => String(b.data_realizada).localeCompare(String(a.data_realizada)))
+      const proximo = abertas.filter((o) => o.situacao === 'agendada').sort((a, b) => String(a.data_agendada).localeCompare(String(b.data_agendada)))[0] ?? null
+      return {
+        pessoa_id: o0.pessoa_id,
+        pessoa_codigo: o0.pessoa_codigo,
+        pessoa_nome: o0.pessoa_nome,
+        matricula: { id: mid, situacao: o0.matricula_situacao, data_inicio: o0.data_inicio, data_fim: o0.data_fim },
+        jornada: jornada.get(mid) ?? null,
+        proximo,
+        ultimo_realizado: realizadas[0] ?? null,
+        abertas,
+        realizadas_qtd: realizadas.length,
+        vencidas: abertas.filter((o) => (o.atraso as { tipo: string }).tipo === 'vencida').length,
+        sem_registro: abertas.filter((o) => o.situacao === 'agendada' && String(o.data_agendada).slice(0, 10) < h).length,
+        ultima_anotacao: ultimaNota.get(mid) ?? null,
+      }
+    })
+    res.json({ profissional, alunas })
+  })
+
   /* ---------------- Visão geral (RF01) ---------------- */
 
   r.get('/visao-geral', (req, res) => {
@@ -554,7 +603,7 @@ export function rotasOperacao(db: BD) {
     const esc = escopoMatriculas(req)
     const matriculas = db
       .prepare(
-        `SELECT m.*, p.nome AS pessoa_nome, pg.nome AS programa_nome, j.trilha_id, j.pilar_id, t.nome AS trilha_nome, pl.nome AS pilar_nome,
+        `SELECT m.*, p.nome AS pessoa_nome, p.codigo AS pessoa_codigo, pg.nome AS programa_nome, j.trilha_id, j.pilar_id, t.nome AS trilha_nome, pl.nome AS pilar_nome,
            (SELECT COUNT(*) FROM ocorrencias o WHERE o.matricula_id = m.id AND o.situacao NOT IN ('realizada','cancelada')) AS restantes
          FROM matriculas m JOIN pessoas p ON p.id = m.pessoa_id LEFT JOIN programas pg ON pg.id = m.programa_id
          LEFT JOIN jornadas j ON j.matricula_id = m.id LEFT JOIN trilhas t ON t.id = j.trilha_id LEFT JOIN pilares pl ON pl.id = j.pilar_id
@@ -573,7 +622,7 @@ export function rotasOperacao(db: BD) {
 
     const contatosPend = db
       .prepare(
-        `SELECT c.*, p.nome AS pessoa_nome, p.id AS pessoa_id, u.nome AS responsavel_nome FROM contatos c
+        `SELECT c.*, p.nome AS pessoa_nome, p.codigo AS pessoa_codigo, p.id AS pessoa_id, u.nome AS responsavel_nome FROM contatos c
          JOIN matriculas m ON m.id = c.matricula_id JOIN pessoas p ON p.id = m.pessoa_id LEFT JOIN usuarios u ON u.id = c.responsavel_id
          WHERE ${esc.sql} AND m.situacao IN ('ativa','pausada') AND c.proxima_tentativa IS NOT NULL AND c.proxima_tentativa <= @hoje
            AND NOT EXISTS (SELECT 1 FROM contatos c2 WHERE c2.matricula_id = c.matricula_id AND COALESCE(c2.ocorrencia_id,'') = COALESCE(c.ocorrencia_id,'')
@@ -589,9 +638,9 @@ export function rotasOperacao(db: BD) {
       dist[chave].quantidade++
     }
 
-    const pendCadastro: { tipo: string; descricao: string; pessoa_id: string; pessoa_nome: string }[] = []
+    const pendCadastro: { tipo: string; descricao: string; pessoa_id: string; pessoa_nome: string; pessoa_codigo: number | null }[] = []
     for (const m of matriculas.filter((x) => x.situacao === 'ativa' || x.situacao === 'pausada')) {
-      const base = { pessoa_id: m.pessoa_id as string, pessoa_nome: m.pessoa_nome as string }
+      const base = { pessoa_id: m.pessoa_id as string, pessoa_nome: m.pessoa_nome as string, pessoa_codigo: m.pessoa_codigo as number | null }
       if (!m.data_fim) pendCadastro.push({ ...base, tipo: 'vigencia', descricao: 'Matrícula sem data de término da vigência' })
       if (m.contrato_situacao !== 'assinado') pendCadastro.push({ ...base, tipo: 'contrato', descricao: `Contrato ${m.contrato_situacao === 'enviado' ? 'enviado, aguardando assinatura' : 'pendente'}` })
       if (m.conferencia_comercial !== 'conferida') pendCadastro.push({ ...base, tipo: 'conferencia', descricao: 'Pacote e bônus ainda não conferidos com a fonte comercial' })
@@ -600,7 +649,7 @@ export function rotasOperacao(db: BD) {
     for (const o of ocorrencias) if (emAberto(o as never)) porItem.set(o.item_id as string, [...(porItem.get(o.item_id as string) ?? []), o])
     for (const lista of porItem.values()) {
       const o = lista[0]
-      const base = { pessoa_id: o.pessoa_id as string, pessoa_nome: o.pessoa_nome as string }
+      const base = { pessoa_id: o.pessoa_id as string, pessoa_nome: o.pessoa_nome as string, pessoa_codigo: o.pessoa_codigo as number | null }
       if (!o.duracao_efetiva) pendCadastro.push({ ...base, tipo: 'duracao', descricao: `"${o.item_descricao}" sem duração definida (horas não entram no cálculo)` })
       if (!o.profissional_efetivo_id) pendCadastro.push({ ...base, tipo: 'profissional', descricao: `"${o.item_descricao}" sem profissional definida` })
       const semPrev = lista.filter((x) => !x.data_prevista).length
@@ -622,8 +671,8 @@ export function rotasOperacao(db: BD) {
         contatos_pendentes: contatosPend.length,
         pendencias_cadastro: pendCadastro.length,
       },
-      proximas_termino: proximas.map((m) => ({ id: m.id, pessoa_id: m.pessoa_id, pessoa_nome: m.pessoa_nome, data_fim: m.data_fim, restantes: m.restantes, programa_nome: m.programa_nome })),
-      vencidas: vencidas.slice(0, 50).map((o) => ({ id: o.id, pessoa_id: o.pessoa_id, pessoa_nome: o.pessoa_nome, item_descricao: o.item_descricao, numero: o.numero, data_prevista: o.data_prevista, profissional_nome: o.profissional_nome, impedimento_motivo: o.impedimento_motivo, atraso: indicadorAtraso(o as never, h) })),
+      proximas_termino: proximas.map((m) => ({ id: m.id, pessoa_id: m.pessoa_id, pessoa_nome: m.pessoa_nome, pessoa_codigo: m.pessoa_codigo, data_fim: m.data_fim, restantes: m.restantes, programa_nome: m.programa_nome })),
+      vencidas: vencidas.slice(0, 50).map((o) => ({ id: o.id, pessoa_id: o.pessoa_id, pessoa_nome: o.pessoa_nome, pessoa_codigo: o.pessoa_codigo, item_descricao: o.item_descricao, numero: o.numero, data_prevista: o.data_prevista, profissional_nome: o.profissional_nome, impedimento_motivo: o.impedimento_motivo, atraso: indicadorAtraso(o as never, h) })),
       contatos_pendentes: contatosPend,
       distribuicao: Object.values(dist).sort((a, b) => b.quantidade - a.quantidade),
       pendencias_cadastro: pendCadastro,
@@ -663,7 +712,7 @@ export function rotasOperacao(db: BD) {
       }
       const tentativas = db
         .prepare(
-          `SELECT c.*, p.nome AS pessoa_nome, p.id AS pessoa_id, u.nome AS responsavel_nome FROM contatos c JOIN matriculas m ON m.id = c.matricula_id JOIN pessoas p ON p.id = m.pessoa_id LEFT JOIN usuarios u ON u.id = c.responsavel_id
+          `SELECT c.*, p.nome AS pessoa_nome, p.codigo AS pessoa_codigo, p.id AS pessoa_id, u.nome AS responsavel_nome FROM contatos c JOIN matriculas m ON m.id = c.matricula_id JOIN pessoas p ON p.id = m.pessoa_id LEFT JOIN usuarios u ON u.id = c.responsavel_id
            WHERE ${esc.sql} AND m.situacao IN ('ativa','pausada') AND c.proxima_tentativa IS NOT NULL AND c.proxima_tentativa <= @hoje
              AND NOT EXISTS (SELECT 1 FROM contatos c2 WHERE c2.matricula_id = c.matricula_id AND COALESCE(c2.ocorrencia_id,'') = COALESCE(c.ocorrencia_id,'') AND (c2.data > c.data OR (c2.data = c.data AND c2.criado_em > c.criado_em)))`,
         )
@@ -675,7 +724,7 @@ export function rotasOperacao(db: BD) {
       const janela = Number((db.prepare("SELECT valor FROM configuracoes WHERE chave = 'janela_termino_dias'").get() as { valor: string } | undefined)?.valor ?? 45)
       const ms = db
         .prepare(
-          `SELECT m.*, p.nome AS pessoa_nome, u.nome AS responsavel_nome, (SELECT COUNT(*) FROM ocorrencias o WHERE o.matricula_id = m.id AND o.situacao NOT IN ('realizada','cancelada')) AS restantes
+          `SELECT m.*, p.nome AS pessoa_nome, p.codigo AS pessoa_codigo, u.nome AS responsavel_nome, (SELECT COUNT(*) FROM ocorrencias o WHERE o.matricula_id = m.id AND o.situacao NOT IN ('realizada','cancelada')) AS restantes
            FROM matriculas m JOIN pessoas p ON p.id = m.pessoa_id LEFT JOIN usuarios u ON u.id = m.responsavel_id WHERE ${esc.sql}`,
         )
         .all(esc.params) as Linha[]
@@ -695,12 +744,12 @@ export function rotasOperacao(db: BD) {
         if (m.situacao === 'cancelada' && (m.restantes as number) > 0)
           alertas.push({ chave: `cancelada_obrigacoes:${m.id}`, tipo: 'decisao_obrigacoes', titulo: `${m.pessoa_nome}: matrícula cancelada com ${m.restantes} obrigação(ões) em aberto`, detalhe: 'Decida explicitamente o destino de cada obrigação remanescente', responsavel: 'Coordenação' , pessoa_id: m.pessoa_id as string })
       }
-      const pausas = db.prepare(`SELECT pa.*, p.nome AS pessoa_nome, p.id AS pessoa_id FROM pausas pa JOIN matriculas m ON m.id = pa.matricula_id JOIN pessoas p ON p.id = m.pessoa_id WHERE ${esc.sql} AND pa.decisao_prazos = 'pendente'`).all(esc.params) as Linha[]
+      const pausas = db.prepare(`SELECT pa.*, p.nome AS pessoa_nome, p.codigo AS pessoa_codigo, p.id AS pessoa_id FROM pausas pa JOIN matriculas m ON m.id = pa.matricula_id JOIN pessoas p ON p.id = m.pessoa_id WHERE ${esc.sql} AND pa.decisao_prazos = 'pendente'`).all(esc.params) as Linha[]
       for (const p of pausas) alertas.push({ chave: `pausa:${p.id}`, tipo: 'pausa_decisao', titulo: `${p.pessoa_nome}: decisão de prazos da pausa pendente`, detalhe: `Pausa desde ${(p.inicio as string).split('-').reverse().join('/')}: ${p.motivo}`, responsavel: 'Coordenação pedagógica', pessoa_id: p.pessoa_id as string, data: p.inicio as string })
     }
     if (tem(req, 'jornada:validar')) {
       const enviadas = db
-        .prepare(`SELECT a.*, p.nome AS pessoa_nome, p.id AS pessoa_id, uv.nome AS validador_nome FROM atividades a JOIN jornada_etapas je ON je.id = a.jornada_etapa_id JOIN matriculas m ON m.id = a.matricula_id JOIN pessoas p ON p.id = m.pessoa_id LEFT JOIN usuarios uv ON uv.id = je.validador_id WHERE ${esc.sql} AND a.situacao = 'enviada'`)
+        .prepare(`SELECT a.*, p.nome AS pessoa_nome, p.codigo AS pessoa_codigo, p.id AS pessoa_id, uv.nome AS validador_nome FROM atividades a JOIN jornada_etapas je ON je.id = a.jornada_etapa_id JOIN matriculas m ON m.id = a.matricula_id JOIN pessoas p ON p.id = m.pessoa_id LEFT JOIN usuarios uv ON uv.id = je.validador_id WHERE ${esc.sql} AND a.situacao = 'enviada'`)
         .all(esc.params) as Linha[]
       for (const a of enviadas) alertas.push({ chave: `validacao:${a.id}`, tipo: 'aguardando_validacao', titulo: `${a.pessoa_nome}: "${a.titulo}" aguardando validação`, detalhe: 'Atividade enviada', responsavel: (a.validador_nome as string) ?? 'Coordenação pedagógica', pessoa_id: a.pessoa_id as string, data: (a.atualizado_em as string)?.slice(0, 10) })
     }

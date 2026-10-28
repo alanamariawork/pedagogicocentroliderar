@@ -292,7 +292,7 @@ export function Encontros({ m, pessoa, recarregar }: { m: Reg; pessoa: Reg; reca
   const { pode } = useSessao()
   const [acao, setAcao] = useState<{ acao: AcaoOcorrencia; o: Reg } | null>(null)
   const hoje = hojeSP()
-  const linhas = (m.ocorrencias as Reg[]).map((o): Reg => ({ ...o, pessoa_nome: pessoa.nome, atraso: indicadorAtraso(o as never, hoje), entregas_restantes: Math.max(o.item_contratada - o.item_realizadas, 0) }))
+  const linhas = (m.ocorrencias as Reg[]).map((o): Reg => ({ ...o, pessoa_nome: pessoa.nome, pessoa_codigo: pessoa.codigo, atraso: indicadorAtraso(o as never, hoje), entregas_restantes: Math.max(o.item_contratada - o.item_realizadas, 0) }))
   const abertas = linhas.filter((o) => o.situacao !== 'realizada' && o.situacao !== 'cancelada')
   const outras = linhas.filter((o) => o.situacao === 'realizada' || o.situacao === 'cancelada')
   const comHistorico = linhas.filter((o) => (o.historico as Reg[]).length > 0)

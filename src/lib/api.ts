@@ -24,7 +24,7 @@ export async function api<T = Reg>(metodo: string, caminho: string, corpo?: unkn
     r = await fetch(`/api${caminho}`, {
       method: metodo,
       credentials: 'same-origin',
-      headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'efeito-diamante' },
+      headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'diamante-business' },
       body: corpo === undefined ? undefined : JSON.stringify(corpo),
     })
   } catch {

@@ -3,7 +3,7 @@ import { abrirBanco } from './db'
 import { popularDemonstracao, SENHA_DEMO, USUARIOS_DEMO } from './demo'
 
 /** Cria um banco de DEMONSTRAÇÃO. Uso: npm run seed  (use --recriar para apagar o banco de demonstração atual). */
-const caminho = process.env.DB_PATH ?? 'data/efeito-diamante.db'
+const caminho = process.env.DB_PATH ?? 'data/diamante-business.db'
 if (process.argv.includes('--recriar') && existsSync(caminho)) {
   for (const sufixo of ['', '-wal', '-shm']) rmSync(caminho + sufixo, { force: true })
 }

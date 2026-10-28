@@ -71,14 +71,14 @@ export function rotasAlunas(db: BD) {
     const esc = escopoMatriculas(req)
     const pessoas = db
       .prepare(
-        `SELECT p.id, p.nome, p.email, p.telefone, p.demonstracao,
+        `SELECT p.id, p.codigo, p.nome, p.email, p.telefone, p.demonstracao,
            (SELECT COUNT(*) FROM matriculas m WHERE m.pessoa_id = p.id AND ${esc.sql}) AS matriculas
          FROM pessoas p
-         WHERE (@busca IS NULL OR p.nome LIKE @busca OR p.email LIKE @busca OR p.telefone LIKE @busca)
+         WHERE (@busca IS NULL OR p.nome LIKE @busca OR p.email LIKE @busca OR p.telefone LIKE @busca OR p.codigo = @codigo)
            AND EXISTS (SELECT 1 FROM matriculas m WHERE m.pessoa_id = p.id AND ${esc.sql}) OR (@ver_sem_matricula = 1 AND NOT EXISTS (SELECT 1 FROM matriculas m WHERE m.pessoa_id = p.id) AND (@busca IS NULL OR p.nome LIKE @busca))
-         ORDER BY p.nome COLLATE NOCASE`,
+         ORDER BY p.codigo IS NULL, p.codigo, p.nome COLLATE NOCASE`,
       )
-      .all({ busca: q.busca ? `%${q.busca}%` : null, ver_sem_matricula: req.usuario!.perfil === 'mentora' ? 0 : 1, ...esc.params }) as Record<string, unknown>[]
+      .all({ busca: q.busca ? `%${q.busca}%` : null, codigo: q.busca && /^#?\d+$/.test(q.busca.trim()) ? Number(q.busca.trim().replace('#', '')) : null, ver_sem_matricula: req.usuario!.perfil === 'mentora' ? 0 : 1, ...esc.params }) as Record<string, unknown>[]
 
     const atuais = db
       .prepare(
@@ -113,6 +113,8 @@ export function rotasAlunas(db: BD) {
     if (d.pacote_id && !pacote) throw new ErroHttp(400, 'Pacote não encontrado.')
     const mid = novoId()
     const agora = agoraIso()
+    // ID da aluna: número sequencial dado na primeira matrícula (ordem de matrícula). Renovações mantêm o mesmo ID.
+    db.prepare('UPDATE pessoas SET codigo = (SELECT COALESCE(MAX(codigo), 0) + 1 FROM pessoas) WHERE id = ? AND codigo IS NULL').run(pessoaId)
     db.prepare(
       `INSERT INTO matriculas (id, pessoa_id, programa_id, matricula_anterior_id, turma, data_inicio, data_fim, situacao, contrato_situacao, contrato_link,
          fonte_comercial, condicoes_comerciais, responsavel_id, mentora_id, pacote_origem_id, pacote_origem_nome, criado_em, atualizado_em, autor_id)

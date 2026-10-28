@@ -16,7 +16,6 @@ export const USUARIOS_DEMO = [
   { email: 'admin@demo.local', nome: 'Admin (demo)', perfil: 'admin' },
   { email: 'coordenacao@demo.local', nome: 'Coordenação (demo)', perfil: 'coordenacao' },
   { email: 'suporte@demo.local', nome: 'Suporte CS (demo)', perfil: 'suporte' },
-  { email: 'comercial@demo.local', nome: 'Comercial (demo)', perfil: 'comercial' },
   { email: 'mentora@demo.local', nome: 'Mentora Tutoria (demo)', perfil: 'mentora', profissional: 'Mentora de Tutoria (demo)' },
 ] as const
 
@@ -26,7 +25,7 @@ class Cliente {
   async req<T = Record<string, unknown>>(metodo: string, caminho: string, corpo?: unknown): Promise<T> {
     const r = await fetch(this.base + caminho, {
       method: metodo,
-      headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'efeito-diamante', Cookie: this.cookie },
+      headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'diamante-business', Cookie: this.cookie },
       body: corpo === undefined ? undefined : JSON.stringify(corpo),
     })
     const set = r.headers.get('set-cookie')
@@ -63,7 +62,7 @@ export async function popularDemonstracao(db: BD) {
       janela_termino_dias: 45,
       texto_ajuda_aluna: 'Precisa de ajuda? Fale com o time de Sucesso do Cliente pelo seu grupo individual de acompanhamento no WhatsApp, de segunda a sexta, das 9h às 18h. (Texto de demonstração: ajuste em Configurações.)',
     })
-    const programa = (await api.post<{ id: string }>('/catalogos/programas', { nome: 'Efeito Diamante', descricao: 'Programa de mentoria do Centro Liderar — Grupo Mendes' })).id
+    const programa = (await api.post<{ id: string }>('/catalogos/programas', { nome: 'Diamante Business', descricao: 'Programa de mentoria do Centro Liderar — Grupo Mendes' })).id
 
     // Profissionais citadas no material de onboarding. Especialidades conforme o material; ajuste em Configurações.
     const prof: Record<string, string> = {}
