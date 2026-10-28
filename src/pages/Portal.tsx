@@ -87,6 +87,13 @@ function Conteudo({ dados, recarregar }: { dados: Reg; recarregar: () => void })
   const proximos = encontros.filter((o) => o.situacao !== 'realizada')
   const realizados = encontros.filter((o) => o.situacao === 'realizada').reverse()
 
+  // No celular, a trilha abre já mostrando a etapa em andamento
+  const atual = (el: HTMLLIElement | null) => {
+    const c = el?.closest('.overflow-x-auto')
+    if (!el || !c || c.scrollLeft !== 0) return
+    c.scrollLeft = el.getBoundingClientRect().left - c.getBoundingClientRect().left - 16
+  }
+
   async function iniciar(a: Reg) {
     try {
       await post(`/portal/atividades/${a.id}/iniciar`)
@@ -218,19 +225,12 @@ function Conteudo({ dados, recarregar }: { dados: Reg; recarregar: () => void })
           <p className="mt-2 text-sm text-ink-muted">Nenhuma etapa definida ainda.</p>
         ) : (
           <>
-            {/* Celular: etapas empilhadas */}
-            <ol className="mt-3 space-y-3 lg:hidden">
-              {etapas.map((e) => (
-                <li key={e.id} className={cx('rounded-[var(--radius-control)] border p-3', e.situacao === 'liberada' ? 'border-brand-500/40 bg-brand-50/40' : 'border-line')}>
-                  {etapa(e)}
-                </li>
-              ))}
-            </ol>
-            {/* Computador: a trilha na horizontal, da primeira à última etapa */}
-            <div className="mt-4 hidden overflow-x-auto pb-2 lg:block">
-              <ol className="flex min-w-max gap-4" aria-label="Etapas da trilha, da primeira à última">
+            {/* A trilha na horizontal, da primeira à última etapa; no celular, desliza para o lado */}
+            {etapas.length > 1 && <p className="mt-1 text-xs text-ink-muted lg:hidden">Deslize para o lado para ver as outras etapas.</p>}
+            <div className="-mx-4 mt-3 snap-x snap-mandatory overflow-x-auto scroll-px-4 px-4 pb-2 lg:mx-0 lg:mt-4 lg:px-0">
+              <ol className="flex min-w-max gap-3 lg:gap-4" aria-label="Etapas da trilha, da primeira à última">
                 {etapas.map((e, n) => (
-                  <li key={e.id} className="flex w-72 shrink-0 flex-col">
+                  <li key={e.id} ref={e.situacao === 'liberada' ? atual : undefined} className="flex w-[78vw] max-w-72 shrink-0 snap-start flex-col lg:w-72">
                     <div className="mb-3 flex items-center gap-2" aria-hidden>
                       <span
                         className={cx(
@@ -394,7 +394,7 @@ function Progresso({ etapas }: { etapas: Reg[] }) {
               <div className="h-3 overflow-hidden rounded-[4px] bg-surface-muted">
                 <div className={cx('h-full', e.situacao === 'concluida' ? 'bg-success' : 'bg-brand-500')} style={{ width: `${parte}%` }} />
               </div>
-              <p className={cx('mt-1 hidden truncate text-xs lg:block', e.situacao === 'bloqueada' ? 'text-ink-muted' : 'text-ink-soft')} title={e.titulo}>
+              <p className={cx('mt-1 truncate text-xs', e.situacao === 'bloqueada' ? 'text-ink-muted' : 'text-ink-soft')} title={e.titulo}>
                 {e.titulo}
               </p>
             </div>

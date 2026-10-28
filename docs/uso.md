@@ -50,7 +50,7 @@ Cada aluna tem um **ID** (#001, #002…) que segue a ordem de matrícula. As lis
 O portal mostra:
 - O próximo passo, a trilha, o pilar e a vigência.
 - **Quanto já concluí:** o percentual da trilha (cada etapa vale o mesmo; a etapa em andamento conta pelas atividades validadas).
-- **Minha trilha:** no computador, as etapas lado a lado na horizontal; no celular, uma embaixo da outra.
+- **Minha trilha:** as etapas lado a lado na horizontal. No celular, a aluna desliza para o lado, e a trilha já abre na etapa em andamento.
 - As etapas. As liberadas mostram atividades e materiais. As bloqueadas mostram um cadeado e dizem o que falta para liberar.
 - O botão "Enviar o que fiz", para mandar um texto ou link para validação. Quando a equipe pede revisão, o comentário aparece aqui.
 - Os encontros. O resumo compartilhável só aparece depois que o encontro foi realizado.
