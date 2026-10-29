@@ -1,0 +1,29 @@
+{
+  "empresa": "Centro Liderar",
+  "contas": [
+    {
+      "conta": "Centro Liderar",
+      "usuario_instagram": "",
+      "instagram_id": "",
+      "regra": "liderar"
+    },
+    {
+      "conta": "MQA",
+      "usuario_instagram": "",
+      "instagram_id": "",
+      "regra": "mqa"
+    },
+    {
+      "conta": "Diamante Business",
+      "usuario_instagram": "",
+      "instagram_id": "",
+      "regra": ""
+    },
+    {
+      "conta": "Jaciara Mendes — Instagram",
+      "usuario_instagram": "",
+      "instagram_id": "",
+      "regra": "liderar"
+    }
+  ]
+}

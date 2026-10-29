@@ -4,3 +4,4 @@ data/*.db
 data/*.db-*
 *.tsbuildinfo
 .env
+__pycache__
