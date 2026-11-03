@@ -11,6 +11,7 @@
 - **Banco:** SQLite em um único servidor serve bem um piloto com uma equipe pequena. Para muitos acessos simultâneos ou mais de um servidor, o próximo passo seria migrar para PostgreSQL.
 - **Publicação:** nada foi publicado. Veja o README.
 - **Portal da Aluna em fases:** o menu novo já mostra todas as seções. As que ainda não foram construídas (Trilhas, Biblioteca, Plano de Ação, Tarefas, Rotina, Meu Nível, Plano 90 dias, Balanço, Mural, Ranking, Casos e Agenda) abrem uma tela explicando o que virá, com um botão para uma tela que já funciona. Pontos e níveis entram na fase 3; até lá, o card "Meu nível" do Início é só um aviso.
+- **Administrativo, fase 1:** saúde, engajamento e "em risco" são marcados pela equipe, sem cálculo automático. Presença e frequência no grupo aparecem como "sem registro" até a fase de agenda e encontros. O RLS do PostgreSQL não existe no SQLite: o bloqueio por perfil e carteira é feito em cada rota do servidor e coberto por testes. Todos os entregáveis são tratados como mentorias.
 - **Avisos (sino):** ficam só dentro do sistema. Não há e-mail, push nem WhatsApp.
 
 ## Premissas adotadas (revisáveis)

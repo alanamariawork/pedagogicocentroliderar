@@ -171,7 +171,7 @@ describe('Critérios de aceite', () => {
   it('CA07 — duas tentativas simultâneas não reservam o mesmo horário', async () => {
     const r = await c.admin.ok('POST', '/pessoas', {
       nome: 'Teste Concorrência',
-      matricula: { data_inicio: hoje, itens_extras: [{ descricao: 'Encontro teste', quantidade: 2, duracao_min: 60, origem: 'pacote', profissional_id: (await c.admin.ok('GET', '/catalogos')).profissionais[0].id }] },
+      matricula: { data_inicio: hoje, responsavel_id: (await c.suporte.ok('GET', '/auth/eu')).id, itens_extras: [{ descricao: 'Encontro teste', quantidade: 2, duracao_min: 60, origem: 'pacote', profissional_id: (await c.admin.ok('GET', '/catalogos')).profissionais[0].id }] },
     })
     const ficha = await c.admin.ok('GET', `/pessoas/${r.id}`)
     const [o1, o2] = ficha.matriculas[0].ocorrencias
@@ -427,7 +427,7 @@ describe('Permissões e segurança', () => {
   describe('Portal da aluna, fase 1', () => {
     it('as migrações numeradas ficam registradas e a turma vira cadastro', () => {
       const versoes = (db.prepare('SELECT versao FROM versao_esquema ORDER BY versao').all() as J[]).map((v) => v.versao)
-      expect(versoes).toEqual([1, 2])
+      expect(versoes).toEqual([1, 2, 3])
       // As matrículas da demonstração receberam uma das duas turmas cadastradas
       const turmas = db.prepare('SELECT COUNT(DISTINCT turma_id) AS n FROM matriculas WHERE turma_id IS NOT NULL').get() as J
       expect(turmas.n).toBe(2)
@@ -506,6 +506,92 @@ describe('Permissões e segurança', () => {
       const l = await c.beatriz.ok('GET', '/portal/links')
       expect(l.links.map((x: J) => x.titulo)).toContain('[Demo] Área de membros')
       expect(l.ajuda).toBeTruthy()
+    })
+  })
+
+  describe('Administrativo, fase 1', () => {
+    const opcao = (lista: string, codigo: string) => (db.prepare('SELECT id FROM opcoes_lista WHERE lista = ? AND codigo = ?').get(lista, codigo) as J).id as string
+
+    it('a migração 3 cria as listas e o estado inicial de cada aluna', () => {
+      const listas = (db.prepare('SELECT lista, COUNT(*) AS n FROM opcoes_lista WHERE codigo IS NOT NULL GROUP BY lista').all() as J[]).map((l) => `${l.lista}:${l.n}`)
+      expect(listas).toEqual(expect.arrayContaining(['status_aluna:5', 'saude:3', 'engajamento:3']))
+      const semEstado = db.prepare('SELECT COUNT(*) AS n FROM pessoas p WHERE EXISTS (SELECT 1 FROM matriculas m WHERE m.pessoa_id = p.id) AND (status_id IS NULL OR data_entrada IS NULL)').get() as J
+      expect(semEstado.n).toBe(0)
+      const fernanda = db.prepare("SELECT status_id FROM pessoas WHERE nome LIKE 'Fernanda%'").get() as J
+      expect(fernanda.status_id).toBe(opcao('status_aluna', 'pausada')) // a matrícula está pausada
+    })
+
+    it('Suporte/CS vê todas as alunas; sem "ver todas", o perfil fica só com a carteira (regra na API)', async () => {
+      const todas = (await c.admin.ok('GET', '/pessoas')) as unknown as J[]
+      expect(((await c.suporte.ok('GET', '/pessoas')) as unknown as J[]).length).toBe(todas.length)
+      // Se a Administração tirar "ver todas" do Suporte/CS, ele passa a ver só a carteira.
+      db.prepare("DELETE FROM perfil_permissoes WHERE perfil = 'suporte' AND permissao = 'alunas:todas'").run()
+      const carteira = (await c.suporte.ok('GET', '/pessoas')) as unknown as J[]
+      const eu = await c.suporte.ok('GET', '/auth/eu')
+      expect(carteira.length).toBeGreaterThan(0)
+      expect(carteira.length).toBeLessThan(todas.length)
+      expect(carteira.every((p) => p.responsavel_id === eu.id)).toBe(true)
+      const fora = todas.find((p) => p.responsavel_id !== eu.id && p.matricula_atual)!
+      expect((await c.suporte.req('GET', `/pessoas/${fora.id}`)).status).toBe(404)
+      expect((await c.suporte.req('PUT', `/pessoas/${fora.id}/estado`, { em_risco: true })).status).toBe(404)
+      const ficha = await c.admin.ok('GET', `/pessoas/${fora.id}`)
+      expect((await c.suporte.req('GET', `/matriculas/${ficha.matriculas[0].id}/jornada`)).status).toBe(404)
+      const painel = await c.suporte.ok('GET', '/painel/alunas')
+      expect(painel.cards.total).toBe(carteira.filter((p) => p.matricula_atual).length)
+      // Cadastrada pelo Suporte/CS, a aluna entra na carteira dele.
+      const nova = await c.suporte.ok('POST', '/pessoas', { nome: 'Teste Carteira', empresa: 'Empresa Teste' })
+      expect((await c.suporte.ok('GET', `/pessoas/${nova.id}`)).pessoa.responsavel_id).toBe(eu.id)
+      db.prepare("INSERT INTO perfil_permissoes (perfil, permissao) VALUES ('suporte', 'alunas:todas')").run()
+    })
+
+    it('estado da aluna só aceita opções da lista certa e fica no histórico', async () => {
+      const carla = await pessoaPorNome('Carla')
+      expect((await c.admin.req('PUT', `/pessoas/${carla.id}/estado`, { saude_id: opcao('engajamento', 'alto') })).status).toBe(400)
+      expect((await c.mentora.req('PUT', `/pessoas/${carla.id}/estado`, { em_risco: true })).status).toBe(403)
+      await c.admin.ok('PUT', `/pessoas/${carla.id}/estado`, {
+        status_id: carla.status_id, saude_id: opcao('saude', 'critico'), engajamento_id: opcao('engajamento', 'baixo'), em_risco: true, responsavel_id: carla.responsavel_id, data_entrada: carla.data_entrada,
+      })
+      const f = await c.admin.ok('GET', `/pessoas/${carla.id}`)
+      expect(f.pessoa.em_risco).toBe(1)
+      expect(f.pessoa.saude_id).toBe(opcao('saude', 'critico'))
+      expect(f.auditoria.some((a: J) => a.acao === 'estado_atualizado')).toBe(true)
+    })
+
+    it('o status acompanha a matrícula: pausar e retomar', async () => {
+      const beatriz = await pessoaPorNome('Beatriz')
+      const mid = (await c.admin.ok('GET', `/pessoas/${beatriz.id}`)).matriculas[0].id
+      const pausa = await c.admin.ok('POST', `/matriculas/${mid}/pausas`, { inicio: hoje, motivo: 'Teste de status' })
+      expect((await pessoaPorNome('Beatriz')).status_id).toBe(opcao('status_aluna', 'pausada'))
+      await c.admin.ok('POST', `/pausas/${pausa.id}/encerrar`, { fim: hoje })
+      expect((await pessoaPorNome('Beatriz')).status_id).toBe(opcao('status_aluna', 'ativa'))
+    })
+
+    it('listas configuráveis: cada lista é separada e só quem configura edita', async () => {
+      const novo = await c.admin.ok('POST', '/catalogos/segmentos', { nome: 'Segmento teste', cor: 'info' })
+      const cat = await c.admin.ok('GET', '/catalogos')
+      expect(cat.segmentos.some((o: J) => o.id === novo.id && o.lista === 'segmento')).toBe(true)
+      expect(cat.saude.some((o: J) => o.id === novo.id)).toBe(false)
+      expect((await c.admin.req('PUT', `/catalogos/saude/${novo.id}`, { nome: 'x' })).status).toBe(404) // id de outra lista
+      expect((await c.admin.req('POST', '/catalogos/segmentos', { nome: 'x', cor: 'roxo' })).status).toBe(400)
+      expect((await c.mentora.req('POST', '/catalogos/segmentos', { nome: 'x' })).status).toBe(403)
+      expect((await c.admin.req('POST', '/pessoas', { nome: 'Segmento errado', segmento_id: opcao('saude', 'critico') })).status).toBe(400)
+    })
+
+    it('painel da Visão Geral conta alunas e agrupa por estado, segmento, responsável, canal e turma', async () => {
+      const p = await c.admin.ok('GET', '/painel/alunas')
+      const comMatricula = ((await c.admin.ok('GET', '/pessoas')) as unknown as J[]).filter((x) => x.matricula_atual)
+      expect(p.cards.total).toBe(comMatricula.length)
+      for (const g of ['por_status', 'por_segmento', 'por_responsavel', 'por_canal', 'por_turma'])
+        expect(p[g].reduce((t: number, x: J) => t + x.quantidade, 0)).toBe(p.cards.total)
+      expect(p.por_responsavel.some((x: J) => x.nome === 'Sem responsável')).toBe(true)
+    })
+
+    it('campos visíveis: dados internos nunca podem ir para o portal', async () => {
+      expect((await c.admin.req('PUT', '/campos-visibilidade', { saude: true })).status).toBe(400)
+      expect((await c.admin.req('PUT', '/campos-visibilidade', { inventado: true })).status).toBe(400)
+      await c.admin.ok('PUT', '/campos-visibilidade', { empresa: false })
+      expect((db.prepare("SELECT visivel_aluna FROM campos_visibilidade WHERE campo = 'empresa'").get() as J).visivel_aluna).toBe(0)
+      await c.admin.ok('PUT', '/campos-visibilidade', { empresa: true })
     })
   })
 })

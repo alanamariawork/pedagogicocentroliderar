@@ -52,6 +52,7 @@ tests/             testes de aceite e de cálculo (Vitest)
 
 O banco tem uma tabela `versao_esquema`. As migrações ficam na lista `MIGRACOES` de `server/db.ts`, são aplicadas em ordem, cada uma numa transação, e nunca são editadas depois de publicadas: uma mudança nova entra como uma nova versão no fim da lista.
 - **v1:** ajustes anteriores (ID sequencial da aluna e desativação do perfil Comercial).
+- **v3 (Administrativo, fase 1):** tabela `opcoes_lista` (listas configuráveis: status da aluna, saúde, engajamento, segmentos, e canais de venda; as opções com `codigo` alimentam os indicadores), tabela `campos_visibilidade` (marca "visível à aluna" por campo); colunas `pessoas.empresa`, `segmento_id`, `subsegmento`, `responsavel_id`, `data_entrada`, `status_id`, `saude_id`, `engajamento_id`, `em_risco`; `matriculas.canal_venda_id`. Cada aluna recebe status, responsável e data de entrada a partir da matrícula mais recente. Administração, Coordenação e Suporte/CS recebem a nova permissão `alunas:todas`.
 - **v2 (Portal da Aluna, fase 1):** tabelas `turmas`, `diagnosticos`, `metas`, `frases`, `links` e `notificacoes`; colunas `matriculas.turma_id`, `matriculas.data_boas_vindas`, `pessoas.instagram`, `pessoas.linkedin` e `pessoas.site`; conversão das turmas em texto para a tabela `turmas`.
 
 As datas são gravadas como `AAAA-MM-DD`, os horários de agenda como `AAAA-MM-DDTHH:MM` (hora local de São Paulo) e os carimbos de auditoria em ISO UTC.
@@ -75,4 +76,6 @@ As datas são gravadas como `AAAA-MM-DD`, os horários de agenda como `AAAA-MM-D
 | RN14 Contrato e onboarding separados | campos `contrato_*` e `onboarding_*` com rotas próprias |
 | RN15 "Sem prazo definido" | portal e ficha exibem quando não há prazo individual |
 | RN16 Cancelamento preserva registros | `/finalizar` só muda situação; nada é apagado |
+| Carteira (perfil sem "ver todas") | sem `alunas:todas`, `escopoMatriculas` limita às alunas com `pessoas.responsavel_id` = usuário; vale para lista, ficha, agenda, jornada e painéis |
+| Status acompanha a matrícula | `sincronizarStatusAluna` ao criar matrícula, pausar, retomar, encerrar ou cancelar |
 | Aluna só vê e edita os próprios dados | rotas `/portal/*` usam só `req.usuario.pessoa_id`; nenhuma recebe ID de aluna |

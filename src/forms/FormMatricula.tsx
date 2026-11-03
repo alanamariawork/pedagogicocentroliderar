@@ -119,6 +119,7 @@ export function DialogMatricula({ pessoa, anterior, onFechar, onConcluir }: { pe
     data_fim: '',
     responsavel_id: (anterior?.responsavel_id as string) ?? '',
     mentora_id: (anterior?.mentora_id as string) ?? '',
+    canal_venda_id: '',
     pacote_id: '',
     contrato_situacao: 'pendente',
     fonte_comercial: '',
@@ -143,6 +144,7 @@ export function DialogMatricula({ pessoa, anterior, onFechar, onConcluir }: { pe
           data_fim: valores.data_fim || null,
           responsavel_id: valores.responsavel_id || null,
           mentora_id: valores.mentora_id || null,
+          canal_venda_id: valores.canal_venda_id || null,
           pacote_id: valores.pacote_id || null,
           contrato_situacao: valores.contrato_situacao,
           fonte_comercial: valores.fonte_comercial,
@@ -217,6 +219,13 @@ export function DialogMatricula({ pessoa, anterior, onFechar, onConcluir }: { pe
           {(p) => (
             <select {...p} className="field-control" value={valores.mentora_id} onChange={campo('mentora_id')}>
               <Opcoes itens={ativos(cat?.profissionais)} vazio="A definir" />
+            </select>
+          )}
+        </Campo>
+        <Campo rotulo="Canal de venda" dica="Opções em Configurações → Listas.">
+          {(p) => (
+            <select {...p} className="field-control" value={valores.canal_venda_id} onChange={campo('canal_venda_id')}>
+              <Opcoes itens={ativos(cat?.['canais-venda'])} vazio="Não informado" />
             </select>
           )}
         </Campo>

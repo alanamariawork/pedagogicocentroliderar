@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { agoraIso, novoId, type BD } from './db'
 import { ErroHttp, tem } from './auth'
 import { dataValida, horarioValido, hojeSP } from '../shared/datas'
+import { codigoStatusPelaMatricula } from '../shared/listas'
 
 /* ---------------- Validação ---------------- */
 
@@ -96,6 +97,13 @@ export function escopoMatriculas(req: Request, alias = 'm'): { sql: string; para
         UNION SELECT matricula_id FROM itens_contratados WHERE profissional_id = @escopo_prof
         UNION SELECT matricula_id FROM ocorrencias WHERE profissional_id = @escopo_prof)`,
       params: { escopo_prof: u.profissional_id ?? '__nenhum__' },
+    }
+  }
+  // Sem "ver todas", o perfil (ex.: Suporte/CS) vê só a própria carteira: alunas em que é a responsável.
+  if (!tem(req, 'alunas:todas')) {
+    return {
+      sql: `${alias}.pessoa_id IN (SELECT id FROM pessoas WHERE responsavel_id = @escopo_usuario)`,
+      params: { escopo_usuario: u.id },
     }
   }
   return { sql: '1=1', params: {} }
@@ -249,4 +257,32 @@ export function notificarAluna(db: BD, matriculaId: string, aviso: { titulo: str
     .all(matriculaId) as { id: string }[]
   const ins = db.prepare('INSERT INTO notificacoes (id, usuario_id, titulo, detalhe, link, criado_em) VALUES (?, ?, ?, ?, ?, ?)')
   for (const u of usuarios) ins.run(randomUUID(), u.id, aviso.titulo, aviso.detalhe ?? null, aviso.link ?? null, new Date().toISOString())
+}
+
+/* ---------------- Listas configuráveis e estado da aluna ---------------- */
+
+/** Confere se a opção existe e é da lista certa (ex.: um id de "saúde" não pode ir para "segmento"). */
+export function exigirOpcao(db: BD, id: string | null | undefined, lista: string, rotulo: string) {
+  if (!id) return
+  if (!db.prepare('SELECT 1 FROM opcoes_lista WHERE id = ? AND lista = ?').get(id, lista)) throw new ErroHttp(400, `Escolha ${rotulo} entre as opções cadastradas.`)
+}
+
+/**
+ * Atualiza o status da aluna quando a matrícula mais recente muda de situação (pausa, retorno,
+ * encerramento, cancelamento, nova matrícula). Só usa opções com código; se a opção foi desativada, não muda.
+ */
+export function sincronizarStatusAluna(db: BD, req: Request, pessoaId: string) {
+  const m = db.prepare('SELECT situacao, data_inicio FROM matriculas WHERE pessoa_id = ? ORDER BY data_inicio DESC, criado_em DESC LIMIT 1').get(pessoaId) as
+    | { situacao: string; data_inicio: string }
+    | undefined
+  if (!m) return
+  const codigo = codigoStatusPelaMatricula(m.situacao, m.data_inicio, hoje())
+  const op = db.prepare("SELECT id FROM opcoes_lista WHERE lista = 'status_aluna' AND codigo = ? AND ativo = 1").get(codigo) as { id: string } | undefined
+  if (!op) return
+  const p = db.prepare('SELECT status_id, data_entrada FROM pessoas WHERE id = ?').get(pessoaId) as { status_id: string | null; data_entrada: string | null }
+  if (p.status_id !== op.id) {
+    db.prepare('UPDATE pessoas SET status_id = ?, atualizado_em = ? WHERE id = ?').run(op.id, agoraIso(), pessoaId)
+    auditar(db, req, { entidade: 'pessoa', entidade_id: pessoaId, acao: 'status_atualizado', pessoa_id: pessoaId, dados: { codigo } })
+  }
+  if (!p.data_entrada) db.prepare('UPDATE pessoas SET data_entrada = (SELECT MIN(data_inicio) FROM matriculas WHERE pessoa_id = ?) WHERE id = ?').run(pessoaId, pessoaId)
 }
