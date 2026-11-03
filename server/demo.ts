@@ -425,6 +425,32 @@ export async function popularDemonstracao(db: BD) {
     await api.put(`/ocorrencias/${r6.ocorrencias[0]}/situacao`, { situacao: 'disponivel_agendar', responsavel_resolucao_id: suporte })
     await api.post(`/ocorrencias/${r6.ocorrencias[0]}/agendar`, { inicio: proximaSlot(csInt, h) })
 
+    /* ---------- Portal da aluna: turmas, frases, links, diagnóstico e metas (tudo de demonstração) ---------- */
+    const turmaA = (await api.post<{ id: string }>('/catalogos/turmas', { nome: 'Turma Demo A', descricao: 'Turma de demonstração.', data_inicio: somarDias(h, -100) })).id
+    const turmaB = (await api.post<{ id: string }>('/catalogos/turmas', { nome: 'Turma Demo B', descricao: 'Turma de demonstração.', data_inicio: somarDias(h, -12) })).id
+    db.prepare('UPDATE matriculas SET turma_id = CASE WHEN data_inicio < ? THEN ? ELSE ? END').run(somarDias(h, -30), turmaA, turmaB)
+    db.prepare("UPDATE matriculas SET data_boas_vindas = onboarding_data WHERE onboarding_situacao = 'realizado'").run()
+    db.prepare("UPDATE pessoas SET instagram = '@' || lower(substr(nome, 1, instr(nome, ' ') - 1)) || '.demo' WHERE demonstracao = 1").run()
+    for (const texto of [
+      'Feito é melhor que perfeito. (frase de demonstração)',
+      'Um passo por dia ainda é um passo. (frase de demonstração)',
+      'Clareza vem da ação, não do pensamento. (frase de demonstração)',
+    ])
+      await api.post('/catalogos/frases', { texto })
+    for (const [titulo, categoria, destaque, ordem] of [
+      ['[Demo] WhatsApp do Sucesso do Cliente', 'Suporte', true, 1],
+      ['[Demo] Grupo de avisos', 'Comunidade', true, 2],
+      ['[Demo] Agendar mentoria', 'Suporte', true, 3],
+      ['[Demo] Área de membros', 'Aulas', false, 1],
+    ] as const)
+      await api.post('/catalogos/links', { titulo, url: `https://example.com/${ordem}-${categoria.toLowerCase()}`, categoria, destaque_inicio: destaque, ordem, descricao: 'Link de demonstração: troque em Configurações.' })
+    await aluna1.put('/portal/diagnostico/inicio/situacao', {
+      respostas: { negocio: 'Loja de roupas com 2 funcionárias (demonstração).', numeros: 'Faturamento médio de R$ 30 mil por mês (demonstração).', funciona: 'Clientes fiéis e boa vitrine.' },
+    })
+    await aluna1.put('/portal/diagnostico/inicio/objetivos', { respostas: { onde_chegar: 'Ter a loja funcionando sem depender de mim todos os dias.', prioridade: 'Montar uma rotina de gestão semanal.' } })
+    await aluna1.post('/portal/metas', { nome: '[Demo] Faturamento mensal', unidade: 'R$', valor_inicial: 30000, valor_alvo: 45000, valor_atual: 34000 })
+    await aluna1.post('/portal/metas', { nome: '[Demo] Reuniões de equipe por mês', unidade: 'reuniões', valor_inicial: 0, valor_alvo: 4, valor_atual: 1 })
+
     /* ---------- Decisões pendentes ---------- */
     for (const [questao, impacto, responsavel] of [
       ['Qual é a numeração/ordem oficial das trilhas (Diamantes em Ação, Diamante no Jogo, Diamante que Age)?', 'Ordem exibida na jornada e no portal da aluna.', 'Coordenação pedagógica'],

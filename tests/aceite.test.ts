@@ -423,4 +423,89 @@ describe('Permissões e segurança', () => {
     expect(item.ultima_evidencia.anexos.map((x: J) => x.nome)).toEqual(['Plano de ação ✓.pdf'])
     expect(item.ultima_evidencia.anexos[0].conteudo).toBeUndefined()
   })
+
+  describe('Portal da aluna, fase 1', () => {
+    it('as migrações numeradas ficam registradas e a turma vira cadastro', () => {
+      const versoes = (db.prepare('SELECT versao FROM versao_esquema ORDER BY versao').all() as J[]).map((v) => v.versao)
+      expect(versoes).toEqual([1, 2])
+      // As matrículas da demonstração receberam uma das duas turmas cadastradas
+      const turmas = db.prepare('SELECT COUNT(DISTINCT turma_id) AS n FROM matriculas WHERE turma_id IS NOT NULL').get() as J
+      expect(turmas.n).toBe(2)
+    })
+
+    it('o Início mostra semana do programa, próximo passo, mentorias, atalhos, frases e metas', async () => {
+      const ini = await c.beatriz.ok('GET', '/portal/inicio')
+      expect(ini.semana).toBe(8) // matrícula começou há 50 dias
+      expect(ini.proxima_etapa.numero).toBe(1)
+      expect(ini.proxima_etapa.situacao).toBe('liberada')
+      expect(ini.mentorias.total).toBeGreaterThan(0)
+      expect(ini.mentorias.ultimas.length).toBeLessThanOrEqual(6)
+      expect(ini.atalhos.length).toBe(3)
+      expect(ini.frases.length).toBe(3)
+      expect(ini.metas.map((m: J) => m.nome)).toContain('[Demo] Faturamento mensal')
+      expect(ini.matricula.turma_nome).toMatch(/^Turma Demo/)
+    })
+
+    it('Meus Dados: a aluna muda contato e redes, mas não o nome nem o e-mail', async () => {
+      await c.carla.ok('PUT', '/portal/perfil', { telefone: '(11) 90000-0000', instagram: '@carla.teste', nome: 'Outra', email: 'x@y.z' })
+      const p = await c.carla.ok('GET', '/portal/perfil')
+      expect(p.pessoa.instagram).toBe('@carla.teste')
+      expect(p.pessoa.nome).toMatch(/^Carla/)
+      expect(p.pessoa.email).toBe('carla@demo.local')
+      expect((await c.carla.req('PUT', '/portal/perfil', { site: 'javascript:alert(1)' })).status).toBe(400)
+    })
+
+    it('Diagnóstico: cada aba é salva separadamente e o fim de ciclo só abre perto do fim', async () => {
+      expect((await c.carla.req('PUT', '/portal/diagnostico/inicio/desafios', { respostas: { trava: '' } })).status).toBe(400)
+      expect((await c.carla.req('PUT', '/portal/diagnostico/inicio/inventada', { respostas: {} })).status).toBe(404)
+      await c.carla.ok('PUT', '/portal/diagnostico/inicio/desafios', { respostas: { trava: 'Falta de tempo (teste).', extra: 'ignorado' } })
+      const d = await c.carla.ok('GET', '/portal/diagnostico')
+      const desafios = d.respostas.find((r: J) => r.area === 'desafios' && r.versao === 'inicio')
+      expect(desafios.conteudo).toEqual({ trava: 'Falta de tempo (teste).' })
+      expect(d.fim_liberado).toBe(false)
+      expect((await c.carla.req('PUT', '/portal/diagnostico/fim/desafios', { respostas: { trava: 'x' } })).status).toBe(409)
+      // A equipe lê; a aluna não chega à rota da equipe
+      const carla = await pessoaPorNome('Carla')
+      const mid = (await c.admin.ok('GET', `/pessoas/${carla.id}`)).matriculas[0].id
+      const visto = await c.coord.ok('GET', `/matriculas/${mid}/diagnostico`)
+      expect(visto.respostas.some((r: J) => r.area === 'desafios')).toBe(true)
+      expect((await c.carla.req('GET', `/matriculas/${mid}/diagnostico`)).status).toBe(403)
+    })
+
+    it('Metas: sempre com início e alvo, e uma aluna não mexe na meta de outra', async () => {
+      expect((await c.carla.req('POST', '/portal/metas', { nome: 'Clientes', valor_inicial: 10, valor_alvo: 10 })).status).toBe(400)
+      expect((await c.carla.req('POST', '/portal/metas', { nome: 'Clientes', valor_alvo: 20 })).status).toBe(400)
+      const { id } = await c.carla.ok('POST', '/portal/metas', { nome: 'Clientes ativos', unidade: 'clientes', valor_inicial: 10, valor_alvo: 20, valor_atual: 12 })
+      expect((await c.beatriz.req('PUT', `/portal/metas/${id}`, { nome: 'invasão', valor_inicial: 1, valor_alvo: 2 })).status).toBe(404)
+      expect((await c.beatriz.req('DELETE', `/portal/metas/${id}`)).status).toBe(404)
+      await c.carla.ok('DELETE', `/portal/metas/${id}`)
+      const d = await c.carla.ok('GET', '/portal/diagnostico')
+      expect(d.metas.some((m: J) => m.id === id)).toBe(false)
+      expect((db.prepare('SELECT ativo FROM metas WHERE id = ?').get(id) as J).ativo).toBe(0) // só desativada
+    })
+
+    it('Avisos: ações da equipe geram aviso só para a aluna da matrícula', async () => {
+      await c.beatriz.ok('POST', '/portal/notificacoes/lidas')
+      await c.carla.ok('POST', '/portal/notificacoes/lidas')
+      const beatriz = await pessoaPorNome('Beatriz')
+      const mid = (await c.admin.ok('GET', `/pessoas/${beatriz.id}`)).matriculas[0].id
+      const j = await c.admin.ok('GET', `/matriculas/${mid}/jornada`)
+      const enviada = j.etapas.flatMap((e: J) => e.atividades).find((a: J) => a.situacao === 'enviada')
+      await c.coord.ok('POST', `/atividades/${enviada.id}/validar`, { decisao: 'em_revisao', comentario: 'Detalhe um pouco mais (teste).' })
+      const avisos = await c.beatriz.ok('GET', '/portal/notificacoes')
+      expect(avisos.nao_lidas).toBe(1)
+      expect(avisos.itens[0].titulo).toBe('A equipe pediu um ajuste')
+      expect(avisos.itens[0].detalhe).not.toContain('Detalhe um pouco mais') // o comentário fica na jornada, não no aviso
+      expect((await c.carla.ok('GET', '/portal/notificacoes')).nao_lidas).toBe(0)
+      expect((await c.coord.req('GET', '/portal/notificacoes')).status).toBe(403)
+    })
+
+    it('Links do portal exigem endereço válido e aparecem para a aluna', async () => {
+      expect((await c.admin.req('POST', '/catalogos/links', { titulo: 'Sem endereço' })).status).toBe(400)
+      expect((await c.mentora.req('POST', '/catalogos/links', { titulo: 'x', url: 'https://example.com' })).status).toBe(403)
+      const l = await c.beatriz.ok('GET', '/portal/links')
+      expect(l.links.map((x: J) => x.titulo)).toContain('[Demo] Área de membros')
+      expect(l.ajuda).toBeTruthy()
+    })
+  })
 })

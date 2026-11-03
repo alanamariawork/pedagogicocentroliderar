@@ -8,6 +8,9 @@ export interface Catalogos {
   'motivos-impedimento': Reg[]
   trilhas: Reg[]
   pilares: Reg[]
+  turmas: Reg[]
+  links: Reg[]
+  frases: Reg[]
   configuracoes: Record<string, string>
   usuarios: Reg[]
 }

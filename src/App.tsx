@@ -37,7 +37,7 @@ import { Pacotes } from './pages/Pacotes'
 import { Configuracoes } from './pages/Configuracoes'
 import { Decisoes } from './pages/Decisoes'
 import { Conta } from './pages/Conta'
-import { Portal } from './pages/Portal'
+import { PortalAluna } from './portal/PortalAluna'
 
 export const NOME_SISTEMA = 'Diamante Business | Gestão da Jornada'
 
@@ -103,7 +103,7 @@ function Raiz() {
       </div>
     )
   if (!eu) return <Login />
-  if (eu.perfil === 'aluna') return <Portal />
+  if (eu.perfil === 'aluna') return <PortalAluna />
   return <Equipe />
 }
 

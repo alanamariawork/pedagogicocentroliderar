@@ -371,23 +371,107 @@ export function abrirBanco(caminho = process.env.DB_PATH ?? 'data/diamante-busin
   return db
 }
 
-/** Ajustes em bancos criados por versões anteriores. Cada passo pode rodar várias vezes. */
+/**
+ * Migrações numeradas, só de acréscimo (nunca apagam coluna nem dado). Cada uma roda uma única vez,
+ * na ordem, e a versão aplicada fica em `versao_esquema`. A 1 reúne os ajustes feitos antes desta tabela
+ * existir e pode rodar de novo sem efeito.
+ */
+const MIGRACOES: { versao: number; descricao: string; aplicar: (db: BD) => void }[] = [
+  {
+    versao: 1,
+    descricao: 'ID sequencial da aluna e remoção do perfil Comercial',
+    aplicar(db) {
+      const colunas = db.prepare("SELECT name FROM pragma_table_info('pessoas')").all() as { name: string }[]
+      if (!colunas.some((c) => c.name === 'codigo')) {
+        db.exec('ALTER TABLE pessoas ADD COLUMN codigo INTEGER')
+        // ID da aluna = ordem de matrícula (primeira matrícula registrada).
+        const ordem = db
+          .prepare('SELECT p.id FROM pessoas p JOIN matriculas m ON m.pessoa_id = p.id GROUP BY p.id ORDER BY MIN(m.criado_em), p.criado_em')
+          .all() as { id: string }[]
+        const up = db.prepare('UPDATE pessoas SET codigo = ? WHERE id = ?')
+        ordem.forEach((p, n) => up.run(n + 1, p.id))
+      }
+      db.exec('CREATE UNIQUE INDEX IF NOT EXISTS ux_pessoas_codigo ON pessoas(codigo)')
+      // O perfil Comercial deixou de existir: acessos antigos ficam desativados (o histórico é preservado).
+      db.exec("UPDATE usuarios SET ativo = 0 WHERE perfil = 'comercial' AND ativo = 1")
+      db.exec("DELETE FROM sessoes WHERE usuario_id IN (SELECT id FROM usuarios WHERE perfil = 'comercial')")
+      db.exec("DELETE FROM perfil_permissoes WHERE perfil = 'comercial'")
+    },
+  },
+  {
+    versao: 2,
+    descricao: 'Portal da aluna, fase 1: turmas, redes sociais, boas-vindas, diagnóstico, metas, frases, links e avisos',
+    aplicar(db) {
+      db.exec(/* sql */ `
+        CREATE TABLE turmas (
+          id TEXT PRIMARY KEY, nome TEXT NOT NULL, descricao TEXT, data_inicio TEXT,
+          ativo INTEGER NOT NULL DEFAULT 1, criado_em TEXT NOT NULL, atualizado_em TEXT NOT NULL, autor_id TEXT
+        );
+        ALTER TABLE matriculas ADD COLUMN turma_id TEXT REFERENCES turmas(id);
+        ALTER TABLE matriculas ADD COLUMN data_boas_vindas TEXT;
+        ALTER TABLE pessoas ADD COLUMN instagram TEXT;
+        ALTER TABLE pessoas ADD COLUMN linkedin TEXT;
+        ALTER TABLE pessoas ADD COLUMN site TEXT;
+        -- Diagnóstico: uma linha por área e versão (início ou fim do ciclo); conteudo = JSON {pergunta: resposta}.
+        CREATE TABLE diagnosticos (
+          id TEXT PRIMARY KEY,
+          matricula_id TEXT NOT NULL REFERENCES matriculas(id),
+          versao TEXT NOT NULL CHECK (versao IN ('inicio','fim')),
+          area TEXT NOT NULL CHECK (area IN ('situacao','objetivos','desafios','expectativas')),
+          conteudo TEXT NOT NULL,
+          criado_em TEXT NOT NULL, atualizado_em TEXT NOT NULL, autor_id TEXT,
+          UNIQUE (matricula_id, versao, area)
+        );
+        -- Metas do diagnóstico: sempre com valor inicial, alvo e atual (o progresso mostra o denominador).
+        CREATE TABLE metas (
+          id TEXT PRIMARY KEY,
+          matricula_id TEXT NOT NULL REFERENCES matriculas(id),
+          nome TEXT NOT NULL, unidade TEXT,
+          valor_inicial REAL NOT NULL, valor_alvo REAL NOT NULL, valor_atual REAL,
+          ativo INTEGER NOT NULL DEFAULT 1,
+          criado_em TEXT NOT NULL, atualizado_em TEXT NOT NULL, autor_id TEXT
+        );
+        CREATE INDEX ix_metas_matricula ON metas(matricula_id);
+        CREATE TABLE frases (
+          id TEXT PRIMARY KEY, texto TEXT NOT NULL, autoria TEXT,
+          ativo INTEGER NOT NULL DEFAULT 1, criado_em TEXT NOT NULL, atualizado_em TEXT NOT NULL, autor_id TEXT
+        );
+        CREATE TABLE links (
+          id TEXT PRIMARY KEY, titulo TEXT NOT NULL, url TEXT NOT NULL, categoria TEXT, descricao TEXT,
+          destaque_inicio INTEGER NOT NULL DEFAULT 0, ordem INTEGER NOT NULL DEFAULT 0,
+          ativo INTEGER NOT NULL DEFAULT 1, criado_em TEXT NOT NULL, atualizado_em TEXT NOT NULL, autor_id TEXT
+        );
+        -- Avisos do sino: só dentro do sistema; nada é enviado por e-mail ou WhatsApp.
+        CREATE TABLE notificacoes (
+          id TEXT PRIMARY KEY,
+          usuario_id TEXT NOT NULL REFERENCES usuarios(id),
+          titulo TEXT NOT NULL, detalhe TEXT, link TEXT,
+          lida_em TEXT, criado_em TEXT NOT NULL
+        );
+        CREATE INDEX ix_notificacoes_usuario ON notificacoes(usuario_id, criado_em);
+      `)
+      // A turma era um texto livre na matrícula: cada nome diferente vira uma turma cadastrada.
+      // A coluna antiga continua no banco, sem uso pelas telas.
+      const nomes = db.prepare("SELECT DISTINCT TRIM(turma) AS nome FROM matriculas WHERE TRIM(COALESCE(turma, '')) <> ''").all() as { nome: string }[]
+      const agora = new Date().toISOString()
+      for (const { nome } of nomes) {
+        const id = randomUUID()
+        db.prepare('INSERT INTO turmas (id, nome, criado_em, atualizado_em) VALUES (?, ?, ?, ?)').run(id, nome, agora, agora)
+        db.prepare('UPDATE matriculas SET turma_id = ? WHERE TRIM(turma) = ?').run(id, nome)
+      }
+    },
+  },
+]
+
 function migrar(db: BD) {
-  const colunas = db.prepare("SELECT name FROM pragma_table_info('pessoas')").all() as { name: string }[]
-  if (!colunas.some((c) => c.name === 'codigo')) {
-    db.exec('ALTER TABLE pessoas ADD COLUMN codigo INTEGER')
-    // ID da aluna = ordem de matrícula (primeira matrícula registrada).
-    const ordem = db
-      .prepare('SELECT p.id FROM pessoas p JOIN matriculas m ON m.pessoa_id = p.id GROUP BY p.id ORDER BY MIN(m.criado_em), p.criado_em')
-      .all() as { id: string }[]
-    const up = db.prepare('UPDATE pessoas SET codigo = ? WHERE id = ?')
-    db.transaction(() => ordem.forEach((p, n) => up.run(n + 1, p.id)))()
+  db.exec('CREATE TABLE IF NOT EXISTS versao_esquema (versao INTEGER PRIMARY KEY, descricao TEXT NOT NULL, aplicada_em TEXT NOT NULL)')
+  const atual = (db.prepare('SELECT COALESCE(MAX(versao), 0) AS v FROM versao_esquema').get() as { v: number }).v
+  for (const m of MIGRACOES.filter((x) => x.versao > atual)) {
+    db.transaction(() => {
+      m.aplicar(db)
+      db.prepare('INSERT INTO versao_esquema (versao, descricao, aplicada_em) VALUES (?, ?, ?)').run(m.versao, m.descricao, new Date().toISOString())
+    })()
   }
-  db.exec('CREATE UNIQUE INDEX IF NOT EXISTS ux_pessoas_codigo ON pessoas(codigo)')
-  // O perfil Comercial deixou de existir: acessos antigos ficam desativados (o histórico é preservado).
-  db.exec("UPDATE usuarios SET ativo = 0 WHERE perfil = 'comercial' AND ativo = 1")
-  db.exec("DELETE FROM sessoes WHERE usuario_id IN (SELECT id FROM usuarios WHERE perfil = 'comercial')")
-  db.exec("DELETE FROM perfil_permissoes WHERE perfil = 'comercial'")
 }
 
 export const novoId = () => randomUUID()

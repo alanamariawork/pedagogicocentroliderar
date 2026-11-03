@@ -42,6 +42,17 @@ tests/             testes de aceite e de cálculo (Vitest)
 - `reservas`: uma trigger do banco impede duas reservas ativas sobrepostas para a mesma profissional. O agendamento roda em transação imediata.
 - `trilhas`, `pilares`, `etapas` e `etapa_prerequisitos` formam o modelo. `jornadas`, `jornada_etapas`, `atividades`, `evidencias` e `validacoes` formam o progresso individual. `anexos` guarda os arquivos de cada envio (BLOB no próprio banco). O upload é feito antes do envio, ainda solto, e só fica visível depois de vinculado à evidência. A aluna baixa só os próprios arquivos (`/api/portal/anexos/:id`); a equipe baixa com `jornada:ver` e respeitando o escopo da mentora (`/api/anexos/:id`). O download sai como `attachment` com CSP `sandbox`.
 - `conquistas`, `pausas`, `feedbacks`, `anotacoes`, `decisoes_pendentes` e `auditoria`.
+- `turmas` 1—N `matriculas` (`turma_id`). A coluna antiga `matriculas.turma` (texto livre) foi mantida; cada valor distinto virou uma turma na migração 2.
+- `diagnosticos`: uma linha por matrícula, versão (`inicio` ou `fim`) e área (`situacao`, `objetivos`, `desafios`, `expectativas`). As perguntas ficam em `shared/diagnostico.ts`. A versão de fim abre 30 dias antes do fim da vigência ou quando a matrícula é encerrada.
+- `metas`: valor inicial, alvo e atual. O portal sempre mostra os três valores, nunca um percentual solto. Excluir só desativa (`ativo = 0`).
+- `frases` e `links`: cadastros da equipe em Configurações. Links com `destaque_inicio` aparecem nos Atalhos do Início da aluna.
+- `notificacoes`: avisos internos por usuário (sino do portal). São gerados no servidor quando a equipe agenda, reagenda ou desmarca um encontro, libera ou conclui uma etapa, valida ou pede ajuste numa atividade, e torna visível uma vitória. Nenhum aviso sai do sistema.
+
+### Migrações
+
+O banco tem uma tabela `versao_esquema`. As migrações ficam na lista `MIGRACOES` de `server/db.ts`, são aplicadas em ordem, cada uma numa transação, e nunca são editadas depois de publicadas: uma mudança nova entra como uma nova versão no fim da lista.
+- **v1:** ajustes anteriores (ID sequencial da aluna e desativação do perfil Comercial).
+- **v2 (Portal da Aluna, fase 1):** tabelas `turmas`, `diagnosticos`, `metas`, `frases`, `links` e `notificacoes`; colunas `matriculas.turma_id`, `matriculas.data_boas_vindas`, `pessoas.instagram`, `pessoas.linkedin` e `pessoas.site`; conversão das turmas em texto para a tabela `turmas`.
 
 As datas são gravadas como `AAAA-MM-DD`, os horários de agenda como `AAAA-MM-DDTHH:MM` (hora local de São Paulo) e os carimbos de auditoria em ISO UTC.
 
@@ -64,3 +75,4 @@ As datas são gravadas como `AAAA-MM-DD`, os horários de agenda como `AAAA-MM-D
 | RN14 Contrato e onboarding separados | campos `contrato_*` e `onboarding_*` com rotas próprias |
 | RN15 "Sem prazo definido" | portal e ficha exibem quando não há prazo individual |
 | RN16 Cancelamento preserva registros | `/finalizar` só muda situação; nada é apagado |
+| Aluna só vê e edita os próprios dados | rotas `/portal/*` usam só `req.usuario.pessoa_id`; nenhuma recebe ID de aluna |

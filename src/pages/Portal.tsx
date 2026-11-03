@@ -1,15 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
-import { CalendarDays, CheckCircle2, Gem, KeyRound, LifeBuoy, Link as LinkIcon, LogOut, Sparkles } from 'lucide-react'
+import { CalendarDays, CheckCircle2, LifeBuoy, Link as LinkIcon, Sparkles } from 'lucide-react'
 import { Carregando, EstadoErro } from '../components/Estados'
 import { Campo, FormDialog, useValores } from '../components/Form'
 import { Selo, SeloCadeado, SeloNaoIncluido, TOM_ATIVIDADE } from '../components/Selos'
 import { useFeedback } from '../components/Feedback'
-import { Dialog } from '../components/Dialog'
-import { FormSenha } from './Conta'
 import { enviarArquivo, post, useDados, type Reg } from '../lib/api'
 import { EscolherArquivos, ListaAnexos } from '../components/Anexos'
-import { SITUACAO_ATIVIDADE, SITUACAO_MATRICULA, cx } from '../lib/format'
-import { useSessao } from '../state/Sessao'
+import { SITUACAO_ATIVIDADE, cx } from '../lib/format'
 import { formatarData, hojeSP } from '../../shared/datas'
 
 const SITUACAO_ENCONTRO_ALUNA: Record<string, string> = {
@@ -23,53 +20,21 @@ const SITUACAO_ENCONTRO_ALUNA: Record<string, string> = {
 
 const dataHora = (h: string) => `${formatarData(h.slice(0, 10))} às ${h.slice(11, 16)}`
 
-export function Portal() {
-  const { eu, sair } = useSessao()
-  const { dados, erro, recarregar } = useDados('/portal')
-  const [senha, setSenha] = useState(false)
-  useEffect(() => {
-    document.title = 'Minha jornada · Diamante Business'
-  }, [])
+export type SecaoPortalId = 'jornada' | 'mentorias' | 'vitorias'
 
+/** Partes do portal original, agora abertas pelo menu do portal novo (Jornada, Mentorias e Minhas Vitórias). */
+export function SecaoPortal({ secao, tipoId, etapaId }: { secao: SecaoPortalId; tipoId?: string; etapaId?: string }) {
+  const { dados, erro, recarregar } = useDados('/portal')
+  if (erro) return <EstadoErro mensagem={erro} onTentar={recarregar} />
+  if (!dados) return <Carregando />
   return (
-    <div className="min-h-screen bg-canvas">
-      <header className="sticky top-0 z-30 border-b border-line bg-surface/95 backdrop-blur">
-        <div className="mx-auto flex max-w-3xl items-center lg:max-w-6xl gap-3 px-4 py-3">
-          <span className="inline-flex size-9 items-center justify-center rounded-full border border-gold-line text-gold">
-            <Gem className="size-4.5" aria-hidden />
-          </span>
-          <div className="min-w-0 flex-1 leading-tight">
-            <p className="font-display text-[15px] font-semibold text-brand-700">Diamante Business</p>
-            <p className="text-[11px] text-ink-muted">Minha jornada</p>
-          </div>
-          <button type="button" className="btn-ghost p-2" aria-label="Alterar senha" onClick={() => setSenha(true)}>
-            <KeyRound className="size-5" aria-hidden />
-          </button>
-          <button type="button" className="btn-ghost p-2" aria-label="Sair" onClick={sair}>
-            <LogOut className="size-5" aria-hidden />
-          </button>
-        </div>
-      </header>
-      <main className="mx-auto max-w-3xl space-y-4 px-4 py-5 lg:max-w-6xl">
-        {eu?.trocar_senha && (
-          <p role="status" className="rounded-[var(--radius-control)] border border-gold-line bg-gold-soft px-3 py-2 text-sm">
-            Sua senha foi criada pela equipe.{' '}
-            <button type="button" className="font-medium text-brand-700 underline" onClick={() => setSenha(true)}>
-              Troque agora
-            </button>
-            .
-          </p>
-        )}
-        {erro ? <EstadoErro mensagem={erro} onTentar={recarregar} /> : !dados ? <Carregando /> : <Conteudo dados={dados} recarregar={recarregar} />}
-      </main>
-      <Dialog aberto={senha} titulo="Alterar senha" onFechar={() => setSenha(false)}>
-        <FormSenha />
-      </Dialog>
+    <div className="space-y-4">
+      <Conteudo dados={dados} recarregar={recarregar} secao={secao} tipoId={tipoId} etapaId={etapaId} />
     </div>
   )
 }
 
-function Conteudo({ dados, recarregar }: { dados: Reg; recarregar: () => void }) {
+function Conteudo({ dados, recarregar, secao, tipoId, etapaId }: { dados: Reg; recarregar: () => void; secao: SecaoPortalId; tipoId?: string; etapaId?: string }) {
   const primeiroNome = String(dados.nome).split(' ')[0]
   const [enviar, setEnviar] = useState<Reg | null>(null)
   const fb = useFeedback()
@@ -78,17 +43,17 @@ function Conteudo({ dados, recarregar }: { dados: Reg; recarregar: () => void })
       <section className="card p-5">
         <h1 className="font-display text-2xl font-semibold">Olá, {primeiroNome}!</h1>
         <p className="mt-2 text-sm text-ink-soft">Ainda não há uma matrícula ativa vinculada ao seu acesso. Se isso parecer errado, fale com a equipe.</p>
-        <Ajuda texto={dados.ajuda} />
       </section>
     )
   const m = dados.matricula
   const jornada = dados.jornada as Reg | null
   const etapas = (jornada?.etapas ?? []) as Reg[]
-  const encontros = dados.encontros as Reg[]
+  const encontros = (dados.encontros as Reg[]).filter((o) => !tipoId || o.tipo_id === tipoId)
   const proximos = encontros.filter((o) => o.situacao !== 'realizada')
   const realizados = encontros.filter((o) => o.situacao === 'realizada').reverse()
 
-  // No celular, a trilha abre já mostrando a etapa em andamento
+  // A trilha abre mostrando a etapa pedida no endereço ou, sem ela, a etapa em andamento
+  const foco = etapaId && etapas.some((e) => e.id === etapaId) ? etapaId : etapas.find((e) => e.situacao === 'liberada')?.id
   const atual = (el: HTMLLIElement | null) => {
     const c = el?.closest('.overflow-x-auto')
     if (!el || !c || c.scrollLeft !== 0) return
@@ -110,7 +75,7 @@ function Conteudo({ dados, recarregar }: { dados: Reg; recarregar: () => void })
       <div className="flex flex-wrap items-center gap-2">
         {e.situacao === 'concluida' ? <CheckCircle2 className="size-5 text-success" aria-hidden /> : null}
         <h3 className="font-medium text-ink">{e.titulo}</h3>
-        {e.situacao === 'bloqueada' ? <SeloCadeado /> : e.situacao === 'concluida' ? <Selo tom="sucesso">Concluída</Selo> : <Selo tom="vinho">Liberada</Selo>}
+        {e.situacao === 'bloqueada' ? <SeloCadeado /> : e.situacao === 'concluida' ? <Selo tom="sucesso">Concluída</Selo> : <Selo tom="vinho">Em andamento</Selo>}
       </div>
       <p className="text-xs text-ink-muted">
         {[e.trilha_nome, e.pilar_nome].filter(Boolean).join(' · ')} · {e.prazo_individual ? `Prazo: ${formatarData(e.prazo_individual)}` : 'Sem prazo definido'}
@@ -192,39 +157,11 @@ function Conteudo({ dados, recarregar }: { dados: Reg; recarregar: () => void })
 
   return (
     <>
-      <section className="rounded-[var(--radius-card)] bg-gradient-to-br from-brand-700 to-brand-500 p-5 text-white shadow-sm">
-        <p className="text-sm text-white/80">Olá, {primeiroNome}!</p>
-        <h1 className="font-display mt-0.5 text-2xl font-semibold">Seu próximo passo</h1>
-        {dados.proximo_passo ? (
-          <div className="mt-3 rounded-[var(--radius-control)] bg-white/10 p-3">
-            <p className="font-medium">{dados.proximo_passo.titulo}</p>
-            <p className="text-sm text-white/80">{dados.proximo_passo.detalhe}</p>
-          </div>
-        ) : (
-          <p className="mt-3 text-sm text-white/80">Nenhuma ação pendente agora. A equipe vai orientar o próximo passo.</p>
-        )}
-        <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
-          <div>
-            <dt className="text-white/70">Trilha</dt>
-            <dd className="font-medium">{jornada?.trilha_nome ?? 'A definir com a equipe'}</dd>
-          </div>
-          <div>
-            <dt className="text-white/70">Pilar atual</dt>
-            <dd className="font-medium">{jornada?.pilar_nome ?? 'A definir com a equipe'}</dd>
-          </div>
-          <div>
-            <dt className="text-white/70">Vigência</dt>
-            <dd>
-              {formatarData(m.data_inicio)} a {m.data_fim ? formatarData(m.data_fim) : 'a definir'}
-            </dd>
-          </div>
-          <div>
-            <dt className="text-white/70">Situação</dt>
-            <dd>{SITUACAO_MATRICULA[m.situacao]}</dd>
-          </div>
-        </dl>
-      </section>
-
+      {secao === 'jornada' && (
+        <>
+          <p className="text-sm text-ink-soft">
+            {jornada ? `${jornada.trilha_nome ?? 'Trilha a definir'} · pilar atual: ${jornada.pilar_nome ?? 'a definir'}` : 'Sua jornada ainda está sendo preparada pela equipe pedagógica.'}
+          </p>
       <Progresso etapas={etapas} />
 
       <section className="card p-4">
@@ -240,7 +177,7 @@ function Conteudo({ dados, recarregar }: { dados: Reg; recarregar: () => void })
             <div className="-mx-4 mt-3 snap-x snap-mandatory overflow-x-auto scroll-px-4 px-4 pb-2 lg:mx-0 lg:mt-4 lg:px-0">
               <ol className="flex min-w-max gap-3 lg:gap-4" aria-label="Etapas da trilha, da primeira à última">
                 {etapas.map((e, n) => (
-                  <li key={e.id} ref={e.situacao === 'liberada' ? atual : undefined} className="flex w-[78vw] max-w-72 shrink-0 snap-start flex-col lg:w-72">
+                  <li key={e.id} ref={e.id === foco ? atual : undefined} id={`etapa-${e.id}`} className="flex w-[78vw] max-w-72 shrink-0 snap-start flex-col lg:w-72">
                     <div className="mb-3 flex items-center gap-2" aria-hidden>
                       <span
                         className={cx(
@@ -261,8 +198,12 @@ function Conteudo({ dados, recarregar }: { dados: Reg; recarregar: () => void })
         )}
       </section>
 
-      <Crescimento conquistas={dados.conquistas as Reg[]} inicio={m.data_inicio} />
+        </>
+      )}
 
+      {secao === 'vitorias' && <Crescimento conquistas={dados.conquistas as Reg[]} inicio={m.data_inicio} />}
+
+      {secao === 'mentorias' && (
       <section className="card p-4">
         <h2 className="font-display flex items-center gap-2 text-lg font-semibold">
           <CalendarDays className="size-5 text-gold" aria-hidden /> Meus encontros
@@ -320,17 +261,14 @@ function Conteudo({ dados, recarregar }: { dados: Reg; recarregar: () => void })
           </div>
         )}
       </section>
-
-      <section className="card p-4">
-        <Ajuda texto={dados.ajuda} />
-      </section>
+      )}
 
       {enviar && <DialogEvidencia atividade={enviar} onFechar={() => setEnviar(null)} onConcluir={recarregar} />}
     </>
   )
 }
 
-function Ajuda({ texto }: { texto: string }) {
+export function Ajuda({ texto }: { texto: string }) {
   return (
     <div className="mt-2 flex gap-3">
       <LifeBuoy className="mt-0.5 size-5 shrink-0 text-gold" aria-hidden />
