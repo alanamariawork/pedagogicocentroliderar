@@ -16,6 +16,7 @@ export const NOME_PERFIL: Record<Perfil, string> = {
 
 export const PERMISSOES = {
   'alunas:ver': 'Ver alunas e matrículas',
+  'alunas:todas': 'Ver todas as alunas (sem esta permissão, só a própria carteira: alunas em que é a responsável)',
   'alunas:editar': 'Cadastrar e editar dados básicos de alunas',
   'matriculas:criar': 'Criar matrículas e renovações',
   'comercial:ver': 'Ver condições comerciais, contrato, pacote e bônus',

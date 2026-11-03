@@ -6,13 +6,47 @@ import { Selo } from '../components/Selos'
 import { useFeedback } from '../components/Feedback'
 import { mensagemDeErro, post, put, useDados, type Reg } from '../lib/api'
 import { cx } from '../lib/format'
-import { invalidarCatalogos, useCatalogos } from '../state/Catalogos'
+import { invalidarCatalogos, useCatalogos, type Catalogos } from '../state/Catalogos'
 import { useSessao } from '../state/Sessao'
 import { formatarData, formatarHoras } from '../../shared/datas'
 import { NOME_PERFIL, PERFIS, PERMISSOES, type Perfil, type Permissao } from '../../shared/permissoes'
+import { CAMPOS_ALUNA, CORES_OPCAO, LISTAS, NOME_COR } from '../../shared/listas'
 
-type CampoCad = { chave: string; rotulo: string; tipo?: 'texto' | 'longo' | 'url' | 'data' | 'numero' | 'check'; obrigatorio?: boolean; dica?: string }
-const CADASTROS: { nome: string; titulo: string; descricao: string; campos: CampoCad[]; detalhe: (r: Reg) => string }[] = [
+type CampoCad = {
+  chave: string
+  rotulo: string
+  tipo?: 'texto' | 'longo' | 'url' | 'data' | 'numero' | 'check' | 'select'
+  obrigatorio?: boolean
+  dica?: string
+  /** Para tipo 'select': as opções (id e nome) e o texto da opção vazia. */
+  opcoes?: (cat: Catalogos) => Reg[]
+  vazio?: string
+}
+type Cadastro = { nome: string; titulo: string; descricao: string; campos: CampoCad[]; detalhe: (r: Reg, cat: Catalogos) => string; semEditarCodigo?: boolean }
+
+const CORES_SELECT = CORES_OPCAO.map((c) => ({ id: c, nome: NOME_COR[c] }))
+/** As listas configuráveis (status, saúde, engajamento, segmentos, canais e categorias de reunião). */
+const LISTAS_CAD: Cadastro[] = (
+  [
+    ['status-aluna', 'status_aluna'],
+    ['saude', 'saude'],
+    ['engajamento', 'engajamento'],
+    ['segmentos', 'segmento'],
+    ['canais-venda', 'canal_venda'],
+    ['tipos-reuniao', 'tipo_reuniao'],
+  ] as const
+).map(([nome, lista]) => ({
+  nome,
+  titulo: LISTAS[lista].titulo,
+  descricao: LISTAS[lista].descricao,
+  campos: [
+    { chave: 'nome', rotulo: 'Nome', obrigatorio: true },
+    { chave: 'cor', rotulo: 'Cor do selo', tipo: 'select', opcoes: () => CORES_SELECT },
+    { chave: 'ordem', rotulo: 'Ordem', tipo: 'numero' },
+  ],
+  detalhe: (r) => (r.codigo ? 'usada nos indicadores: renomeie à vontade' : ''),
+}))
+const CADASTROS: Cadastro[] = [
   {
     nome: 'programas',
     titulo: 'Programas',
@@ -43,8 +77,16 @@ const CADASTROS: { nome: string; titulo: string; descricao: string; campos: Camp
       { chave: 'descricao', rotulo: 'Descrição' },
       { chave: 'duracao_padrao_min', rotulo: 'Duração padrão (min)', tipo: 'numero', dica: 'Deixe vazio se não houver duração definida: ela não será tratada como zero.' },
       { chave: 'individual', rotulo: 'Entregável individual (aparece no portal)', tipo: 'check' },
+      { chave: 'categoria_id', rotulo: 'Categoria de reunião', tipo: 'select', vazio: 'Sem categoria', opcoes: (c) => c['tipos-reuniao'].filter((o) => o.ativo), dica: 'Usada no Resumo Executivo da ficha (mentorias, reuniões com consultores).' },
     ],
-    detalhe: (r) => `${r.duracao_padrao_min ? formatarHoras(r.duracao_padrao_min) : 'duração não informada'}${r.individual ? '' : ' · em grupo'}`,
+    detalhe: (r, c) =>
+      [
+        r.duracao_padrao_min ? formatarHoras(r.duracao_padrao_min) : 'duração não informada',
+        !r.individual && 'em grupo',
+        r.categoria_id ? c['tipos-reuniao'].find((o) => o.id === r.categoria_id)?.nome : 'sem categoria',
+      ]
+        .filter(Boolean)
+        .join(' · '),
   },
   {
     nome: 'turmas',
@@ -97,6 +139,8 @@ export function Configuracoes() {
   const { pode } = useSessao()
   const abas = [
     pode('config:editar') && { id: 'cadastros', nome: 'Cadastros' },
+    pode('config:editar') && { id: 'listas', nome: 'Listas' },
+    pode('config:editar') && { id: 'campos', nome: 'Campos visíveis' },
     pode('config:editar') && { id: 'parametros', nome: 'Parâmetros' },
     pode('usuarios:admin') && { id: 'usuarios', nome: 'Usuários' },
     pode('usuarios:admin') && { id: 'acesso', nome: 'Regras de acesso' },
@@ -120,7 +164,9 @@ export function Configuracoes() {
           </button>
         ))}
       </div>
-      {aba === 'cadastros' && <Cadastros />}
+      {aba === 'cadastros' && <Cadastros cadastros={CADASTROS} />}
+      {aba === 'listas' && <Cadastros cadastros={LISTAS_CAD} />}
+      {aba === 'campos' && <CamposVisiveis />}
       {aba === 'parametros' && <Parametros />}
       {aba === 'usuarios' && <Usuarios />}
       {aba === 'acesso' && <RegrasAcesso />}
@@ -128,13 +174,13 @@ export function Configuracoes() {
   )
 }
 
-function Cadastros() {
+function Cadastros({ cadastros }: { cadastros: Cadastro[] }) {
   const cat = useCatalogos()
-  const [editando, setEditando] = useState<{ cad: (typeof CADASTROS)[number]; reg: Reg | null } | null>(null)
+  const [editando, setEditando] = useState<{ cad: Cadastro; reg: Reg | null } | null>(null)
   if (!cat) return <Carregando />
   return (
     <div className="grid gap-4 lg:grid-cols-2">
-      {CADASTROS.map((c) => {
+      {cadastros.map((c) => {
         const lista = cat[c.nome as keyof typeof cat] as Reg[]
         return (
           <Secao
@@ -154,8 +200,8 @@ function Cadastros() {
                 {lista.map((r) => (
                   <li key={r.id} className="flex items-center justify-between gap-2 py-1.5">
                     <span className={cx(!r.ativo && 'text-ink-muted')}>
-                      {r.nome ?? r.titulo ?? r.texto} {!r.ativo && <Selo>Inativo</Selo>}
-                      {c.detalhe(r) && <span className="block text-xs text-ink-muted">{c.detalhe(r)}</span>}
+                      {r.cor ? <Selo tom={r.cor}>{r.nome}</Selo> : (r.nome ?? r.titulo ?? r.texto)} {!r.ativo && <Selo>Inativo</Selo>}
+                      {c.detalhe(r, cat) && <span className="block text-xs text-ink-muted">{c.detalhe(r, cat)}</span>}
                     </span>
                     <button type="button" className="btn-ghost btn-sm" onClick={() => setEditando({ cad: c, reg: r })}>
                       Editar
@@ -172,10 +218,11 @@ function Cadastros() {
   )
 }
 
-function DialogCadastro({ cad, reg, onFechar }: { cad: (typeof CADASTROS)[number]; reg: Reg | null; onFechar: () => void }) {
+function DialogCadastro({ cad, reg, onFechar }: { cad: Cadastro; reg: Reg | null; onFechar: () => void }) {
   const fb = useFeedback()
+  const cat = useCatalogos()
   const inicial: Record<string, string | boolean> = { ativo: reg ? !!reg.ativo : true }
-  for (const c of cad.campos) inicial[c.chave] = c.tipo === 'check' ? (reg ? !!reg[c.chave] : c.chave === 'individual') : reg?.[c.chave] != null ? String(reg[c.chave]) : ''
+  for (const c of cad.campos) inicial[c.chave] = c.tipo === 'check' ? (reg ? !!reg[c.chave] : c.chave === 'individual') : reg?.[c.chave] != null ? String(reg[c.chave]) : c.chave === 'cor' ? 'neutro' : ''
   const { valores, campo } = useValores(inicial)
   return (
     <FormDialog
@@ -203,7 +250,17 @@ function DialogCadastro({ cad, reg, onFechar }: { cad: (typeof CADASTROS)[number
         ) : (
           <Campo key={c.chave} rotulo={c.rotulo} obrigatorio={c.obrigatorio} dica={c.dica}>
             {(p) =>
-              c.tipo === 'longo' ? (
+              c.tipo === 'select' ? (
+                <select className="field-control" {...p} value={String(valores[c.chave])} onChange={campo(c.chave)}>
+                  {c.vazio !== undefined && <option value="">{c.vazio}</option>}
+                  {cat &&
+                    c.opcoes!(cat).map((o) => (
+                      <option key={o.id} value={o.id}>
+                        {o.nome}
+                      </option>
+                    ))}
+                </select>
+              ) : c.tipo === 'longo' ? (
                 <textarea rows={3} maxLength={500} className="field-control" {...p} value={String(valores[c.chave])} onChange={campo(c.chave)} />
               ) : (
                 <input
@@ -500,6 +557,63 @@ function RegrasAcesso() {
         }}
       >
         {salvando ? 'Salvando…' : 'Salvar regras'}
+      </button>
+    </Secao>
+  )
+}
+
+/** Marca "visível à aluna" de cada campo da ficha. Os dados internos (saúde, engajamento, risco, observação) ficam travados. */
+function CamposVisiveis() {
+  const cat = useCatalogos()
+  const fb = useFeedback()
+  const [valores, setValores] = useState<Record<string, boolean> | null>(null)
+  const [salvando, setSalvando] = useState(false)
+  const [erro, setErro] = useState<string | null>(null)
+  useEffect(() => {
+    if (cat && !valores) setValores(Object.fromEntries(cat.campos_visibilidade.map((c) => [c.campo, !!c.visivel_aluna])))
+  }, [cat, valores])
+  if (!cat || !valores) return <Carregando />
+  return (
+    <Secao titulo="Campos visíveis à aluna" descricao="O portal da aluna só mostra os campos marcados. Dados internos nunca aparecem no portal.">
+      <ul className="divide-y divide-line">
+        {CAMPOS_ALUNA.map((c) => (
+          <li key={c.campo} className="flex items-center justify-between gap-3 py-2 text-sm">
+            <label htmlFor={`vis-${c.campo}`} className={cx(c.sempreInterno && 'text-ink-muted')}>
+              {c.rotulo}
+              {c.sempreInterno && <span className="block text-xs">Dado interno: nunca aparece no portal.</span>}
+            </label>
+            <input
+              id={`vis-${c.campo}`}
+              type="checkbox"
+              className="size-4"
+              disabled={c.sempreInterno}
+              checked={!!valores[c.campo]}
+              onChange={(e) => setValores((v) => ({ ...v!, [c.campo]: e.target.checked }))}
+            />
+          </li>
+        ))}
+      </ul>
+      {erro && <AlertaErro mensagem={erro} />}
+      <button
+        type="button"
+        className="btn-primary mt-3"
+        disabled={salvando}
+        onClick={async () => {
+          setSalvando(true)
+          setErro(null)
+          try {
+            const editaveis = Object.fromEntries(Object.entries(valores).filter(([k]) => !CAMPOS_ALUNA.find((c) => c.campo === k)?.sempreInterno))
+            await put('/campos-visibilidade', editaveis)
+            invalidarCatalogos()
+            fb.sucesso('Campos visíveis salvos.')
+          } catch (e) {
+            setErro(mensagemDeErro(e))
+          } finally {
+            setSalvando(false)
+          }
+        }}
+      >
+        {salvando ? 'Salvando…' : 'Salvar'}
       </button>
     </Secao>
   )

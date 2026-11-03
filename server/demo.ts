@@ -451,6 +451,36 @@ export async function popularDemonstracao(db: BD) {
     await aluna1.post('/portal/metas', { nome: '[Demo] Faturamento mensal', unidade: 'R$', valor_inicial: 30000, valor_alvo: 45000, valor_atual: 34000 })
     await aluna1.post('/portal/metas', { nome: '[Demo] Reuniões de equipe por mês', unidade: 'reuniões', valor_inicial: 0, valor_alvo: 4, valor_atual: 1 })
 
+    /* ---------- Administrativo: estado das alunas, segmentos, canais e categorias (tudo de demonstração) ---------- */
+    const opcao = (lista: string, codigo: string) => (db.prepare('SELECT id FROM opcoes_lista WHERE lista = ? AND codigo = ?').get(lista, codigo) as { id: string }).id
+    // Classificação de exemplo dos tipos de entregável: confira em Configurações → Cadastros.
+    for (const [chave, cat] of [
+      ['plano', 'mentoria'], ['tutoria', 'mentoria'], ['modelo', 'consultoria'], ['posicionamento', 'consultoria'],
+      ['juridico', 'consultoria'], ['rota', 'sucesso_aluno'], ['destrave', 'encontro_ao_vivo'],
+    ] as const)
+      db.prepare('UPDATE tipos_entregavel SET categoria_id = ? WHERE id = ?').run(opcao('tipo_reuniao', cat), tipo[chave])
+    const segmentos: string[] = []
+    for (const nome of ['Moda e varejo (demo)', 'Saúde e estética (demo)', 'Serviços (demo)'])
+      segmentos.push((await api.post<{ id: string }>('/catalogos/segmentos', { nome })).id)
+    const canais: string[] = []
+    for (const nome of ['Indicação (demo)', 'Instagram (demo)', 'Evento presencial (demo)'])
+      canais.push((await api.post<{ id: string }>('/catalogos/canais-venda', { nome })).id)
+    const demoPessoas = db.prepare('SELECT id, nome FROM pessoas WHERE demonstracao = 1 ORDER BY codigo').all() as { id: string; nome: string }[]
+    const estados: [string, string, boolean, string | null][] = [
+      ['saudavel', 'alto', false, suporte],
+      ['atencao', 'medio', true, suporte],
+      ['saudavel', 'medio', false, suporte],
+      ['critico', 'baixo', true, suporte],
+      ['atencao', 'baixo', false, coord],
+      ['saudavel', 'alto', false, null],
+    ]
+    demoPessoas.forEach((p, n) => {
+      const [saude, eng, risco, resp] = estados[n % estados.length]
+      db.prepare('UPDATE pessoas SET empresa = ?, segmento_id = ?, subsegmento = ?, saude_id = ?, engajamento_id = ?, em_risco = ?, responsavel_id = ? WHERE id = ?').run(
+        `[Demo] Negócio de ${p.nome.split(' ')[0]}`, segmentos[n % 3], n % 2 ? 'Loja física' : 'Atendimento online', opcao('saude', saude), opcao('engajamento', eng), risco ? 1 : 0, resp, p.id)
+      db.prepare('UPDATE matriculas SET canal_venda_id = ? WHERE pessoa_id = ?').run(canais[n % 3], p.id)
+    })
+
     /* ---------- Decisões pendentes ---------- */
     for (const [questao, impacto, responsavel] of [
       ['Qual é a numeração/ordem oficial das trilhas (Diamantes em Ação, Diamante no Jogo, Diamante que Age)?', 'Ordem exibida na jornada e no portal da aluna.', 'Coordenação pedagógica'],

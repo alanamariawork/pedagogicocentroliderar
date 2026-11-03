@@ -1,6 +1,6 @@
 # O que foi testado
 
-## Testes automáticos (`npm test`: 39 testes, todos passando)
+## Testes automáticos (`npm test`: 46 testes, todos passando)
 
 Os testes de aceite (`tests/aceite.test.ts`) sobem o servidor real com um banco em memória e a demonstração. Depois, fazem as chamadas pela API com cada perfil.
 
@@ -42,6 +42,15 @@ Portal da Aluna, fase 1 (7 testes):
 - Metas: exigem valor inicial e alvo diferentes, e uma aluna não altera nem exclui a meta de outra.
 - Avisos: agendar um encontro gera aviso para a aluna, e marcar como lido funciona.
 - Links: só a equipe com `config:editar` cadastra; a aluna vê a lista.
+
+Administrativo, fase 1 (7 testes):
+- A migração 3 cria as listas e dá status e data de entrada a cada aluna com matrícula.
+- O Suporte/CS vê só a própria carteira na lista, na ficha, na jornada e no painel; a aluna que ele cadastra entra na carteira.
+- O estado da aluna só aceita opções da lista certa e fica no histórico; a mentora não edita.
+- Pausar e retomar a matrícula muda o status da aluna.
+- As listas configuráveis são separadas entre si e só quem tem `config:editar` mexe.
+- O painel da Visão Geral soma o mesmo total em todos os agrupamentos.
+- Saúde, engajamento, risco e observação nunca podem ser marcados como visíveis à aluna.
 
 Os testes de cálculo (`tests/calculos.test.ts`) cobrem:
 - A soma de horas sem contar a sobreposição duas vezes.

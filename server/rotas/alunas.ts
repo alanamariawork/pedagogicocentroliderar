@@ -20,6 +20,9 @@ import {
   texto,
   textoObrig,
   validar,
+  booleano,
+  exigirOpcao,
+  sincronizarStatusAluna,
 } from '../servicos'
 import { somarDias } from '../../shared/datas'
 
@@ -32,6 +35,19 @@ const esquemaPessoa = z.object({
   instagram: texto(200),
   linkedin: texto(200),
   site: link(),
+  empresa: texto(200),
+  segmento_id: id(),
+  subsegmento: texto(120),
+})
+
+/** Estado da aluna (uso interno): nunca aparece no portal. */
+const esquemaEstado = z.object({
+  status_id: id(),
+  saude_id: id(),
+  engajamento_id: id(),
+  em_risco: booleano().default(false),
+  responsavel_id: id(),
+  data_entrada: data('a data de entrada'),
 })
 
 const esquemaItem = z.object({
@@ -54,6 +70,7 @@ const esquemaMatricula = z.object({
   data_fim: data('a data de término da vigência'),
   responsavel_id: id(),
   mentora_id: id(),
+  canal_venda_id: id(),
   contrato_situacao: z.enum(['pendente', 'enviado', 'assinado']).default('pendente'),
   contrato_link: link(),
   fonte_comercial: texto(500),
@@ -72,25 +89,72 @@ export function rotasAlunas(db: BD) {
   r.get('/pessoas', (req, res) => {
     exigir(req, 'alunas:ver')
     const q = validar(z.object({ busca: z.string().max(100).optional(), situacao: z.string().optional() }), req.query)
+    res.json(listarAlunas(req, q))
+  })
+
+  /* ---------------- Painel de alunas (Visão Geral) ---------------- */
+
+  r.get('/painel/alunas', (req, res) => {
+    exigir(req, 'indicadores:ver')
+    const lista = listarAlunas(req, {}).filter((p) => p.matricula_atual)
+    const opcoes = db.prepare('SELECT id, lista, codigo, nome, cor FROM opcoes_lista').all() as { id: string; lista: string; codigo: string | null; nome: string; cor: string }[]
+    const op = new Map(opcoes.map((o) => [o.id, o]))
+    const codigo = (id: unknown) => (id ? op.get(id as string)?.codigo : null)
+    type M = { onboarding_situacao: string; turma_nome: string | null; canal_venda_id: string | null }
+    const emAndamento = lista.filter((p) => ['ativa', 'a_iniciar'].includes(codigo(p.status_id) ?? ''))
+    const agrupar = (chave: (p: Record<string, unknown>) => { id: string | null; nome: string; cor?: string }, vazio: string) => {
+      const g = new Map<string, { nome: string; cor?: string; quantidade: number }>()
+      for (const p of lista) {
+        const k = chave(p)
+        const id = k.id ?? '__vazio__'
+        const atual = g.get(id) ?? { nome: k.id ? k.nome : vazio, cor: k.cor, quantidade: 0 }
+        atual.quantidade++
+        g.set(id, atual)
+      }
+      return [...g.values()].sort((a, b) => b.quantidade - a.quantidade)
+    }
+    const daLista = (campo: string) => (p: Record<string, unknown>) => {
+      const o = p[campo] ? op.get(p[campo] as string) : undefined
+      return { id: o?.id ?? null, nome: o?.nome ?? '', cor: o?.cor }
+    }
+    res.json({
+      cards: {
+        total: lista.length,
+        ativas: lista.filter((p) => codigo(p.status_id) === 'ativa').length,
+        a_iniciar: lista.filter((p) => codigo(p.status_id) === 'a_iniciar').length,
+        onboarding_agendado: emAndamento.filter((p) => (p.matricula_atual as M).onboarding_situacao === 'agendado').length,
+        onboarding_pendente: emAndamento.filter((p) => (p.matricula_atual as M).onboarding_situacao === 'pendente').length,
+      },
+      por_status: agrupar(daLista('status_id'), 'Sem status'),
+      por_segmento: agrupar(daLista('segmento_id'), 'Sem segmento'),
+      por_responsavel: agrupar((p) => ({ id: (p.responsavel_id as string) ?? null, nome: (p.responsavel_nome as string) ?? '' }), 'Sem responsável'),
+      por_canal: agrupar((p) => daLista('canal_venda_id')(p.matricula_atual as Record<string, unknown>), 'Sem canal informado'),
+      por_turma: agrupar((p) => ({ id: (p.matricula_atual as M).turma_nome, nome: (p.matricula_atual as M).turma_nome ?? '' }), 'Sem turma'),
+    })
+  })
+
+  function listarAlunas(req: Request, q: { busca?: string; situacao?: string }): (Record<string, unknown> & { matricula_atual: Record<string, unknown> | null })[] {
     const esc = escopoMatriculas(req)
     const pessoas = db
       .prepare(
-        `SELECT p.id, p.codigo, p.nome, p.email, p.telefone, p.demonstracao,
+        `SELECT p.id, p.codigo, p.nome, p.email, p.telefone, p.cidade, p.demonstracao, p.empresa, p.segmento_id, p.subsegmento, p.responsavel_id,
+           p.data_entrada, p.status_id, p.saude_id, p.engajamento_id, p.em_risco, ur.nome AS responsavel_nome, p.criado_em,
            (SELECT COUNT(*) FROM matriculas m WHERE m.pessoa_id = p.id AND ${esc.sql}) AS matriculas
-         FROM pessoas p
-         WHERE (@busca IS NULL OR p.nome LIKE @busca OR p.email LIKE @busca OR p.telefone LIKE @busca OR p.codigo = @codigo)
-           AND EXISTS (SELECT 1 FROM matriculas m WHERE m.pessoa_id = p.id AND ${esc.sql}) OR (@ver_sem_matricula = 1 AND NOT EXISTS (SELECT 1 FROM matriculas m WHERE m.pessoa_id = p.id) AND (@busca IS NULL OR p.nome LIKE @busca))
+         FROM pessoas p LEFT JOIN usuarios ur ON ur.id = p.responsavel_id
+         WHERE (@busca IS NULL OR p.nome LIKE @busca OR p.email LIKE @busca OR p.telefone LIKE @busca OR p.empresa LIKE @busca OR p.codigo = @codigo)
+           AND EXISTS (SELECT 1 FROM matriculas m WHERE m.pessoa_id = p.id AND ${esc.sql}) OR (@ver_sem_matricula = 1 AND NOT EXISTS (SELECT 1 FROM matriculas m WHERE m.pessoa_id = p.id) AND (@busca IS NULL OR p.nome LIKE @busca) AND (@carteira IS NULL OR p.responsavel_id = @carteira))
          ORDER BY p.codigo IS NULL, p.codigo, p.nome COLLATE NOCASE`,
       )
-      .all({ busca: q.busca ? `%${q.busca}%` : null, codigo: q.busca && /^#?\d+$/.test(q.busca.trim()) ? Number(q.busca.trim().replace('#', '')) : null, ver_sem_matricula: req.usuario!.perfil === 'mentora' ? 0 : 1, ...esc.params }) as Record<string, unknown>[]
+      .all({ busca: q.busca ? `%${q.busca}%` : null, codigo: q.busca && /^#?\d+$/.test(q.busca.trim()) ? Number(q.busca.trim().replace('#', '')) : null, ver_sem_matricula: req.usuario!.perfil === 'mentora' ? 0 : 1, carteira: tem(req, 'alunas:todas') ? null : req.usuario!.id, ...esc.params }) as Record<string, unknown>[]
 
     const atuais = db
       .prepare(
         `SELECT m.id, m.pessoa_id, m.situacao, m.contrato_situacao, m.onboarding_situacao, m.data_inicio, m.data_fim, m.matricula_anterior_id,
+                m.programa_id, m.turma_id, tu.nome AS turma_nome, m.canal_venda_id, m.interesse_renovacao,
                 pg.nome AS programa_nome, t.nome AS trilha_nome, pl.nome AS pilar_nome,
                 (SELECT COUNT(*) FROM ocorrencias o WHERE o.matricula_id = m.id AND o.situacao NOT IN ('realizada','cancelada')) AS entregas_restantes,
                 (SELECT COUNT(*) FROM ocorrencias o WHERE o.matricula_id = m.id AND o.situacao NOT IN ('realizada','cancelada') AND o.data_prevista < @hoje) AS entregas_vencidas
-         FROM matriculas m LEFT JOIN programas pg ON pg.id = m.programa_id
+         FROM matriculas m LEFT JOIN programas pg ON pg.id = m.programa_id LEFT JOIN turmas tu ON tu.id = m.turma_id
          LEFT JOIN jornadas j ON j.matricula_id = m.id LEFT JOIN trilhas t ON t.id = j.trilha_id LEFT JOIN pilares pl ON pl.id = j.pilar_id
          WHERE ${esc.sql}
          ORDER BY CASE m.situacao WHEN 'ativa' THEN 0 WHEN 'pausada' THEN 1 ELSE 2 END, m.data_inicio DESC`,
@@ -100,13 +164,14 @@ export function rotasAlunas(db: BD) {
     for (const m of atuais) if (!porPessoa.has(m.pessoa_id as string)) porPessoa.set(m.pessoa_id as string, m)
     let lista = pessoas.map((p) => ({ ...p, matricula_atual: porPessoa.get(p.id as string) ?? null }))
     if (q.situacao) lista = lista.filter((p) => (p.matricula_atual as { situacao?: string } | null)?.situacao === q.situacao)
-    res.json(lista)
-  })
+    return lista
+  }
 
   /* ---------------- Cadastro: pessoa + matrícula (ET01) ---------------- */
 
   function criarMatricula(req: Request, pessoaId: string, d: z.infer<typeof esquemaMatricula>): string {
     if (d.data_fim && d.data_fim < d.data_inicio) throw new ErroHttp(400, 'O término da vigência não pode ser antes do início.')
+    exigirOpcao(db, d.canal_venda_id, 'canal_venda', 'o canal de venda')
     if (d.matricula_anterior_id) {
       const ant = db.prepare('SELECT pessoa_id FROM matriculas WHERE id = ?').get(d.matricula_anterior_id) as { pessoa_id: string } | undefined
       if (!ant || ant.pessoa_id !== pessoaId) throw new ErroHttp(400, 'A matrícula anterior precisa ser da mesma pessoa.')
@@ -121,12 +186,12 @@ export function rotasAlunas(db: BD) {
     db.prepare('UPDATE pessoas SET codigo = (SELECT COALESCE(MAX(codigo), 0) + 1 FROM pessoas) WHERE id = ? AND codigo IS NULL').run(pessoaId)
     db.prepare(
       `INSERT INTO matriculas (id, pessoa_id, programa_id, matricula_anterior_id, turma_id, data_boas_vindas, data_inicio, data_fim, situacao, contrato_situacao, contrato_link,
-         fonte_comercial, condicoes_comerciais, responsavel_id, mentora_id, pacote_origem_id, pacote_origem_nome, criado_em, atualizado_em, autor_id)
-       VALUES (?,?,?,?,?,?,?,?,'ativa',?,?,?,?,?,?,?,?,?,?,?)`,
+         fonte_comercial, condicoes_comerciais, responsavel_id, mentora_id, pacote_origem_id, pacote_origem_nome, canal_venda_id, criado_em, atualizado_em, autor_id)
+       VALUES (?,?,?,?,?,?,?,?,'ativa',?,?,?,?,?,?,?,?,?,?,?,?)`,
     ).run(
       mid, pessoaId, d.programa_id ?? null, d.matricula_anterior_id ?? null, d.turma_id ?? null, d.data_boas_vindas ?? null, d.data_inicio, d.data_fim ?? null,
       d.contrato_situacao, d.contrato_link ?? null, d.fonte_comercial ?? null, d.condicoes_comerciais ?? null,
-      d.responsavel_id ?? null, d.mentora_id ?? null, pacote?.id ?? null, pacote?.nome ?? null, agora, agora, req.usuario!.id,
+      d.responsavel_id ?? null, d.mentora_id ?? null, pacote?.id ?? null, pacote?.nome ?? null, d.canal_venda_id ?? null, agora, agora, req.usuario!.id,
     )
     // RN03: aplicar o modelo = COPIAR os itens. Mudanças futuras no modelo não afetam esta matrícula.
     const itens: z.infer<typeof esquemaItem>[] = []
@@ -147,6 +212,9 @@ export function rotasAlunas(db: BD) {
     }
     itens.push(...d.itens_extras)
     for (const i of itens) criarItem(req, mid, i)
+    // A responsável da matrícula vira a responsável da aluna quando ela ainda não tem uma.
+    db.prepare('UPDATE pessoas SET responsavel_id = COALESCE(responsavel_id, ?) WHERE id = ?').run(d.responsavel_id ?? null, pessoaId)
+    sincronizarStatusAluna(db, req, pessoaId)
     auditar(db, req, { entidade: 'matricula', entidade_id: mid, acao: d.matricula_anterior_id ? 'renovacao_criada' : 'criada', matricula_id: mid, pessoa_id: pessoaId, dados: { ...d, itens: itens.length } })
     return mid
   }
@@ -166,14 +234,19 @@ export function rotasAlunas(db: BD) {
     exigir(req, 'alunas:editar')
     const d = validar(esquemaPessoa.extend({ matricula: esquemaMatricula.optional() }), req.body)
     if (d.matricula) exigir(req, 'matriculas:criar')
+    exigirOpcao(db, d.segmento_id, 'segmento', 'o segmento')
     if (d.email && db.prepare('SELECT 1 FROM pessoas WHERE email = ?').get(d.email))
       throw new ErroHttp(409, 'Já existe uma pessoa com este e-mail. Abra a ficha existente e crie uma nova matrícula nela.')
     const pid = novoId()
     let mid: string | null = null
     db.transaction(() => {
       const agora = agoraIso()
-      db.prepare('INSERT INTO pessoas (id, nome, email, telefone, cidade, observacao_operacional, instagram, linkedin, site, criado_em, atualizado_em, autor_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)').run(
-        pid, d.nome, d.email ?? null, d.telefone ?? null, d.cidade ?? null, d.observacao_operacional ?? null, d.instagram ?? null, d.linkedin ?? null, d.site ?? null, agora, agora, req.usuario!.id)
+      // Quem não vê todas as alunas fica responsável pela aluna que cadastra (senão ela sairia da sua carteira).
+      const responsavel = tem(req, 'alunas:todas') ? null : req.usuario!.id
+      db.prepare(
+        'INSERT INTO pessoas (id, nome, email, telefone, cidade, observacao_operacional, instagram, linkedin, site, empresa, segmento_id, subsegmento, responsavel_id, criado_em, atualizado_em, autor_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+      ).run(pid, d.nome, d.email ?? null, d.telefone ?? null, d.cidade ?? null, d.observacao_operacional ?? null, d.instagram ?? null, d.linkedin ?? null, d.site ?? null,
+        d.empresa ?? null, d.segmento_id ?? null, d.subsegmento ?? null, responsavel, agora, agora, req.usuario!.id)
       auditar(db, req, { entidade: 'pessoa', entidade_id: pid, acao: 'criada', pessoa_id: pid, dados: { nome: d.nome } })
       if (d.matricula) mid = criarMatricula(req, pid, d.matricula)
     })()
@@ -183,14 +256,45 @@ export function rotasAlunas(db: BD) {
   r.put('/pessoas/:id', (req, res) => {
     exigir(req, 'alunas:editar')
     const d = validar(esquemaPessoa, req.body)
+    exigirAcessoPessoa(req, req.params.id as string)
+    exigirOpcao(db, d.segmento_id, 'segmento', 'o segmento')
     if (d.email && db.prepare('SELECT 1 FROM pessoas WHERE email = ? AND id <> ?').get(d.email, req.params.id)) throw new ErroHttp(409, 'Já existe outra pessoa com este e-mail.')
     const info = db
-      .prepare('UPDATE pessoas SET nome=?, email=?, telefone=?, cidade=?, observacao_operacional=?, instagram=?, linkedin=?, site=?, atualizado_em=?, autor_id=? WHERE id=?')
-      .run(d.nome, d.email ?? null, d.telefone ?? null, d.cidade ?? null, d.observacao_operacional ?? null, d.instagram ?? null, d.linkedin ?? null, d.site ?? null, agoraIso(), req.usuario!.id, req.params.id)
+      .prepare('UPDATE pessoas SET nome=?, email=?, telefone=?, cidade=?, observacao_operacional=?, instagram=?, linkedin=?, site=?, empresa=?, segmento_id=?, subsegmento=?, atualizado_em=?, autor_id=? WHERE id=?')
+      .run(d.nome, d.email ?? null, d.telefone ?? null, d.cidade ?? null, d.observacao_operacional ?? null, d.instagram ?? null, d.linkedin ?? null, d.site ?? null,
+        d.empresa ?? null, d.segmento_id ?? null, d.subsegmento ?? null, agoraIso(), req.usuario!.id, req.params.id)
     if (info.changes === 0) throw new ErroHttp(404, 'Pessoa não encontrada.')
     auditar(db, req, { entidade: 'pessoa', entidade_id: req.params.id as string, acao: 'atualizada', pessoa_id: req.params.id as string, dados: d })
     res.json({ ok: true })
   })
+
+  // Estado da aluna (status, saúde, engajamento, em risco, responsável, entrada): uso interno.
+  r.put('/pessoas/:id/estado', (req, res) => {
+    exigir(req, 'alunas:editar')
+    const pid = req.params.id as string
+    exigirAcessoPessoa(req, pid)
+    const d = validar(esquemaEstado, req.body)
+    exigirOpcao(db, d.status_id, 'status_aluna', 'o status')
+    exigirOpcao(db, d.saude_id, 'saude', 'a saúde')
+    exigirOpcao(db, d.engajamento_id, 'engajamento', 'o engajamento')
+    if (d.responsavel_id && !db.prepare("SELECT 1 FROM usuarios WHERE id = ? AND perfil <> 'aluna'").get(d.responsavel_id)) throw new ErroHttp(400, 'Escolha uma pessoa da equipe como responsável.')
+    const antes = db.prepare('SELECT status_id, saude_id, engajamento_id, em_risco, responsavel_id, data_entrada FROM pessoas WHERE id = ?').get(pid)
+    if (!antes) throw new ErroHttp(404, 'Pessoa não encontrada.')
+    db.prepare('UPDATE pessoas SET status_id=?, saude_id=?, engajamento_id=?, em_risco=?, responsavel_id=?, data_entrada=?, atualizado_em=?, autor_id=? WHERE id=?').run(
+      d.status_id ?? null, d.saude_id ?? null, d.engajamento_id ?? null, d.em_risco ? 1 : 0, d.responsavel_id ?? null, d.data_entrada ?? null, agoraIso(), req.usuario!.id, pid)
+    auditar(db, req, { entidade: 'pessoa', entidade_id: pid, acao: 'estado_atualizado', pessoa_id: pid, dados: { antes, depois: d } })
+    res.json({ ok: true })
+  })
+
+  /** Quem vê só a carteira não altera aluna de fora dela. */
+  function exigirAcessoPessoa(req: Request, pessoaId: string) {
+    if (tem(req, 'alunas:todas') && req.usuario!.perfil !== 'mentora') return
+    const esc = escopoMatriculas(req)
+    const ok =
+      db.prepare(`SELECT 1 FROM matriculas m WHERE m.pessoa_id = @pid AND ${esc.sql}`).get({ pid: pessoaId, ...esc.params }) ||
+      (req.usuario!.perfil !== 'mentora' && db.prepare('SELECT 1 FROM pessoas WHERE id = ? AND responsavel_id = ?').get(pessoaId, req.usuario!.id))
+    if (!ok) throw new ErroHttp(404, 'Pessoa não encontrada ou sem acesso.')
+  }
 
   r.post('/matriculas', (req, res) => {
     exigir(req, 'matriculas:criar')
@@ -219,7 +323,9 @@ export function rotasAlunas(db: BD) {
          WHERE m.pessoa_id = @pid AND ${esc.sql} ORDER BY m.data_inicio DESC, m.criado_em DESC`,
       )
       .all({ pid: req.params.id, ...esc.params }) as Record<string, unknown>[]
-    if (matriculas.length === 0 && req.usuario!.perfil === 'mentora') throw new ErroHttp(404, 'Pessoa não encontrada ou sem acesso.')
+    const foraDaCarteira = !tem(req, 'alunas:todas') && pessoa.responsavel_id !== req.usuario!.id
+    if (matriculas.length === 0 && (req.usuario!.perfil === 'mentora' || foraDaCarteira)) throw new ErroHttp(404, 'Pessoa não encontrada ou sem acesso.')
+    if (pessoa.responsavel_id) pessoa.responsavel_nome = (db.prepare('SELECT nome FROM usuarios WHERE id = ?').get(pessoa.responsavel_id) as { nome: string } | undefined)?.nome ?? null
 
     const verComercial = tem(req, 'comercial:ver')
     const verNotas = tem(req, 'notas:internas')
@@ -233,7 +339,7 @@ export function rotasAlunas(db: BD) {
       }
       const itens = (db
         .prepare(
-          `SELECT i.*, t.nome AS tipo_nome, pr.nome AS profissional_nome FROM itens_contratados i
+          `SELECT i.*, t.nome AS tipo_nome, t.categoria_id AS tipo_categoria_id, pr.nome AS profissional_nome FROM itens_contratados i
            LEFT JOIN tipos_entregavel t ON t.id = i.tipo_id LEFT JOIN profissionais pr ON pr.id = i.profissional_id
            WHERE i.matricula_id = ? ORDER BY i.criado_em`,
         )
@@ -286,6 +392,7 @@ export function rotasAlunas(db: BD) {
         data_fim: data('a data de término'),
         responsavel_id: id(),
         mentora_id: id(),
+        canal_venda_id: id(),
         motivo_alteracao_vigencia: texto(500),
       }),
       req.body,
@@ -293,8 +400,10 @@ export function rotasAlunas(db: BD) {
     if (d.data_fim && d.data_fim < d.data_inicio) throw new ErroHttp(400, 'O término da vigência não pode ser antes do início.')
     const mudouVigencia = d.data_inicio !== m.data_inicio || (d.data_fim ?? null) !== m.data_fim
     if (mudouVigencia && m.data_fim && !d.motivo_alteracao_vigencia) throw new ErroHttp(400, 'Informe o motivo da alteração da vigência.')
-    db.prepare('UPDATE matriculas SET programa_id=?, turma_id=?, data_boas_vindas=?, data_inicio=?, data_fim=?, responsavel_id=?, mentora_id=?, atualizado_em=?, autor_id=? WHERE id=?').run(
-      d.programa_id ?? null, d.turma_id ?? null, d.data_boas_vindas ?? null, d.data_inicio, d.data_fim ?? null, d.responsavel_id ?? null, d.mentora_id ?? null, agoraIso(), req.usuario!.id, m.id)
+    exigirOpcao(db, d.canal_venda_id, 'canal_venda', 'o canal de venda')
+    db.prepare('UPDATE matriculas SET programa_id=?, turma_id=?, data_boas_vindas=?, data_inicio=?, data_fim=?, responsavel_id=?, mentora_id=?, canal_venda_id=?, atualizado_em=?, autor_id=? WHERE id=?').run(
+      d.programa_id ?? null, d.turma_id ?? null, d.data_boas_vindas ?? null, d.data_inicio, d.data_fim ?? null, d.responsavel_id ?? null, d.mentora_id ?? null, d.canal_venda_id ?? null, agoraIso(), req.usuario!.id, m.id)
+    sincronizarStatusAluna(db, req, m.pessoa_id)
     auditar(db, req, { entidade: 'matricula', entidade_id: m.id, acao: mudouVigencia ? 'vigencia_alterada' : 'dados_atualizados', matricula_id: m.id, dados: { antes: { data_inicio: m.data_inicio, data_fim: m.data_fim }, depois: d } })
     res.json({ ok: true })
   })
@@ -418,6 +527,7 @@ export function rotasAlunas(db: BD) {
       // A pausa NÃO altera vigência nem previsões: a decisão de prazos fica pendente.
       db.prepare("UPDATE matriculas SET situacao='pausada', atualizado_em=? WHERE id=?").run(agoraIso(), m.id)
       auditar(db, req, { entidade: 'pausa', entidade_id: pid, acao: 'pausa_registrada', matricula_id: m.id, dados: d })
+      sincronizarStatusAluna(db, req, m.pessoa_id)
     })()
     res.status(201).json({ id: pid })
   })
@@ -433,6 +543,7 @@ export function rotasAlunas(db: BD) {
       db.prepare('UPDATE pausas SET fim=? WHERE id=?').run(d.fim, p.id)
       db.prepare("UPDATE matriculas SET situacao='ativa', atualizado_em=? WHERE id=? AND situacao='pausada'").run(agoraIso(), p.matricula_id)
       auditar(db, req, { entidade: 'pausa', entidade_id: p.id, acao: 'pausa_encerrada', matricula_id: p.matricula_id, dados: d })
+      sincronizarStatusAluna(db, req, (db.prepare('SELECT pessoa_id FROM matriculas WHERE id = ?').get(p.matricula_id) as { pessoa_id: string }).pessoa_id)
     })()
     res.json({ ok: true })
   })
@@ -491,6 +602,7 @@ export function rotasAlunas(db: BD) {
       db.prepare('UPDATE matriculas SET situacao=?, encerramento_data=?, encerramento_motivo=?, atualizado_em=? WHERE id=?').run(d.tipo, d.data, d.motivo ?? null, agoraIso(), m.id)
       db.prepare('UPDATE pausas SET fim = COALESCE(fim, ?) WHERE matricula_id = ?').run(d.data, m.id)
       auditar(db, req, { entidade: 'matricula', entidade_id: m.id, acao: d.tipo === 'cancelada' ? 'cancelada' : 'encerrada', matricula_id: m.id, dados: d })
+      sincronizarStatusAluna(db, req, m.pessoa_id)
     })()
     res.json({ ok: true })
   })
