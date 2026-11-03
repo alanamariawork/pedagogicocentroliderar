@@ -8,10 +8,10 @@ import { mensagemDeErro, post, put, useDados, type Reg } from '../lib/api'
 import { cx } from '../lib/format'
 import { invalidarCatalogos, useCatalogos } from '../state/Catalogos'
 import { useSessao } from '../state/Sessao'
-import { formatarHoras } from '../../shared/datas'
+import { formatarData, formatarHoras } from '../../shared/datas'
 import { NOME_PERFIL, PERFIS, PERMISSOES, type Perfil, type Permissao } from '../../shared/permissoes'
 
-type CampoCad = { chave: string; rotulo: string; tipo?: 'texto' | 'numero' | 'check'; obrigatorio?: boolean; dica?: string }
+type CampoCad = { chave: string; rotulo: string; tipo?: 'texto' | 'longo' | 'url' | 'data' | 'numero' | 'check'; obrigatorio?: boolean; dica?: string }
 const CADASTROS: { nome: string; titulo: string; descricao: string; campos: CampoCad[]; detalhe: (r: Reg) => string }[] = [
   {
     nome: 'programas',
@@ -45,6 +45,41 @@ const CADASTROS: { nome: string; titulo: string; descricao: string; campos: Camp
       { chave: 'individual', rotulo: 'Entregável individual (aparece no portal)', tipo: 'check' },
     ],
     detalhe: (r) => `${r.duracao_padrao_min ? formatarHoras(r.duracao_padrao_min) : 'duração não informada'}${r.individual ? '' : ' · em grupo'}`,
+  },
+  {
+    nome: 'turmas',
+    titulo: 'Turmas',
+    descricao: 'Aparecem em Meus Dados e no Início do portal da aluna. A turma é escolhida na matrícula.',
+    campos: [
+      { chave: 'nome', rotulo: 'Nome', obrigatorio: true },
+      { chave: 'descricao', rotulo: 'Descrição' },
+      { chave: 'data_inicio', rotulo: 'Início da turma', tipo: 'data' },
+    ],
+    detalhe: (r) => [r.data_inicio && `início em ${formatarData(r.data_inicio)}`, r.descricao].filter(Boolean).join(' · '),
+  },
+  {
+    nome: 'links',
+    titulo: 'Links do portal',
+    descricao: 'Aparecem em Links Importantes. Os marcados como atalho também aparecem no Início (ex.: WhatsApp do suporte, grupo de avisos, agendamento).',
+    campos: [
+      { chave: 'titulo', rotulo: 'Título', obrigatorio: true },
+      { chave: 'url', rotulo: 'Endereço', tipo: 'url', obrigatorio: true },
+      { chave: 'categoria', rotulo: 'Categoria', dica: 'Ex.: Suporte, Aulas, Comunidade.' },
+      { chave: 'descricao', rotulo: 'Descrição' },
+      { chave: 'ordem', rotulo: 'Ordem', tipo: 'numero' },
+      { chave: 'destaque_inicio', rotulo: 'Mostrar como atalho no Início', tipo: 'check' },
+    ],
+    detalhe: (r) => [r.categoria, r.destaque_inicio && 'atalho no Início', r.url].filter(Boolean).join(' · '),
+  },
+  {
+    nome: 'frases',
+    titulo: 'Frases do dia',
+    descricao: 'Uma por dia no Início do portal, com o botão “Próxima”.',
+    campos: [
+      { chave: 'texto', rotulo: 'Frase', tipo: 'longo', obrigatorio: true },
+      { chave: 'autoria', rotulo: 'Autoria' },
+    ],
+    detalhe: (r) => r.autoria ?? '',
   },
   {
     nome: 'motivos-impedimento',
@@ -119,7 +154,7 @@ function Cadastros() {
                 {lista.map((r) => (
                   <li key={r.id} className="flex items-center justify-between gap-2 py-1.5">
                     <span className={cx(!r.ativo && 'text-ink-muted')}>
-                      {r.nome} {!r.ativo && <Selo>Inativo</Selo>}
+                      {r.nome ?? r.titulo ?? r.texto} {!r.ativo && <Selo>Inativo</Selo>}
                       {c.detalhe(r) && <span className="block text-xs text-ink-muted">{c.detalhe(r)}</span>}
                     </span>
                     <button type="button" className="btn-ghost btn-sm" onClick={() => setEditando({ cad: c, reg: r })}>
@@ -167,7 +202,21 @@ function DialogCadastro({ cad, reg, onFechar }: { cad: (typeof CADASTROS)[number
           </label>
         ) : (
           <Campo key={c.chave} rotulo={c.rotulo} obrigatorio={c.obrigatorio} dica={c.dica}>
-            {(p) => <input type={c.tipo === 'numero' ? 'number' : 'text'} min={c.tipo === 'numero' ? 5 : undefined} className="field-control" {...p} value={String(valores[c.chave])} onChange={campo(c.chave)} />}
+            {(p) =>
+              c.tipo === 'longo' ? (
+                <textarea rows={3} maxLength={500} className="field-control" {...p} value={String(valores[c.chave])} onChange={campo(c.chave)} />
+              ) : (
+                <input
+                  type={c.tipo === 'numero' ? 'number' : c.tipo === 'url' ? 'url' : c.tipo === 'data' ? 'date' : 'text'}
+                  min={c.tipo === 'numero' ? (c.chave === 'ordem' ? 0 : 5) : undefined}
+                  placeholder={c.tipo === 'url' ? 'https://' : undefined}
+                  className="field-control"
+                  {...p}
+                  value={String(valores[c.chave])}
+                  onChange={campo(c.chave)}
+                />
+              )
+            }
           </Campo>
         ),
       )}

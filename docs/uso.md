@@ -47,6 +47,18 @@ Cada aluna tem um **ID** (#001, #002…) que segue a ordem de matrícula. As lis
 
 ## Aluna (portal, celular e computador)
 
+O portal tem um menu lateral por seções (Minha Jornada, Meu Perfil, Aprendizado, Execução, Acompanhamento, Comunidade, Recursos e Conta). O botão no topo recolhe o menu; no celular, ele abre como gaveta. A busca (Ctrl+K ou ⌘K) encontra páginas, tipos de mentoria, etapas, atividades e encontros. O sino mostra os avisos da equipe.
+
+- **Início:** saudação com a data, a semana do programa e a turma, o próximo passo, os próximos encontros, as mentorias realizadas, as metas, os atalhos e a frase do dia.
+- **Meus Dados:** dados do cadastro e do programa, contrato e redes sociais. A aluna edita telefone, cidade e redes; nome e e-mail só pela equipe.
+- **Diagnóstico:** quatro áreas (situação atual, objetivos, desafios e expectativas) no início do programa. A versão de fim abre 30 dias antes do fim da vigência, e a aba Comparar mostra as duas lado a lado. As metas têm valor inicial, alvo e atual.
+- **Jornada** e **Mentorias** (um item por tipo contratado, com os nomes de sempre): as mesmas informações de antes, descritas abaixo.
+- **Links Úteis** e **Minha Conta** (troca de senha).
+
+Na equipe, a ficha ganhou a aba **Diagnóstico** (só leitura), e Configurações ganhou os cadastros de Turmas, Links úteis e Frases.
+
+### Jornada e mentorias
+
 O portal mostra:
 - O próximo passo, a trilha, o pilar e a vigência.
 - **Quanto já concluí:** o percentual da trilha (cada etapa vale o mesmo; a etapa em andamento conta pelas atividades validadas).

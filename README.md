@@ -60,7 +60,7 @@ Nada foi publicado. Para publicar, você precisa de um servidor com Node, disco 
 ## Testes
 
 ```bash
-npm test          # 32 testes: 25 de aceite (CA01–CA16 + segurança) e 7 de cálculo
+npm test          # 39 testes: 32 de aceite (CA01–CA16, segurança e portal da aluna) e 7 de cálculo
 npm run typecheck
 ```
 

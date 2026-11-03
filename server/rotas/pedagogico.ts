@@ -2,7 +2,7 @@ import { Router, type Request } from 'express'
 import { z } from 'zod'
 import { agoraIso, novoId, type BD } from '../db'
 import { ErroHttp, exigir, exigirEquipe, tem } from '../auth'
-import { auditar, booleano, data, dataObrig, escopoMatriculas, exigirAcessoMatricula, hoje, id, idObrig, link, texto, textoObrig, validar } from '../servicos'
+import { auditar, booleano, data, dataObrig, escopoMatriculas, exigirAcessoMatricula, hoje, id, idObrig, link, notificarAluna, texto, textoObrig, validar } from '../servicos'
 import { criaCiclo } from '../../shared/calculos'
 import { anexosPorEvidencia, entregarAnexo } from '../anexos'
 
@@ -258,6 +258,7 @@ export function rotasPedagogico(db: BD) {
       const je = carregarJE(req, req.params.id as string)
       if (je.situacao !== 'bloqueada') throw new ErroHttp(409, 'Esta etapa já foi liberada.')
       liberar(req, je, je.matricula_id as string, d.justificativa ?? null)
+      notificarAluna(db, je.matricula_id as string, { titulo: 'Nova etapa liberada', detalhe: 'Veja as atividades na sua jornada.', link: `#/jornada/${je.id}` })
     })()
     res.json({ ok: true })
   })
@@ -275,6 +276,7 @@ export function rotasPedagogico(db: BD) {
       db.prepare("INSERT INTO validacoes (id, alvo_tipo, alvo_id, matricula_id, decisao, excecao, justificativa, autor_id, criado_em) VALUES (?, 'etapa_conclusao', ?, ?, 'concluida', ?, ?, ?, ?)").run(
         novoId(), je.id, je.matricula_id, excecao ? 1 : 0, d.justificativa ?? null, req.usuario!.id, agoraIso())
       auditar(db, req, { entidade: 'jornada_etapa', entidade_id: je.id as string, acao: excecao ? 'etapa_concluida_excecao' : 'etapa_concluida', matricula_id: je.matricula_id as string, dados: d })
+      notificarAluna(db, je.matricula_id as string, { titulo: 'Etapa concluída', detalhe: 'Parabéns! A equipe concluiu uma etapa da sua jornada.', link: `#/jornada/${je.id}` })
     })()
     res.json({ ok: true })
   })
@@ -326,6 +328,18 @@ export function rotasPedagogico(db: BD) {
     res.status(201).json({ ok: true })
   })
 
+  /** Diagnóstico e metas que a aluna preencheu no portal (somente leitura para a equipe). */
+  r.get('/matriculas/:id/diagnostico', (req, res) => {
+    exigir(req, 'jornada:ver')
+    const m = exigirAcessoMatricula(db, req, req.params.id as string)
+    const respostas = (db.prepare('SELECT versao, area, conteudo, atualizado_em FROM diagnosticos WHERE matricula_id = ?').all(m.id) as Linha[]).map((x) => ({
+      ...x,
+      conteudo: JSON.parse(x.conteudo as string),
+    }))
+    const metas = db.prepare('SELECT id, nome, unidade, valor_inicial, valor_alvo, valor_atual, atualizado_em FROM metas WHERE matricula_id = ? AND ativo = 1 ORDER BY criado_em').all(m.id)
+    res.json({ respostas, metas })
+  })
+
   /** Download de um anexo enviado pela aluna, para quem pode ver a jornada dela. */
   r.get('/anexos/:id', (req, res) => {
     exigir(req, 'jornada:ver')
@@ -347,6 +361,11 @@ export function rotasPedagogico(db: BD) {
       db.prepare("INSERT INTO validacoes (id, alvo_tipo, alvo_id, matricula_id, decisao, comentario, excecao, autor_id, criado_em) VALUES (?, 'atividade', ?, ?, ?, ?, ?, ?, ?)").run(
         novoId(), a.id, a.matricula_id, d.decisao, d.comentario ?? null, !temEvidencia && d.decisao === 'validada' ? 1 : 0, req.usuario!.id, agoraIso())
       auditar(db, req, { entidade: 'atividade', entidade_id: a.id as string, acao: d.decisao === 'validada' ? 'validada' : 'enviada_para_revisao', matricula_id: a.matricula_id as string, dados: d })
+      notificarAluna(db, a.matricula_id as string, {
+        titulo: d.decisao === 'validada' ? 'Atividade validada' : 'A equipe pediu um ajuste',
+        detalhe: a.titulo as string,
+        link: `#/jornada/${a.jornada_etapa_id}`,
+      })
     })()
     res.json({ ok: true })
   })
@@ -410,6 +429,7 @@ export function rotasPedagogico(db: BD) {
       db.prepare("INSERT INTO validacoes (id, alvo_tipo, alvo_id, matricula_id, decisao, autor_id, criado_em) VALUES (?, 'conquista', ?, ?, ?, ?, ?)").run(
         novoId(), c.id, c.matricula_id, d.validada ? (d.visivel_aluna ? 'validada_visivel' : 'validada_interna') : 'nao_validada', req.usuario!.id, agoraIso())
       auditar(db, req, { entidade: 'conquista', entidade_id: c.id as string, acao: 'validacao', matricula_id: c.matricula_id as string, dados: d })
+      if (d.visivel_aluna && !c.visivel_aluna) notificarAluna(db, c.matricula_id as string, { titulo: 'Nova vitória validada', detalhe: c.titulo as string, link: '#/vitorias' })
     })()
     res.json({ ok: true })
   })

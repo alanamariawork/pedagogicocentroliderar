@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import type { Request } from 'express'
 import { z } from 'zod'
 import { agoraIso, novoId, type BD } from './db'
@@ -236,4 +237,16 @@ export function filtrarNotas<T extends Record<string, unknown>>(req: Request, li
     return c
   }
   return linha
+}
+
+/**
+ * Aviso no sino do portal da aluna dona da matrícula. Fica só dentro do sistema (nada é enviado
+ * por e-mail ou WhatsApp) e deve ter texto curto, sem detalhes pessoais.
+ */
+export function notificarAluna(db: BD, matriculaId: string, aviso: { titulo: string; detalhe?: string; link?: string }) {
+  const usuarios = db
+    .prepare("SELECT u.id FROM usuarios u JOIN matriculas m ON m.pessoa_id = u.pessoa_id WHERE m.id = ? AND u.perfil = 'aluna' AND u.ativo = 1")
+    .all(matriculaId) as { id: string }[]
+  const ins = db.prepare('INSERT INTO notificacoes (id, usuario_id, titulo, detalhe, link, criado_em) VALUES (?, ?, ?, ?, ?, ?)')
+  for (const u of usuarios) ins.run(randomUUID(), u.id, aviso.titulo, aviso.detalhe ?? null, aviso.link ?? null, new Date().toISOString())
 }

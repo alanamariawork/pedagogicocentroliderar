@@ -13,6 +13,7 @@ import { useSessao } from '../state/Sessao'
 import { formatarCarimbo, formatarData, hojeSP } from '../../shared/datas'
 import { Entregaveis, Encontros } from './ficha/Entregaveis'
 import { JornadaAluna } from './ficha/Jornada'
+import { DiagnosticoAluna } from './ficha/Diagnostico'
 import { Continuidade } from './ficha/Continuidade'
 import { Anotacoes, Conquistas, Contatos, Historico } from './ficha/Registros'
 
@@ -21,6 +22,7 @@ const ABAS = [
   { id: 'entregaveis', nome: 'Entregáveis' },
   { id: 'encontros', nome: 'Encontros' },
   { id: 'jornada', nome: 'Jornada' },
+  { id: 'diagnostico', nome: 'Diagnóstico' },
   { id: 'contatos', nome: 'Contatos' },
   { id: 'conquistas', nome: 'Conquistas' },
   { id: 'continuidade', nome: 'Pausa, renovação e satisfação' },
@@ -38,7 +40,7 @@ export function Ficha({ pessoaId, aba = 'resumo' }: { pessoaId: string; aba?: st
   if (!dados) return <Carregando />
   const { pessoa, matriculas } = dados as { pessoa: Reg; matriculas: Reg[] }
   const m = matriculas.find((x) => x.id === matriculaId) ?? matriculas[0]
-  const abas = ABAS.filter((a) => (a.id === 'historico' ? !!dados.auditoria : a.id === 'jornada' ? pode('jornada:ver') : a.id === 'anotacoes' ? pode('notas:internas') || pode('notas:pedagogicas') : true))
+  const abas = ABAS.filter((a) => (a.id === 'historico' ? !!dados.auditoria : a.id === 'jornada' || a.id === 'diagnostico' ? pode('jornada:ver') : a.id === 'anotacoes' ? pode('notas:internas') || pode('notas:pedagogicas') : true))
   const abaAtual = abas.some((a) => a.id === aba) ? aba : 'resumo'
 
   return (
@@ -53,6 +55,9 @@ export function Ficha({ pessoaId, aba = 'resumo' }: { pessoaId: string; aba?: st
             {pessoa.nome} {pessoa.demonstracao ? <Selo tom="info">Demonstração</Selo> : null}
           </h2>
           <p className="text-sm text-ink-muted">{[pessoa.email, pessoa.telefone, pessoa.cidade].filter(Boolean).join(' · ') || 'Sem contato cadastrado'}</p>
+          {(pessoa.instagram || pessoa.linkedin || pessoa.site) && (
+            <p className="text-xs text-ink-muted">{[pessoa.instagram && `Instagram: ${pessoa.instagram}`, pessoa.linkedin && `LinkedIn: ${pessoa.linkedin}`, pessoa.site].filter(Boolean).join(' · ')}</p>
+          )}
           {pessoa.observacao_operacional && <p className="mt-1 text-sm text-ink-soft">{pessoa.observacao_operacional}</p>}
           {dados.acesso_portal ? (
             <p className="mt-1 text-xs text-success">Acesso ao portal: {dados.acesso_portal.email}</p>
@@ -132,6 +137,8 @@ function ConteudoAba({ aba, m, matriculas, pessoa, auditoria, recarregar }: { ab
       return <Encontros m={m} pessoa={pessoa} recarregar={recarregar} />
     case 'jornada':
       return <JornadaAluna m={m} />
+    case 'diagnostico':
+      return <DiagnosticoAluna m={m} />
     case 'contatos':
       return <Contatos m={m} recarregar={recarregar} />
     case 'conquistas':
@@ -190,6 +197,8 @@ function Resumo({ m, matriculas, recarregar }: { m: Reg; matriculas: Reg[]; reca
             {formatarData(m.data_inicio)} a {m.data_fim ? formatarData(m.data_fim) : <Selo tom="alerta">Término não definido</Selo>}
           </Linha>
           <Linha rotulo="Programa">{m.programa_nome ?? '—'}</Linha>
+          <Linha rotulo="Turma">{m.turma_nome ?? '—'}</Linha>
+          <Linha rotulo="Boas-vindas">{m.data_boas_vindas ? formatarData(m.data_boas_vindas) : '—'}</Linha>
           <Linha rotulo="Responsável">{m.responsavel_nome ?? '—'}</Linha>
           <Linha rotulo="Mentora">{m.mentora_nome ?? '—'}</Linha>
           <Linha rotulo="Entregas">
@@ -329,7 +338,16 @@ function FormDialogConferencia({ m, onFechar, onConcluir }: { m: Reg; onFechar: 
 
 function DialogPessoa({ pessoa, onFechar, onConcluir }: { pessoa: Reg; onFechar: () => void; onConcluir: () => void }) {
   const fb = useFeedback()
-  const { valores, campo } = useValores({ nome: pessoa.nome ?? '', email: pessoa.email ?? '', telefone: pessoa.telefone ?? '', cidade: pessoa.cidade ?? '', observacao_operacional: pessoa.observacao_operacional ?? '' })
+  const { valores, campo } = useValores({
+    nome: pessoa.nome ?? '',
+    email: pessoa.email ?? '',
+    telefone: pessoa.telefone ?? '',
+    cidade: pessoa.cidade ?? '',
+    instagram: pessoa.instagram ?? '',
+    linkedin: pessoa.linkedin ?? '',
+    site: pessoa.site ?? '',
+    observacao_operacional: pessoa.observacao_operacional ?? '',
+  })
   return (
     <FormDialog
       aberto
@@ -349,6 +367,11 @@ function DialogPessoa({ pessoa, onFechar, onConcluir }: { pessoa: Reg; onFechar:
         <Campo rotulo="Telefone">{(p) => <input {...p} className="field-control" value={valores.telefone} onChange={campo('telefone')} />}</Campo>
       </div>
       <Campo rotulo="Cidade">{(p) => <input {...p} className="field-control" value={valores.cidade} onChange={campo('cidade')} />}</Campo>
+      <div className="grid gap-4 sm:grid-cols-3">
+        <Campo rotulo="Instagram">{(p) => <input {...p} className="field-control" value={valores.instagram} onChange={campo('instagram')} />}</Campo>
+        <Campo rotulo="LinkedIn">{(p) => <input {...p} className="field-control" value={valores.linkedin} onChange={campo('linkedin')} />}</Campo>
+        <Campo rotulo="Site">{(p) => <input {...p} type="url" placeholder="https://" className="field-control" value={valores.site} onChange={campo('site')} />}</Campo>
+      </div>
       <Campo rotulo="Observação operacional" dica="Só o mínimo necessário para a operação. Não registre diagnósticos ou relatos sensíveis.">
         {(p) => <textarea {...p} rows={2} className="field-control" value={valores.observacao_operacional} onChange={campo('observacao_operacional')} />}
       </Campo>
@@ -387,7 +410,8 @@ function DialogDados({ m, onFechar, onConcluir }: { m: Reg; onFechar: () => void
   const fb = useFeedback()
   const { valores, campo } = useValores({
     programa_id: m.programa_id ?? '',
-    turma: m.turma ?? '',
+    turma_id: m.turma_id ?? '',
+    data_boas_vindas: m.data_boas_vindas ?? '',
     data_inicio: m.data_inicio ?? '',
     data_fim: m.data_fim ?? '',
     responsavel_id: m.responsavel_id ?? '',
@@ -401,7 +425,14 @@ function DialogDados({ m, onFechar, onConcluir }: { m: Reg; onFechar: () => void
       titulo="Matrícula e vigência"
       onFechar={onFechar}
       onEnviar={async () => {
-        await put(`/matriculas/${m.id}/dados`, { ...valores, programa_id: valores.programa_id || null, responsavel_id: valores.responsavel_id || null, mentora_id: valores.mentora_id || null })
+        await put(`/matriculas/${m.id}/dados`, {
+          ...valores,
+          programa_id: valores.programa_id || null,
+          turma_id: valores.turma_id || null,
+          data_boas_vindas: valores.data_boas_vindas || null,
+          responsavel_id: valores.responsavel_id || null,
+          mentora_id: valores.mentora_id || null,
+        })
         fb.sucesso('Matrícula atualizada.')
         onConcluir()
       }}
@@ -414,7 +445,16 @@ function DialogDados({ m, onFechar, onConcluir }: { m: Reg; onFechar: () => void
             </select>
           )}
         </Campo>
-        <Campo rotulo="Turma">{(p) => <input {...p} className="field-control" value={valores.turma} onChange={campo('turma')} />}</Campo>
+        <Campo rotulo="Turma" dica="Cadastre turmas em Configurações → Cadastros.">
+          {(p) => (
+            <select {...p} className="field-control" value={valores.turma_id} onChange={campo('turma_id')}>
+              <Opcoes itens={ativos(cat?.turmas)} vazio="Sem turma" />
+            </select>
+          )}
+        </Campo>
+        <Campo rotulo="Boas-vindas" dica="Data do encontro de boas-vindas.">
+          {(p) => <input {...p} type="date" className="field-control" value={valores.data_boas_vindas} onChange={campo('data_boas_vindas')} />}
+        </Campo>
         <Campo rotulo="Início" obrigatorio>
           {(p) => <input {...p} type="date" className="field-control" value={valores.data_inicio} onChange={campo('data_inicio')} />}
         </Campo>

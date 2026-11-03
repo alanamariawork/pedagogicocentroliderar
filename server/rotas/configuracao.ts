@@ -2,7 +2,7 @@ import { Router } from 'express'
 import { z } from 'zod'
 import { agoraIso, novoId, type BD } from '../db'
 import { ErroHttp, exigir, exigirEquipe } from '../auth'
-import { auditar, booleano, data, id, idObrig, minutos, texto, textoObrig, validar } from '../servicos'
+import { auditar, booleano, data, id, idObrig, link, minutos, texto, textoObrig, validar } from '../servicos'
 import type { Permissao } from '../../shared/permissoes'
 
 const bool = () => booleano().optional()
@@ -46,6 +46,32 @@ const CATALOGOS: Record<string, { tabela: string; permissao: Permissao; esquema:
     esquema: z.object({ nome: textoObrig('o nome'), descricao: texto(), ordem: ordem(), ativo: bool() }),
     ordem: 'ordem, nome',
   },
+  turmas: {
+    tabela: 'turmas',
+    permissao: 'config:editar',
+    esquema: z.object({ nome: textoObrig('o nome'), descricao: texto(), data_inicio: data('a data de início'), ativo: bool() }),
+    ordem: 'nome',
+  },
+  frases: {
+    tabela: 'frases',
+    permissao: 'config:editar',
+    esquema: z.object({ texto: textoObrig('a frase', 500), autoria: texto(200), ativo: bool() }),
+    ordem: 'criado_em',
+  },
+  links: {
+    tabela: 'links',
+    permissao: 'config:editar',
+    esquema: z.object({
+      titulo: textoObrig('o título', 120),
+      url: z.string({ error: 'Informe o endereço do link.' }).trim().min(1, 'Informe o endereço do link.').pipe(link() as unknown as z.ZodType<string, string>),
+      categoria: texto(80),
+      descricao: texto(300),
+      destaque_inicio: bool(),
+      ordem: ordem(),
+      ativo: bool(),
+    }),
+    ordem: "COALESCE(categoria, ''), ordem, titulo",
+  },
   pilares: {
     tabela: 'pilares',
     permissao: 'pedagogico:configurar',
@@ -76,7 +102,7 @@ export function rotasConfiguracao(db: BD) {
       campos.map((k) => {
         const v = d[k]
         if (typeof v === 'boolean') return v ? 1 : 0
-        if (v === undefined) return k === 'ativo' || k === 'individual' ? 1 : k === 'ordem' ? 0 : k === 'exige_descricao' ? 0 : null
+        if (v === undefined) return k === 'ativo' || k === 'individual' ? 1 : ['ordem', 'exige_descricao', 'destaque_inicio'].includes(k) ? 0 : null
         return v
       })
 

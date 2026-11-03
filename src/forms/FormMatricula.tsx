@@ -114,6 +114,7 @@ export function DialogMatricula({ pessoa, anterior, onFechar, onConcluir }: { pe
     email: '',
     telefone: '',
     programa_id: (anterior?.programa_id as string) ?? '',
+    turma_id: (anterior?.turma_id as string) ?? '',
     data_inicio: inicio,
     data_fim: '',
     responsavel_id: (anterior?.responsavel_id as string) ?? '',
@@ -137,6 +138,7 @@ export function DialogMatricula({ pessoa, anterior, onFechar, onConcluir }: { pe
       onEnviar={async () => {
         const matricula = {
           programa_id: valores.programa_id || null,
+          turma_id: valores.turma_id || null,
           data_inicio: valores.data_inicio,
           data_fim: valores.data_fim || null,
           responsavel_id: valores.responsavel_id || null,
@@ -179,6 +181,13 @@ export function DialogMatricula({ pessoa, anterior, onFechar, onConcluir }: { pe
           {(p) => (
             <select {...p} className="field-control" value={valores.programa_id} onChange={campo('programa_id')}>
               <Opcoes itens={ativos(cat?.programas)} vazio="A definir" />
+            </select>
+          )}
+        </Campo>
+        <Campo rotulo="Turma">
+          {(p) => (
+            <select {...p} className="field-control" value={valores.turma_id} onChange={campo('turma_id')}>
+              <Opcoes itens={ativos(cat?.turmas)} vazio="Sem turma" />
             </select>
           )}
         </Campo>

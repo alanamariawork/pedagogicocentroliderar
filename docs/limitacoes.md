@@ -10,6 +10,8 @@
 - **Encontro realizado:** a reserva do horário continua ocupando a agenda, o que é o comportamento esperado para o histórico. A agenda não tem visão de mês nem arrastar e soltar.
 - **Banco:** SQLite em um único servidor serve bem um piloto com uma equipe pequena. Para muitos acessos simultâneos ou mais de um servidor, o próximo passo seria migrar para PostgreSQL.
 - **Publicação:** nada foi publicado. Veja o README.
+- **Portal da Aluna em fases:** o menu novo já mostra todas as seções. As que ainda não foram construídas (Trilhas, Biblioteca, Plano de Ação, Tarefas, Rotina, Meu Nível, Plano 90 dias, Balanço, Mural, Ranking, Casos e Agenda) abrem uma tela explicando o que virá, com um botão para uma tela que já funciona. Pontos e níveis entram na fase 3; até lá, o card "Meu nível" do Início é só um aviso.
+- **Avisos (sino):** ficam só dentro do sistema. Não há e-mail, push nem WhatsApp.
 
 ## Premissas adotadas (revisáveis)
 

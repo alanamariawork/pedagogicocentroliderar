@@ -29,6 +29,9 @@ const esquemaPessoa = z.object({
   telefone: texto(40),
   cidade: texto(120),
   observacao_operacional: texto(500),
+  instagram: texto(200),
+  linkedin: texto(200),
+  site: link(),
 })
 
 const esquemaItem = z.object({
@@ -45,7 +48,8 @@ const esquemaItem = z.object({
 
 const esquemaMatricula = z.object({
   programa_id: id(),
-  turma: texto(120),
+  turma_id: id(),
+  data_boas_vindas: data('a data de boas-vindas'),
   data_inicio: dataObrig('a data de início da vigência'),
   data_fim: data('a data de término da vigência'),
   responsavel_id: id(),
@@ -116,11 +120,11 @@ export function rotasAlunas(db: BD) {
     // ID da aluna: número sequencial dado na primeira matrícula (ordem de matrícula). Renovações mantêm o mesmo ID.
     db.prepare('UPDATE pessoas SET codigo = (SELECT COALESCE(MAX(codigo), 0) + 1 FROM pessoas) WHERE id = ? AND codigo IS NULL').run(pessoaId)
     db.prepare(
-      `INSERT INTO matriculas (id, pessoa_id, programa_id, matricula_anterior_id, turma, data_inicio, data_fim, situacao, contrato_situacao, contrato_link,
+      `INSERT INTO matriculas (id, pessoa_id, programa_id, matricula_anterior_id, turma_id, data_boas_vindas, data_inicio, data_fim, situacao, contrato_situacao, contrato_link,
          fonte_comercial, condicoes_comerciais, responsavel_id, mentora_id, pacote_origem_id, pacote_origem_nome, criado_em, atualizado_em, autor_id)
-       VALUES (?,?,?,?,?,?,?,'ativa',?,?,?,?,?,?,?,?,?,?,?)`,
+       VALUES (?,?,?,?,?,?,?,?,'ativa',?,?,?,?,?,?,?,?,?,?,?)`,
     ).run(
-      mid, pessoaId, d.programa_id ?? null, d.matricula_anterior_id ?? null, d.turma ?? null, d.data_inicio, d.data_fim ?? null,
+      mid, pessoaId, d.programa_id ?? null, d.matricula_anterior_id ?? null, d.turma_id ?? null, d.data_boas_vindas ?? null, d.data_inicio, d.data_fim ?? null,
       d.contrato_situacao, d.contrato_link ?? null, d.fonte_comercial ?? null, d.condicoes_comerciais ?? null,
       d.responsavel_id ?? null, d.mentora_id ?? null, pacote?.id ?? null, pacote?.nome ?? null, agora, agora, req.usuario!.id,
     )
@@ -168,8 +172,8 @@ export function rotasAlunas(db: BD) {
     let mid: string | null = null
     db.transaction(() => {
       const agora = agoraIso()
-      db.prepare('INSERT INTO pessoas (id, nome, email, telefone, cidade, observacao_operacional, criado_em, atualizado_em, autor_id) VALUES (?,?,?,?,?,?,?,?,?)').run(
-        pid, d.nome, d.email ?? null, d.telefone ?? null, d.cidade ?? null, d.observacao_operacional ?? null, agora, agora, req.usuario!.id)
+      db.prepare('INSERT INTO pessoas (id, nome, email, telefone, cidade, observacao_operacional, instagram, linkedin, site, criado_em, atualizado_em, autor_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)').run(
+        pid, d.nome, d.email ?? null, d.telefone ?? null, d.cidade ?? null, d.observacao_operacional ?? null, d.instagram ?? null, d.linkedin ?? null, d.site ?? null, agora, agora, req.usuario!.id)
       auditar(db, req, { entidade: 'pessoa', entidade_id: pid, acao: 'criada', pessoa_id: pid, dados: { nome: d.nome } })
       if (d.matricula) mid = criarMatricula(req, pid, d.matricula)
     })()
@@ -181,8 +185,8 @@ export function rotasAlunas(db: BD) {
     const d = validar(esquemaPessoa, req.body)
     if (d.email && db.prepare('SELECT 1 FROM pessoas WHERE email = ? AND id <> ?').get(d.email, req.params.id)) throw new ErroHttp(409, 'Já existe outra pessoa com este e-mail.')
     const info = db
-      .prepare('UPDATE pessoas SET nome=?, email=?, telefone=?, cidade=?, observacao_operacional=?, atualizado_em=?, autor_id=? WHERE id=?')
-      .run(d.nome, d.email ?? null, d.telefone ?? null, d.cidade ?? null, d.observacao_operacional ?? null, agoraIso(), req.usuario!.id, req.params.id)
+      .prepare('UPDATE pessoas SET nome=?, email=?, telefone=?, cidade=?, observacao_operacional=?, instagram=?, linkedin=?, site=?, atualizado_em=?, autor_id=? WHERE id=?')
+      .run(d.nome, d.email ?? null, d.telefone ?? null, d.cidade ?? null, d.observacao_operacional ?? null, d.instagram ?? null, d.linkedin ?? null, d.site ?? null, agoraIso(), req.usuario!.id, req.params.id)
     if (info.changes === 0) throw new ErroHttp(404, 'Pessoa não encontrada.')
     auditar(db, req, { entidade: 'pessoa', entidade_id: req.params.id as string, acao: 'atualizada', pessoa_id: req.params.id as string, dados: d })
     res.json({ ok: true })
@@ -208,8 +212,8 @@ export function rotasAlunas(db: BD) {
     const esc = escopoMatriculas(req)
     const matriculas = db
       .prepare(
-        `SELECT m.*, pg.nome AS programa_nome, ur.nome AS responsavel_nome, pr.nome AS mentora_nome, uo.nome AS onboarding_responsavel_nome, uc.nome AS conferida_por_nome
-         FROM matriculas m LEFT JOIN programas pg ON pg.id = m.programa_id LEFT JOIN usuarios ur ON ur.id = m.responsavel_id
+        `SELECT m.*, pg.nome AS programa_nome, tu.nome AS turma_nome, ur.nome AS responsavel_nome, pr.nome AS mentora_nome, uo.nome AS onboarding_responsavel_nome, uc.nome AS conferida_por_nome
+         FROM matriculas m LEFT JOIN programas pg ON pg.id = m.programa_id LEFT JOIN turmas tu ON tu.id = m.turma_id LEFT JOIN usuarios ur ON ur.id = m.responsavel_id
          LEFT JOIN profissionais pr ON pr.id = m.mentora_id LEFT JOIN usuarios uo ON uo.id = m.onboarding_responsavel_id
          LEFT JOIN usuarios uc ON uc.id = m.conferida_por
          WHERE m.pessoa_id = @pid AND ${esc.sql} ORDER BY m.data_inicio DESC, m.criado_em DESC`,
@@ -276,7 +280,8 @@ export function rotasAlunas(db: BD) {
     const d = validar(
       z.object({
         programa_id: id(),
-        turma: texto(120),
+        turma_id: id(),
+        data_boas_vindas: data('a data de boas-vindas'),
         data_inicio: dataObrig('a data de início da vigência'),
         data_fim: data('a data de término'),
         responsavel_id: id(),
@@ -288,8 +293,8 @@ export function rotasAlunas(db: BD) {
     if (d.data_fim && d.data_fim < d.data_inicio) throw new ErroHttp(400, 'O término da vigência não pode ser antes do início.')
     const mudouVigencia = d.data_inicio !== m.data_inicio || (d.data_fim ?? null) !== m.data_fim
     if (mudouVigencia && m.data_fim && !d.motivo_alteracao_vigencia) throw new ErroHttp(400, 'Informe o motivo da alteração da vigência.')
-    db.prepare('UPDATE matriculas SET programa_id=?, turma=?, data_inicio=?, data_fim=?, responsavel_id=?, mentora_id=?, atualizado_em=?, autor_id=? WHERE id=?').run(
-      d.programa_id ?? null, d.turma ?? null, d.data_inicio, d.data_fim ?? null, d.responsavel_id ?? null, d.mentora_id ?? null, agoraIso(), req.usuario!.id, m.id)
+    db.prepare('UPDATE matriculas SET programa_id=?, turma_id=?, data_boas_vindas=?, data_inicio=?, data_fim=?, responsavel_id=?, mentora_id=?, atualizado_em=?, autor_id=? WHERE id=?').run(
+      d.programa_id ?? null, d.turma_id ?? null, d.data_boas_vindas ?? null, d.data_inicio, d.data_fim ?? null, d.responsavel_id ?? null, d.mentora_id ?? null, agoraIso(), req.usuario!.id, m.id)
     auditar(db, req, { entidade: 'matricula', entidade_id: m.id, acao: mudouVigencia ? 'vigencia_alterada' : 'dados_atualizados', matricula_id: m.id, dados: { antes: { data_inicio: m.data_inicio, data_fim: m.data_fim }, depois: d } })
     res.json({ ok: true })
   })

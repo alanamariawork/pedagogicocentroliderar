@@ -1,6 +1,6 @@
 # O que foi testado
 
-## Testes automáticos (`npm test`: 32 testes, todos passando)
+## Testes automáticos (`npm test`: 39 testes, todos passando)
 
 Os testes de aceite (`tests/aceite.test.ts`) sobem o servidor real com um banco em memória e a demonstração. Depois, fazem as chamadas pela API com cada perfil.
 
@@ -33,6 +33,15 @@ Além desses, há testes de segurança e consistência:
 - O sistema impede ciclos entre etapas.
 - Desmarcar libera o horário sem reduzir a obrigação.
 - A transferência na renovação não duplica a obrigação.
+
+Portal da Aluna, fase 1 (7 testes):
+- A migração cria as tabelas novas e converte as turmas em texto.
+- O Início traz a semana do programa, o próximo passo, os encontros, os atalhos e as metas da própria aluna.
+- Meus Dados: a aluna edita só contato e redes; nome, e-mail e matrícula não mudam pela API do portal.
+- Diagnóstico: valida as perguntas, bloqueia a versão de fim antes da hora e a equipe lê as respostas pela ficha.
+- Metas: exigem valor inicial e alvo diferentes, e uma aluna não altera nem exclui a meta de outra.
+- Avisos: agendar um encontro gera aviso para a aluna, e marcar como lido funciona.
+- Links: só a equipe com `config:editar` cadastra; a aluna vê a lista.
 
 Os testes de cálculo (`tests/calculos.test.ts`) cobrem:
 - A soma de horas sem contar a sobreposição duas vezes.

@@ -22,8 +22,9 @@ import {
   texto,
   textoObrig,
   validar,
+  notificarAluna,
 } from '../servicos'
-import { RE_MES, limitesDoMes, mesDe, somarDias, somarMinutos } from '../../shared/datas'
+import { RE_MES, formatarData, limitesDoMes, mesDe, somarDias, somarMinutos } from '../../shared/datas'
 import {
   contido,
   emAberto,
@@ -167,6 +168,7 @@ export function rotasOperacao(db: BD) {
       if (o.situacao === 'agendada') throw new ErroHttp(409, 'Esta entrega já está agendada. Use "Reagendar".')
       reservar(req, o, d)
       historico(db, req, o.id as string, 'agendada', null, d.inicio, d.motivo ?? null)
+      notificarAluna(db, o.matricula_id as string, { titulo: 'Encontro agendado', detalhe: `${formatarData(d.inicio.slice(0, 10))} às ${d.inicio.slice(11, 16)}`, link: '#/mentorias' })
       auditar(db, req, { entidade: 'ocorrencia', entidade_id: o.id as string, acao: 'agendada', matricula_id: o.matricula_id as string, dados: d })
     })
     tx.immediate()
@@ -185,6 +187,7 @@ export function rotasOperacao(db: BD) {
       reservar(req, { ...o, reserva_id: null }, d)
       // Histórico preserva previsão original, data anterior, nova data, motivo, autor e momento (RN11).
       historico(db, req, o.id as string, 'reagendada', anterior, d.inicio, d.motivo)
+      notificarAluna(db, o.matricula_id as string, { titulo: 'Encontro remarcado', detalhe: `Nova data: ${formatarData(d.inicio.slice(0, 10))} às ${d.inicio.slice(11, 16)}`, link: '#/mentorias' })
       auditar(db, req, { entidade: 'ocorrencia', entidade_id: o.id as string, acao: 'reagendada', matricula_id: o.matricula_id as string, dados: { de: anterior, para: d.inicio, motivo: d.motivo } })
     })
     tx.immediate()
@@ -201,6 +204,7 @@ export function rotasOperacao(db: BD) {
       // Desmarcar libera o horário mas NÃO reduz a obrigação: a entrega volta a aguardar agenda.
       db.prepare("UPDATE ocorrencias SET situacao='aguardando_agenda', data_agendada=NULL, atualizado_em=? WHERE id=?").run(agoraIso(), o.id)
       historico(db, req, o.id as string, 'desmarcada', o.data_agendada as string, null, d.motivo)
+      notificarAluna(db, o.matricula_id as string, { titulo: 'Encontro desmarcado', detalhe: 'A equipe vai combinar uma nova data com você.', link: '#/mentorias' })
       auditar(db, req, { entidade: 'ocorrencia', entidade_id: o.id as string, acao: 'desmarcada', matricula_id: o.matricula_id as string, dados: d })
     })()
     res.json({ ok: true })
