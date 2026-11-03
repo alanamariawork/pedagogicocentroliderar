@@ -192,7 +192,7 @@ function Resumo({ m, matriculas, pessoa, recarregar }: { m: Reg; matriculas: Reg
       <Secao titulo="Programa" descricao="Participação da aluna no programa">
         <dl>
           <Linha rotulo="Turma">{m.turma_nome ?? <span className="text-ink-muted">Sem turma</span>}</Linha>
-          <Linha rotulo="Reuniões feitas">
+          <Linha rotulo="Mentorias feitas">
             {realizadas} de {totais.c} contratada(s)
           </Linha>
           <Linha rotulo="Presença em treinamentos">

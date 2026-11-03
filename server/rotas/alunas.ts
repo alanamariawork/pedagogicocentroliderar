@@ -339,7 +339,7 @@ export function rotasAlunas(db: BD) {
       }
       const itens = (db
         .prepare(
-          `SELECT i.*, t.nome AS tipo_nome, t.categoria_id AS tipo_categoria_id, pr.nome AS profissional_nome FROM itens_contratados i
+          `SELECT i.*, t.nome AS tipo_nome, pr.nome AS profissional_nome FROM itens_contratados i
            LEFT JOIN tipos_entregavel t ON t.id = i.tipo_id LEFT JOIN profissionais pr ON pr.id = i.profissional_id
            WHERE i.matricula_id = ? ORDER BY i.criado_em`,
         )

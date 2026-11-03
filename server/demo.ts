@@ -453,12 +453,6 @@ export async function popularDemonstracao(db: BD) {
 
     /* ---------- Administrativo: estado das alunas, segmentos, canais e categorias (tudo de demonstração) ---------- */
     const opcao = (lista: string, codigo: string) => (db.prepare('SELECT id FROM opcoes_lista WHERE lista = ? AND codigo = ?').get(lista, codigo) as { id: string }).id
-    // Classificação de exemplo dos tipos de entregável: confira em Configurações → Cadastros.
-    for (const [chave, cat] of [
-      ['plano', 'mentoria'], ['tutoria', 'mentoria'], ['modelo', 'consultoria'], ['posicionamento', 'consultoria'],
-      ['juridico', 'consultoria'], ['rota', 'sucesso_aluno'], ['destrave', 'encontro_ao_vivo'],
-    ] as const)
-      db.prepare('UPDATE tipos_entregavel SET categoria_id = ? WHERE id = ?').run(opcao('tipo_reuniao', cat), tipo[chave])
     const segmentos: string[] = []
     for (const nome of ['Moda e varejo (demo)', 'Saúde e estética (demo)', 'Serviços (demo)'])
       segmentos.push((await api.post<{ id: string }>('/catalogos/segmentos', { nome })).id)
@@ -471,8 +465,8 @@ export async function popularDemonstracao(db: BD) {
       ['atencao', 'medio', true, suporte],
       ['saudavel', 'medio', false, suporte],
       ['critico', 'baixo', true, suporte],
-      ['atencao', 'baixo', false, coord],
-      ['saudavel', 'alto', false, null],
+      ['atencao', 'baixo', false, suporte],
+      ['saudavel', 'alto', false, null], // exemplo de aluna ainda sem responsável
     ]
     demoPessoas.forEach((p, n) => {
       const [saude, eng, risco, resp] = estados[n % estados.length]

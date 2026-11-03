@@ -2,7 +2,7 @@ import { Router } from 'express'
 import { z } from 'zod'
 import { agoraIso, novoId, type BD } from '../db'
 import { ErroHttp, exigir, exigirEquipe } from '../auth'
-import { auditar, booleano, data, exigirOpcao, id, idObrig, link, minutos, texto, textoObrig, validar } from '../servicos'
+import { auditar, booleano, data, id, idObrig, link, minutos, texto, textoObrig, validar } from '../servicos'
 import { CAMPOS_ALUNA, CORES_OPCAO, type Lista } from '../../shared/listas'
 import type { Permissao } from '../../shared/permissoes'
 
@@ -21,7 +21,6 @@ const CATALOGOS: Record<string, Catalogo> = {
   engajamento: opcoes('engajamento'),
   segmentos: opcoes('segmento'),
   'canais-venda': opcoes('canal_venda'),
-  'tipos-reuniao': opcoes('tipo_reuniao'),
   programas: {
     tabela: 'programas',
     permissao: 'config:editar',
@@ -42,11 +41,9 @@ const CATALOGOS: Record<string, Catalogo> = {
       descricao: texto(),
       duracao_padrao_min: minutos(),
       individual: bool(),
-      categoria_id: id(),
       ativo: bool(),
     }),
     ordem: 'nome',
-    checar: (db, d) => exigirOpcao(db, d.categoria_id as string | null, 'tipo_reuniao', 'a categoria de reunião'),
   },
   'motivos-impedimento': {
     tabela: 'motivos_impedimento',

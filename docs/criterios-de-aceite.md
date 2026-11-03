@@ -45,7 +45,7 @@ Portal da Aluna, fase 1 (7 testes):
 
 Administrativo, fase 1 (7 testes):
 - A migração 3 cria as listas e dá status e data de entrada a cada aluna com matrícula.
-- O Suporte/CS vê só a própria carteira na lista, na ficha, na jornada e no painel; a aluna que ele cadastra entra na carteira.
+- O Suporte/CS vê todas as alunas. Sem "ver todas", o perfil vê só a própria carteira na lista, na ficha, na jornada e no painel, e a aluna que ele cadastra entra na carteira.
 - O estado da aluna só aceita opções da lista certa e fica no histórico; a mentora não edita.
 - Pausar e retomar a matrícula muda o status da aluna.
 - As listas configuráveis são separadas entre si e só quem tem `config:editar` mexe.

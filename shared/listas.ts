@@ -9,7 +9,6 @@ export const LISTAS = {
   engajamento: { titulo: 'Engajamento', descricao: 'Quanto a aluna participa. É marcado na ficha; não há cálculo automático.' },
   segmento: { titulo: 'Segmentos', descricao: 'Segmento do negócio da aluna. O subsegmento é um texto livre na ficha.' },
   canal_venda: { titulo: 'Canais de venda', descricao: 'Por onde a matrícula foi vendida. Escolhido na matrícula.' },
-  tipo_reuniao: { titulo: 'Categorias de reunião', descricao: 'Agrupam os tipos de entregável (ex.: mentoria, consultoria). Usadas no Resumo Executivo da ficha.' },
 } as const
 export type Lista = keyof typeof LISTAS
 
@@ -37,10 +36,6 @@ export const OPCOES_INICIAIS: { lista: Lista; codigo: string; nome: string; cor:
   { lista: 'engajamento', codigo: 'alto', nome: 'Alto', cor: 'sucesso' },
   { lista: 'engajamento', codigo: 'medio', nome: 'Médio', cor: 'alerta' },
   { lista: 'engajamento', codigo: 'baixo', nome: 'Baixo', cor: 'perigo' },
-  { lista: 'tipo_reuniao', codigo: 'mentoria', nome: 'Mentoria', cor: 'vinho' },
-  { lista: 'tipo_reuniao', codigo: 'consultoria', nome: 'Consultoria', cor: 'info' },
-  { lista: 'tipo_reuniao', codigo: 'sucesso_aluno', nome: 'Sucesso do aluno', cor: 'sucesso' },
-  { lista: 'tipo_reuniao', codigo: 'encontro_ao_vivo', nome: 'Encontro ao vivo', cor: 'neutro' },
 ]
 
 /** Status que a matrícula atual indica. "A iniciar" = ativa, mas a vigência ainda não começou. */

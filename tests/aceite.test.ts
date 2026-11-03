@@ -514,15 +514,18 @@ describe('Permissões e segurança', () => {
 
     it('a migração 3 cria as listas e o estado inicial de cada aluna', () => {
       const listas = (db.prepare('SELECT lista, COUNT(*) AS n FROM opcoes_lista WHERE codigo IS NOT NULL GROUP BY lista').all() as J[]).map((l) => `${l.lista}:${l.n}`)
-      expect(listas).toEqual(expect.arrayContaining(['status_aluna:5', 'saude:3', 'engajamento:3', 'tipo_reuniao:4']))
+      expect(listas).toEqual(expect.arrayContaining(['status_aluna:5', 'saude:3', 'engajamento:3']))
       const semEstado = db.prepare('SELECT COUNT(*) AS n FROM pessoas p WHERE EXISTS (SELECT 1 FROM matriculas m WHERE m.pessoa_id = p.id) AND (status_id IS NULL OR data_entrada IS NULL)').get() as J
       expect(semEstado.n).toBe(0)
       const fernanda = db.prepare("SELECT status_id FROM pessoas WHERE nome LIKE 'Fernanda%'").get() as J
       expect(fernanda.status_id).toBe(opcao('status_aluna', 'pausada')) // a matrícula está pausada
     })
 
-    it('Suporte/CS vê só a própria carteira, e a regra vale na API', async () => {
+    it('Suporte/CS vê todas as alunas; sem "ver todas", o perfil fica só com a carteira (regra na API)', async () => {
       const todas = (await c.admin.ok('GET', '/pessoas')) as unknown as J[]
+      expect(((await c.suporte.ok('GET', '/pessoas')) as unknown as J[]).length).toBe(todas.length)
+      // Se a Administração tirar "ver todas" do Suporte/CS, ele passa a ver só a carteira.
+      db.prepare("DELETE FROM perfil_permissoes WHERE perfil = 'suporte' AND permissao = 'alunas:todas'").run()
       const carteira = (await c.suporte.ok('GET', '/pessoas')) as unknown as J[]
       const eu = await c.suporte.ok('GET', '/auth/eu')
       expect(carteira.length).toBeGreaterThan(0)
@@ -538,6 +541,7 @@ describe('Permissões e segurança', () => {
       // Cadastrada pelo Suporte/CS, a aluna entra na carteira dele.
       const nova = await c.suporte.ok('POST', '/pessoas', { nome: 'Teste Carteira', empresa: 'Empresa Teste' })
       expect((await c.suporte.ok('GET', `/pessoas/${nova.id}`)).pessoa.responsavel_id).toBe(eu.id)
+      db.prepare("INSERT INTO perfil_permissoes (perfil, permissao) VALUES ('suporte', 'alunas:todas')").run()
     })
 
     it('estado da aluna só aceita opções da lista certa e fica no histórico', async () => {

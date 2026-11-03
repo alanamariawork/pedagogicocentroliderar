@@ -464,7 +464,7 @@ const MIGRACOES: { versao: number; descricao: string; aplicar: (db: BD) => void 
   },
   {
     versao: 3,
-    descricao: 'Administrativo, fase 1: listas configuráveis, estado da aluna, canal de venda, categoria de reunião e campos visíveis à aluna',
+    descricao: 'Administrativo, fase 1: listas configuráveis, estado da aluna, canal de venda e campos visíveis à aluna',
     aplicar(db) {
       db.exec(/* sql */ `
         CREATE TABLE opcoes_lista (
@@ -489,7 +489,6 @@ const MIGRACOES: { versao: number; descricao: string; aplicar: (db: BD) => void 
         ALTER TABLE pessoas ADD COLUMN engajamento_id TEXT REFERENCES opcoes_lista(id);
         ALTER TABLE pessoas ADD COLUMN em_risco INTEGER NOT NULL DEFAULT 0;
         ALTER TABLE matriculas ADD COLUMN canal_venda_id TEXT REFERENCES opcoes_lista(id);
-        ALTER TABLE tipos_entregavel ADD COLUMN categoria_id TEXT REFERENCES opcoes_lista(id);
         CREATE TABLE campos_visibilidade (
           campo TEXT PRIMARY KEY,
           visivel_aluna INTEGER NOT NULL DEFAULT 0,
@@ -521,9 +520,9 @@ const MIGRACOES: { versao: number; descricao: string; aplicar: (db: BD) => void 
       }
 
       // Nova permissão: ver todas as alunas. Sem ela, o perfil vê só a própria carteira.
-      // Num banco que já tem regras gravadas, Administração e Coordenação continuam vendo tudo.
+      // Num banco que já tem regras gravadas, Administração, Coordenação e Suporte/CS continuam vendo tudo.
       const temRegras = (db.prepare('SELECT COUNT(*) AS n FROM perfil_permissoes').get() as { n: number }).n > 0
-      if (temRegras) for (const perfil of ['admin', 'coordenacao']) db.prepare("INSERT OR IGNORE INTO perfil_permissoes (perfil, permissao) VALUES (?, 'alunas:todas')").run(perfil)
+      if (temRegras) for (const perfil of ['admin', 'coordenacao', 'suporte']) db.prepare("INSERT OR IGNORE INTO perfil_permissoes (perfil, permissao) VALUES (?, 'alunas:todas')").run(perfil)
     },
   },
 ]

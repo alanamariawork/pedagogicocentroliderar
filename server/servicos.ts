@@ -199,7 +199,7 @@ export function historico(
 /** Consulta de ocorrências com tudo o que o painel precisa, sem multiplicar linhas por contatos. */
 export const SQL_OCORRENCIAS = `
 SELECT o.*,
-  i.descricao AS item_descricao, i.tipo_id, t.nome AS tipo_nome, t.categoria_id AS tipo_categoria_id, i.origem AS item_origem, i.especialidade,
+  i.descricao AS item_descricao, i.tipo_id, t.nome AS tipo_nome, i.origem AS item_origem, i.especialidade,
   COALESCE(o.duracao_min, i.duracao_min) AS duracao_efetiva,
   COALESCE(o.profissional_id, i.profissional_id) AS profissional_efetivo_id,
   pr.nome AS profissional_nome,

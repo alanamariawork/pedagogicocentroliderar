@@ -49,8 +49,10 @@ const TODAS = Object.keys(PERMISSOES) as Permissao[]
 export const PERMISSOES_PADRAO: Record<Perfil, Permissao[]> = {
   admin: TODAS,
   coordenacao: TODAS.filter((p) => p !== 'usuarios:admin'),
+  // Todas as alunas são de responsabilidade do Suporte/CS.
   suporte: [
     'alunas:ver',
+    'alunas:todas',
     'alunas:editar',
     'matriculas:criar',
     'comercial:ver',

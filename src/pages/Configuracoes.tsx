@@ -33,7 +33,6 @@ const LISTAS_CAD: Cadastro[] = (
     ['engajamento', 'engajamento'],
     ['segmentos', 'segmento'],
     ['canais-venda', 'canal_venda'],
-    ['tipos-reuniao', 'tipo_reuniao'],
   ] as const
 ).map(([nome, lista]) => ({
   nome,
@@ -77,16 +76,8 @@ const CADASTROS: Cadastro[] = [
       { chave: 'descricao', rotulo: 'Descrição' },
       { chave: 'duracao_padrao_min', rotulo: 'Duração padrão (min)', tipo: 'numero', dica: 'Deixe vazio se não houver duração definida: ela não será tratada como zero.' },
       { chave: 'individual', rotulo: 'Entregável individual (aparece no portal)', tipo: 'check' },
-      { chave: 'categoria_id', rotulo: 'Categoria de reunião', tipo: 'select', vazio: 'Sem categoria', opcoes: (c) => c['tipos-reuniao'].filter((o) => o.ativo), dica: 'Usada no Resumo Executivo da ficha (mentorias, reuniões com consultores).' },
     ],
-    detalhe: (r, c) =>
-      [
-        r.duracao_padrao_min ? formatarHoras(r.duracao_padrao_min) : 'duração não informada',
-        !r.individual && 'em grupo',
-        r.categoria_id ? c['tipos-reuniao'].find((o) => o.id === r.categoria_id)?.nome : 'sem categoria',
-      ]
-        .filter(Boolean)
-        .join(' · '),
+    detalhe: (r) => `${r.duracao_padrao_min ? formatarHoras(r.duracao_padrao_min) : 'duração não informada'}${r.individual ? '' : ' · em grupo'}`,
   },
   {
     nome: 'turmas',

@@ -16,7 +16,6 @@ export interface Catalogos {
   engajamento: Reg[]
   segmentos: Reg[]
   'canais-venda': Reg[]
-  'tipos-reuniao': Reg[]
   campos_visibilidade: { campo: string; visivel_aluna: number }[]
   configuracoes: Record<string, string>
   usuarios: Reg[]
@@ -68,6 +67,6 @@ export const equipe = (c: Catalogos | null) => (c?.usuarios ?? []).filter((u) =>
 export function opcoesPorId(c: Catalogos | null): Map<string, Reg> {
   const m = new Map<string, Reg>()
   if (!c) return m
-  for (const k of ['status-aluna', 'saude', 'engajamento', 'segmentos', 'canais-venda', 'tipos-reuniao'] as const) for (const o of c[k] ?? []) m.set(o.id, o)
+  for (const k of ['status-aluna', 'saude', 'engajamento', 'segmentos', 'canais-venda'] as const) for (const o of c[k] ?? []) m.set(o.id, o)
   return m
 }
