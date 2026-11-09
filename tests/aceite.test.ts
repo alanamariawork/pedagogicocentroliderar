@@ -1,45 +1,15 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import type { AddressInfo } from 'node:net'
-import type { Server } from 'node:http'
-import { mkdtempSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { abrirBanco, type BD } from '../server/db'
-import { criarApp } from '../server/app'
 import { processarAvisos } from '../server/servicos'
-import { popularDemonstracao, SENHA_DEMO } from '../server/demo'
+import { abrirAmbiente, ORIGEM, type Ambiente, type Cliente } from './apoio/ambiente'
+import { CONTAS, popularDemonstracao } from './apoio/demo'
 import { hojeSP, mesDe, somarDias } from '../shared/datas'
 
-/* Testes dos critérios de aceite (CA01–CA16) contra a API real, com o banco de demonstração. */
+/* Testes dos critérios de aceite (CA01–CA16) contra a API real, num D1 local com o banco de demonstração. */
 
 type J = Record<string, any> // eslint-disable-line @typescript-eslint/no-explicit-any
 
-class Cliente {
-  cookie = ''
-  constructor(private base: string) {}
-  async req(metodo: string, caminho: string, corpo?: unknown, semCabecalho = false) {
-    const headers: Record<string, string> = { 'Content-Type': 'application/json', Cookie: this.cookie }
-    if (!semCabecalho) headers['X-Requested-With'] = 'diamante-business'
-    const r = await fetch(this.base + caminho, { method: metodo, headers, body: corpo === undefined ? undefined : JSON.stringify(corpo) })
-    const set = r.headers.get('set-cookie')
-    if (set) this.cookie = set.split(';')[0]
-    return { status: r.status, corpo: (await r.json().catch(() => ({}))) as J, texto: '' }
-  }
-  async ok(metodo: string, caminho: string, corpo?: unknown) {
-    const r = await this.req(metodo, caminho, corpo)
-    if (r.status >= 400) throw new Error(`${metodo} ${caminho} → ${r.status} ${r.corpo.erro}`)
-    return r.corpo
-  }
-  entrar(email: string) {
-    return this.ok('POST', '/auth/login', { email, senha: SENHA_DEMO })
-  }
-}
-
-let dir: string
-let caminhoBanco: string
-let db: BD
-let servidor: Server
-let base: string
+let amb: Ambiente
+const db = () => amb.db
 const c: Record<string, Cliente> = {}
 const hoje = hojeSP()
 const mes = mesDe(hoje)
@@ -50,30 +20,21 @@ async function pessoaPorNome(nome: string) {
 }
 
 beforeAll(async () => {
-  dir = mkdtempSync(join(tmpdir(), 'ed-teste-'))
-  caminhoBanco = join(dir, 'teste.db')
-  db = abrirBanco(caminhoBanco)
-  await popularDemonstracao(db)
-  servidor = criarApp(db).listen(0, '127.0.0.1')
-  await new Promise((ok) => servidor.once('listening', ok))
-  base = `http://127.0.0.1:${(servidor.address() as AddressInfo).port}/api`
+  amb = await abrirAmbiente()
+  await popularDemonstracao(amb)
   for (const [k, email] of Object.entries({
     admin: 'admin@demo.local',
     coord: 'coordenacao@demo.local',
     suporte: 'suporte@demo.local',
     mentora: 'mentora@demo.local',
-    beatriz: 'beatriz@demo.local',
-    carla: 'carla@demo.local',
-  })) {
-    c[k] = new Cliente(base)
-    await c[k].entrar(email)
-  }
-}, 60_000)
+  }))
+    c[k] = await amb.entrar(CONTAS[email])
+  c.beatriz = await amb.entrar(CONTAS['beatriz@demo.local'], 'portal')
+  c.carla = await amb.entrar(CONTAS['carla@demo.local'], 'portal')
+}, 180_000)
 
-afterAll(() => {
-  servidor?.close()
-  db?.close()
-  rmSync(dir, { recursive: true, force: true })
+afterAll(async () => {
+  await amb?.fechar()
 })
 
 describe('Critérios de aceite', () => {
@@ -230,7 +191,7 @@ describe('Critérios de aceite', () => {
     expect((await c.beatriz.req('POST', `/portal/atividades/${atvCarla.id}/evidencias`, { texto: 'invasão' })).status).toBe(404)
     expect((await c.beatriz.req('GET', `/matriculas/${fichaCarla.matriculas[0].id}/jornada`)).status).toBe(403)
     // Sem sessão
-    const anon = new Cliente(base)
+    const anon = amb.semLogin()
     expect((await anon.req('GET', '/portal')).status).toBe(401)
   })
 
@@ -279,21 +240,11 @@ describe('Critérios de aceite', () => {
 
   it('CA15 — dados salvos permanecem após reiniciar o servidor e iniciar nova sessão', async () => {
     const r = await c.admin.ok('POST', '/pessoas', { nome: 'Teste Persistência' })
-    servidor.close()
-    db.close()
-    db = abrirBanco(caminhoBanco)
-    servidor = criarApp(db).listen(0, '127.0.0.1')
-    await new Promise((ok) => servidor.once('listening', ok))
-    base = `http://127.0.0.1:${(servidor.address() as AddressInfo).port}/api`
-    const novo = new Cliente(base)
-    await novo.entrar('admin@demo.local')
+    await amb.reabrir()
+    // Sessões do backoffice continuam valendo depois de reiniciar; uma nova também funciona.
+    const novo = await amb.entrar(CONTAS['admin@demo.local'])
     const ficha = await novo.ok('GET', `/pessoas/${r.id}`)
     expect(ficha.pessoa.nome).toBe('Teste Persistência')
-    for (const k of Object.keys(c)) {
-      const cookie = c[k].cookie
-      c[k] = new Cliente(base)
-      c[k].cookie = cookie // sessão anterior continua válida após reiniciar
-    }
     expect((await c.coord.req('GET', '/auth/eu')).status).toBe(200)
   })
 
@@ -310,7 +261,7 @@ describe('Critérios de aceite', () => {
 
 describe('Permissões e segurança', () => {
   it('recusa alterações sem o cabeçalho do app (CSRF)', async () => {
-    const r = await c.admin.req('POST', '/pessoas', { nome: 'x' }, true)
+    const r = await c.admin.req('POST', '/pessoas', { nome: 'x' }, { semCabecalho: true })
     expect(r.status).toBe(403)
   })
 
@@ -322,8 +273,9 @@ describe('Permissões e segurança', () => {
     expect(JSON.stringify(r.corpo)).not.toContain('Anotação pedagógica privada')
   })
 
-  it('o perfil Comercial não existe mais e não pode ser criado', async () => {
-    const r = await c.admin.req('POST', '/usuarios', { nome: 'Teste', email: 'comercial-novo@demo.local', perfil: 'comercial', senha_inicial: 'senhaForte123' })
+  it('o perfil Comercial não existe mais e não pode ser escolhido', async () => {
+    const id = await amb.criarEquipe('comercial-novo@demo.local', 'Teste')
+    const r = await c.admin.req('PUT', `/usuarios/${id}`, { perfil: 'comercial' })
     expect(r.status).toBe(400)
   })
 
@@ -391,11 +343,13 @@ describe('Permissões e segurança', () => {
       .find((a: J) => a.situacao === 'pendente' || a.situacao === 'em_execucao' || a.situacao === 'em_revisao')
     expect(atv).toBeTruthy()
     const subir = (cli: Cliente, nome: string, conteudo: string, semCabecalho = false) =>
-      fetch(`${base}/portal/atividades/${atv.id}/anexos`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/octet-stream', Cookie: cli.cookie, 'X-Nome-Arquivo': encodeURIComponent(nome), ...(semCabecalho ? {} : { 'X-Requested-With': 'diamante-business' }) },
-        body: Buffer.from(conteudo),
-      })
+      amb.api(
+        new Request(`${ORIGEM}/api/ped/portal/atividades/${atv.id}/anexos`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/octet-stream', Cookie: cli.cookie, Origin: ORIGEM, 'X-Nome-Arquivo': encodeURIComponent(nome), ...(semCabecalho ? {} : { 'X-CL-App': '1' }) },
+          body: new TextEncoder().encode(conteudo),
+        }),
+      )
     expect((await subir(c.carla, 'virus.exe', 'MZ')).status).toBe(400)
     expect((await subir(c.carla, 'pagina.html', '<script>')).status).toBe(400)
     expect((await subir(c.carla, 'plano.pdf', '%PDF-1.4', true)).status).toBe(403) // CSRF
@@ -404,12 +358,12 @@ describe('Permissões e segurança', () => {
     expect(r.status).toBe(201)
     const anexo = (await r.json()) as J
     // Ainda solto: ninguém baixa antes do envio ser concluído
-    expect((await fetch(`${base}/anexos/${anexo.id}`, { headers: { Cookie: c.admin.cookie } })).status).toBe(404)
+    expect((await amb.api(new Request(`${ORIGEM}/api/ped/anexos/${anexo.id}`, { headers: { Cookie: c.admin.cookie } }))).status).toBe(404)
     await c.carla.ok('POST', `/portal/atividades/${atv.id}/evidencias`, { anexos: [anexo.id] })
     // Depois de enviada, a atividade não recebe arquivos novos
     const r2 = await subir(c.carla, 'outro.png', 'png')
     expect(r2.status).toBe(409)
-    const baixar = (cli: Cliente, caminho: string) => fetch(`${base}${caminho}/${anexo.id}`, { headers: { Cookie: cli.cookie } })
+    const baixar = (cli: Cliente, caminho: string) => amb.api(new Request(`${ORIGEM}/api/ped${caminho}/${anexo.id}`, { headers: { Cookie: cli.cookie } }))
     const propria = await baixar(c.carla, '/portal/anexos')
     expect(propria.status).toBe(200)
     expect(await propria.text()).toBe('%PDF-1.4 teste')
@@ -426,11 +380,11 @@ describe('Permissões e segurança', () => {
   })
 
   describe('Portal da aluna, fase 1', () => {
-    it('as migrações numeradas ficam registradas e a turma vira cadastro', () => {
-      const versoes = (db.prepare('SELECT versao FROM versao_esquema ORDER BY versao').all() as J[]).map((v) => v.versao)
-      expect(versoes).toEqual([1, 2, 3, 4])
+    it('as migrations do pedagógico ficam registradas à parte e a turma vira cadastro', async () => {
+      const versoes = (await db().all<J>('SELECT name FROM ped_migracoes ORDER BY id')).map((v) => v.name)
+      expect(versoes).toEqual(['0001_ped_esquema.sql'])
       // As matrículas da demonstração receberam uma das duas turmas cadastradas
-      const turmas = db.prepare('SELECT COUNT(DISTINCT turma_id) AS n FROM matriculas WHERE turma_id IS NOT NULL').get() as J
+      const turmas = (await db().get('SELECT COUNT(DISTINCT turma_id) AS n FROM ped_matriculas WHERE turma_id IS NOT NULL')) as J
       expect(turmas.n).toBe(2)
     })
 
@@ -482,7 +436,7 @@ describe('Permissões e segurança', () => {
       await c.carla.ok('DELETE', `/portal/metas/${id}`)
       const d = await c.carla.ok('GET', '/portal/diagnostico')
       expect(d.metas.some((m: J) => m.id === id)).toBe(false)
-      expect((db.prepare('SELECT ativo FROM metas WHERE id = ?').get(id) as J).ativo).toBe(0) // só desativada
+      expect(((await db().get('SELECT ativo FROM ped_metas WHERE id = ?', id)) as J).ativo).toBe(0) // só desativada
     })
 
     it('Avisos: ações da equipe geram aviso só para a aluna da matrícula', async () => {
@@ -511,22 +465,22 @@ describe('Permissões e segurança', () => {
   })
 
   describe('Administrativo, fase 1', () => {
-    const opcao = (lista: string, codigo: string) => (db.prepare('SELECT id FROM opcoes_lista WHERE lista = ? AND codigo = ?').get(lista, codigo) as J).id as string
+    const opcao = async (lista: string, codigo: string) => ((await db().get('SELECT id FROM ped_opcoes_lista WHERE lista = ? AND codigo = ?', lista, codigo)) as J).id as string
 
-    it('a migração 3 cria as listas e o estado inicial de cada aluna', () => {
-      const listas = (db.prepare('SELECT lista, COUNT(*) AS n FROM opcoes_lista WHERE codigo IS NOT NULL GROUP BY lista').all() as J[]).map((l) => `${l.lista}:${l.n}`)
+    it('a migração 3 cria as listas e o estado inicial de cada aluna', async () => {
+      const listas = ((await db().all('SELECT lista, COUNT(*) AS n FROM ped_opcoes_lista WHERE codigo IS NOT NULL GROUP BY lista')) as J[]).map((l) => `${l.lista}:${l.n}`)
       expect(listas).toEqual(expect.arrayContaining(['status_aluna:5', 'saude:3', 'engajamento:3']))
-      const semEstado = db.prepare('SELECT COUNT(*) AS n FROM pessoas p WHERE EXISTS (SELECT 1 FROM matriculas m WHERE m.pessoa_id = p.id) AND (status_id IS NULL OR data_entrada IS NULL)').get() as J
+      const semEstado = (await db().get('SELECT COUNT(*) AS n FROM ped_pessoas p WHERE EXISTS (SELECT 1 FROM ped_matriculas m WHERE m.pessoa_id = p.id) AND (status_id IS NULL OR data_entrada IS NULL)')) as J
       expect(semEstado.n).toBe(0)
-      const fernanda = db.prepare("SELECT status_id FROM pessoas WHERE nome LIKE 'Fernanda%'").get() as J
-      expect(fernanda.status_id).toBe(opcao('status_aluna', 'pausada')) // a matrícula está pausada
+      const fernanda = (await db().get("SELECT status_id FROM ped_pessoas WHERE nome LIKE 'Fernanda%'")) as J
+      expect(fernanda.status_id).toBe(await opcao('status_aluna', 'pausada')) // a matrícula está pausada
     })
 
     it('Suporte/CS vê todas as alunas; sem "ver todas", o perfil fica só com a carteira (regra na API)', async () => {
       const todas = (await c.admin.ok('GET', '/pessoas')) as unknown as J[]
       expect(((await c.suporte.ok('GET', '/pessoas')) as unknown as J[]).length).toBe(todas.length)
       // Se a Administração tirar "ver todas" do Suporte/CS, ele passa a ver só a carteira.
-      db.prepare("DELETE FROM perfil_permissoes WHERE perfil = 'suporte' AND permissao = 'alunas:todas'").run()
+      await db().run("DELETE FROM ped_perfil_permissoes WHERE perfil = 'suporte' AND permissao = 'alunas:todas'")
       const carteira = (await c.suporte.ok('GET', '/pessoas')) as unknown as J[]
       const eu = await c.suporte.ok('GET', '/auth/eu')
       expect(carteira.length).toBeGreaterThan(0)
@@ -542,19 +496,19 @@ describe('Permissões e segurança', () => {
       // Cadastrada pelo Suporte/CS, a aluna entra na carteira dele.
       const nova = await c.suporte.ok('POST', '/pessoas', { nome: 'Teste Carteira', empresa: 'Empresa Teste' })
       expect((await c.suporte.ok('GET', `/pessoas/${nova.id}`)).pessoa.responsavel_id).toBe(eu.id)
-      db.prepare("INSERT INTO perfil_permissoes (perfil, permissao) VALUES ('suporte', 'alunas:todas')").run()
+      await db().run("INSERT INTO ped_perfil_permissoes (perfil, permissao) VALUES ('suporte', 'alunas:todas')")
     })
 
     it('estado da aluna só aceita opções da lista certa e fica no histórico', async () => {
       const carla = await pessoaPorNome('Carla')
-      expect((await c.admin.req('PUT', `/pessoas/${carla.id}/estado`, { saude_id: opcao('engajamento', 'alto') })).status).toBe(400)
+      expect((await c.admin.req('PUT', `/pessoas/${carla.id}/estado`, { saude_id: await opcao('engajamento', 'alto') })).status).toBe(400)
       expect((await c.mentora.req('PUT', `/pessoas/${carla.id}/estado`, { em_risco: true })).status).toBe(403)
       await c.admin.ok('PUT', `/pessoas/${carla.id}/estado`, {
-        status_id: carla.status_id, saude_id: opcao('saude', 'critico'), engajamento_id: opcao('engajamento', 'baixo'), em_risco: true, responsavel_id: carla.responsavel_id, data_entrada: carla.data_entrada,
+        status_id: carla.status_id, saude_id: await opcao('saude', 'critico'), engajamento_id: await opcao('engajamento', 'baixo'), em_risco: true, responsavel_id: carla.responsavel_id, data_entrada: carla.data_entrada,
       })
       const f = await c.admin.ok('GET', `/pessoas/${carla.id}`)
       expect(f.pessoa.em_risco).toBe(1)
-      expect(f.pessoa.saude_id).toBe(opcao('saude', 'critico'))
+      expect(f.pessoa.saude_id).toBe(await opcao('saude', 'critico'))
       expect(f.auditoria.some((a: J) => a.acao === 'estado_atualizado')).toBe(true)
     })
 
@@ -562,9 +516,9 @@ describe('Permissões e segurança', () => {
       const beatriz = await pessoaPorNome('Beatriz')
       const mid = (await c.admin.ok('GET', `/pessoas/${beatriz.id}`)).matriculas[0].id
       const pausa = await c.admin.ok('POST', `/matriculas/${mid}/pausas`, { inicio: hoje, motivo: 'Teste de status' })
-      expect((await pessoaPorNome('Beatriz')).status_id).toBe(opcao('status_aluna', 'pausada'))
+      expect((await pessoaPorNome('Beatriz')).status_id).toBe(await opcao('status_aluna', 'pausada'))
       await c.admin.ok('POST', `/pausas/${pausa.id}/encerrar`, { fim: hoje })
-      expect((await pessoaPorNome('Beatriz')).status_id).toBe(opcao('status_aluna', 'ativa'))
+      expect((await pessoaPorNome('Beatriz')).status_id).toBe(await opcao('status_aluna', 'ativa'))
     })
 
     it('listas configuráveis: cada lista é separada e só quem configura edita', async () => {
@@ -575,7 +529,7 @@ describe('Permissões e segurança', () => {
       expect((await c.admin.req('PUT', `/catalogos/saude/${novo.id}`, { nome: 'x' })).status).toBe(404) // id de outra lista
       expect((await c.admin.req('POST', '/catalogos/segmentos', { nome: 'x', cor: 'roxo' })).status).toBe(400)
       expect((await c.mentora.req('POST', '/catalogos/segmentos', { nome: 'x' })).status).toBe(403)
-      expect((await c.admin.req('POST', '/pessoas', { nome: 'Segmento errado', segmento_id: opcao('saude', 'critico') })).status).toBe(400)
+      expect((await c.admin.req('POST', '/pessoas', { nome: 'Segmento errado', segmento_id: await opcao('saude', 'critico') })).status).toBe(400)
     })
 
     it('painel da Visão Geral conta alunas e agrupa por estado, segmento, responsável, canal e turma', async () => {
@@ -591,7 +545,7 @@ describe('Permissões e segurança', () => {
       expect((await c.admin.req('PUT', '/campos-visibilidade', { saude: true })).status).toBe(400)
       expect((await c.admin.req('PUT', '/campos-visibilidade', { inventado: true })).status).toBe(400)
       await c.admin.ok('PUT', '/campos-visibilidade', { empresa: false })
-      expect((db.prepare("SELECT visivel_aluna FROM campos_visibilidade WHERE campo = 'empresa'").get() as J).visivel_aluna).toBe(0)
+      expect(((await db().get("SELECT visivel_aluna FROM ped_campos_visibilidade WHERE campo = 'empresa'")) as J).visivel_aluna).toBe(0)
       await c.admin.ok('PUT', '/campos-visibilidade', { empresa: true })
     })
   })
@@ -617,21 +571,21 @@ describe('Permissões e segurança', () => {
       expect(r.envios).toBe(0) // programado para amanhã
       const destinos = (await c.admin.ok('GET', '/avisos')).find((a: J) => a.id === r.id).destinatarias
       expect(destinos).toBeGreaterThan(1)
-      const conta = () => (db.prepare('SELECT COUNT(*) AS n FROM notificacoes WHERE aviso_id = ?').get(r.id) as J).n
-      processarAvisos(db, `${somarDias(hoje, 1)}T08:00`)
-      expect(conta()).toBe(destinos)
+      const conta = async () => ((await db().get('SELECT COUNT(*) AS n FROM ped_notificacoes WHERE aviso_id = ?', r.id)) as J).n
+      await processarAvisos(db(), `${somarDias(hoje, 1)}T08:00`)
+      expect(await conta()).toBe(destinos)
       // Muito tempo depois: entrega uma vez só e marca o próximo depois de "agora"; passou do fim, encerra.
-      processarAvisos(db, `${somarDias(hoje, 9)}T09:00`)
-      expect(conta()).toBe(destinos * 2)
-      let a = db.prepare('SELECT * FROM avisos_programados WHERE id = ?').get(r.id) as J
+      await processarAvisos(db(), `${somarDias(hoje, 9)}T09:00`)
+      expect(await conta()).toBe(destinos * 2)
+      let a = (await db().get('SELECT * FROM ped_avisos_programados WHERE id = ?', r.id)) as J
       expect(a.proximo_envio).toBe(`${somarDias(hoje, 15)}T08:00`)
       await c.admin.ok('POST', `/avisos/${r.id}/ativo`, { ativo: false })
-      processarAvisos(db, `${somarDias(hoje, 15)}T08:00`)
-      expect(conta()).toBe(destinos * 2) // pausado não envia
+      await processarAvisos(db(), `${somarDias(hoje, 15)}T08:00`)
+      expect(await conta()).toBe(destinos * 2) // pausado não envia
       await c.admin.ok('POST', `/avisos/${r.id}/ativo`, { ativo: true })
-      processarAvisos(db, `${somarDias(hoje, 15)}T08:00`)
-      expect(conta()).toBe(destinos * 3)
-      a = db.prepare('SELECT * FROM avisos_programados WHERE id = ?').get(r.id) as J
+      await processarAvisos(db(), `${somarDias(hoje, 15)}T08:00`)
+      expect(await conta()).toBe(destinos * 3)
+      a = (await db().get('SELECT * FROM ped_avisos_programados WHERE id = ?', r.id)) as J
       expect(a.ativo).toBe(0) // o próximo passaria do fim
     })
   })

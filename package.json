@@ -7,20 +7,16 @@
     "node": ">=20.11"
   },
   "scripts": {
-    "dev": "concurrently -k -n api,web -c magenta,cyan \"npm:dev:api\" \"npm:dev:web\"",
-    "dev:api": "tsx watch server/index.ts",
+    "dev": "npm run build && npm run db:local && wrangler dev",
     "dev:web": "vite",
     "build": "tsc -b && vite build",
     "typecheck": "tsc -b",
-    "start": "tsx server/index.ts",
-    "seed": "tsx server/seed.ts",
-    "criar-admin": "tsx server/criar-admin.ts",
-    "test": "vitest run"
+    "test": "vitest run",
+    "db:local": "wrangler d1 migrations apply DB --local -c wrangler.backoffice-local.jsonc && wrangler d1 migrations apply DB --local",
+    "db:producao:listar": "wrangler d1 migrations list DB --remote",
+    "deploy": "npm run build && wrangler deploy"
   },
   "dependencies": {
-    "better-sqlite3": "^13.0.3",
-    "cookie-parser": "^1.4.7",
-    "express": "^5.3.0",
     "lucide-react": "^1.62.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
@@ -29,16 +25,11 @@
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20261109.1",
     "@tailwindcss/vite": "^4.3.3",
-    "@types/better-sqlite3": "^9.6.0",
-    "@types/cookie-parser": "^1.4.10",
-    "@types/express": "^5.0.6",
     "@types/node": "^26.6.5",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^5.2.0",
-    "concurrently": "^10.0.6",
     "tailwindcss": "^4.3.3",
-    "tsx": "^4.23.15",
     "typescript": "5.9",
     "vite": "^7.3.7",
     "vitest": "^5.0.5",
