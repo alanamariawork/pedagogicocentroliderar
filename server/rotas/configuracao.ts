@@ -3,13 +3,24 @@ import { z } from 'zod'
 import { agoraIso, novoId, type BD } from '../db'
 import { ErroHttp, exigir, exigirEquipe } from '../auth'
 import { auditar, booleano, data, id, idObrig, link, minutos, texto, textoObrig, validar } from '../servicos'
+import { CAMPOS_ALUNA, CORES_OPCAO, type Lista } from '../../shared/listas'
 import type { Permissao } from '../../shared/permissoes'
 
 const bool = () => booleano().optional()
 const ordem = () => z.coerce.number().int().min(0).max(999).optional()
 
 /** Cadastros simples configuráveis (RF11). Nada é apagado: desativar preserva o histórico. */
-const CATALOGOS: Record<string, { tabela: string; permissao: Permissao; esquema: z.ZodObject; ordem: string }> = {
+type Catalogo = { tabela: string; permissao: Permissao; esquema: z.ZodObject; ordem: string; lista?: Lista; checar?: (db: BD, d: Record<string, unknown>) => void }
+
+const esquemaOpcao = z.object({ nome: textoObrig('o nome', 80), cor: z.enum(CORES_OPCAO).default('neutro'), ordem: ordem(), ativo: bool() })
+const opcoes = (lista: Lista): Catalogo => ({ tabela: 'opcoes_lista', permissao: 'config:editar', esquema: esquemaOpcao, ordem: 'ordem, nome', lista })
+
+const CATALOGOS: Record<string, Catalogo> = {
+  'status-aluna': opcoes('status_aluna'),
+  saude: opcoes('saude'),
+  engajamento: opcoes('engajamento'),
+  segmentos: opcoes('segmento'),
+  'canais-venda': opcoes('canal_venda'),
   programas: {
     tabela: 'programas',
     permissao: 'config:editar',
@@ -91,7 +102,11 @@ export function rotasConfiguracao(db: BD) {
 
   r.get('/catalogos', (_req, res) => {
     const saida: Record<string, unknown> = {}
-    for (const [nome, c] of Object.entries(CATALOGOS)) saida[nome] = db.prepare(`SELECT * FROM ${c.tabela} ORDER BY ativo DESC, ${c.ordem}`).all()
+    for (const [nome, c] of Object.entries(CATALOGOS))
+      saida[nome] = c.lista
+        ? db.prepare(`SELECT * FROM ${c.tabela} WHERE lista = ? ORDER BY ativo DESC, ${c.ordem}`).all(c.lista)
+        : db.prepare(`SELECT * FROM ${c.tabela} ORDER BY ativo DESC, ${c.ordem}`).all()
+    saida.campos_visibilidade = db.prepare('SELECT campo, visivel_aluna FROM campos_visibilidade').all()
     saida.configuracoes = Object.fromEntries((db.prepare('SELECT chave, valor FROM configuracoes').all() as { chave: string; valor: string }[]).map((x) => [x.chave, x.valor]))
     res.json(saida)
   })
@@ -109,11 +124,13 @@ export function rotasConfiguracao(db: BD) {
     r.post(`/catalogos/${nome}`, (req, res) => {
       exigir(req, c.permissao)
       const d = validar(c.esquema, req.body) as Record<string, unknown>
+      c.checar?.(db, d)
       const novo = novoId()
       const agora = agoraIso()
+      const extra = c.lista ? ['lista'] : []
       db.prepare(
-        `INSERT INTO ${c.tabela} (id, ${campos.join(', ')}, criado_em, atualizado_em, autor_id) VALUES (?, ${campos.map(() => '?').join(', ')}, ?, ?, ?)`,
-      ).run(novo, ...normalizar(d), agora, agora, req.usuario!.id)
+        `INSERT INTO ${c.tabela} (id, ${[...extra, ...campos].join(', ')}, criado_em, atualizado_em, autor_id) VALUES (?, ${[...extra, ...campos].map(() => '?').join(', ')}, ?, ?, ?)`,
+      ).run(novo, ...(c.lista ? [c.lista] : []), ...normalizar(d), agora, agora, req.usuario!.id)
       auditar(db, req, { entidade: c.tabela, entidade_id: novo, acao: 'criado', dados: d })
       res.status(201).json({ id: novo })
     })
@@ -121,14 +138,30 @@ export function rotasConfiguracao(db: BD) {
     r.put(`/catalogos/${nome}/:id`, (req, res) => {
       exigir(req, c.permissao)
       const d = validar(c.esquema, req.body) as Record<string, unknown>
+      c.checar?.(db, d)
       const info = db
-        .prepare(`UPDATE ${c.tabela} SET ${campos.map((k) => `${k} = ?`).join(', ')}, atualizado_em = ?, autor_id = ? WHERE id = ?`)
-        .run(...normalizar(d), agoraIso(), req.usuario!.id, req.params.id)
+        .prepare(`UPDATE ${c.tabela} SET ${campos.map((k) => `${k} = ?`).join(', ')}, atualizado_em = ?, autor_id = ? WHERE id = ?${c.lista ? ' AND lista = ?' : ''}`)
+        .run(...normalizar(d), agoraIso(), req.usuario!.id, req.params.id, ...(c.lista ? [c.lista] : []))
       if (info.changes === 0) throw new ErroHttp(404, 'Registro não encontrado.')
       auditar(db, req, { entidade: c.tabela, entidade_id: req.params.id as string, acao: 'atualizado', dados: d })
       res.json({ ok: true })
     })
   }
+
+  // Marca "visível à aluna" de cada campo. Os campos sempre internos não podem ser liberados.
+  r.put('/campos-visibilidade', (req, res) => {
+    exigir(req, 'config:editar')
+    const d = validar(z.record(z.string(), z.boolean()), req.body)
+    const up = db.prepare('UPDATE campos_visibilidade SET visivel_aluna = ?, atualizado_em = ?, autor_id = ? WHERE campo = ?')
+    for (const [campo, visivel] of Object.entries(d)) {
+      const def = CAMPOS_ALUNA.find((c) => c.campo === campo)
+      if (!def) throw new ErroHttp(400, `Campo desconhecido: ${campo}.`)
+      if (visivel && def.sempreInterno) throw new ErroHttp(400, `"${def.rotulo}" é um dado interno e não pode aparecer no portal.`)
+      up.run(visivel ? 1 : 0, agoraIso(), req.usuario!.id, campo)
+    }
+    auditar(db, req, { entidade: 'campos_visibilidade', entidade_id: 'geral', acao: 'atualizado', dados: d })
+    res.json({ ok: true })
+  })
 
   r.put('/configuracoes', (req, res) => {
     exigir(req, 'config:editar')

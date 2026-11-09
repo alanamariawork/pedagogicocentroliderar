@@ -2,6 +2,7 @@ import Database from 'better-sqlite3'
 import { randomUUID } from 'node:crypto'
 import { mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
+import { CAMPOS_ALUNA, OPCOES_INICIAIS, codigoStatusPelaMatricula } from '../shared/listas'
 
 export type BD = Database.Database
 
@@ -459,6 +460,99 @@ const MIGRACOES: { versao: number; descricao: string; aplicar: (db: BD) => void 
         db.prepare('INSERT INTO turmas (id, nome, criado_em, atualizado_em) VALUES (?, ?, ?, ?)').run(id, nome, agora, agora)
         db.prepare('UPDATE matriculas SET turma_id = ? WHERE TRIM(turma) = ?').run(id, nome)
       }
+    },
+  },
+  {
+    versao: 3,
+    descricao: 'Administrativo, fase 1: listas configuráveis, estado da aluna, canal de venda e campos visíveis à aluna',
+    aplicar(db) {
+      db.exec(/* sql */ `
+        CREATE TABLE opcoes_lista (
+          id TEXT PRIMARY KEY,
+          lista TEXT NOT NULL,
+          codigo TEXT,
+          nome TEXT NOT NULL,
+          cor TEXT NOT NULL DEFAULT 'neutro',
+          ordem INTEGER NOT NULL DEFAULT 0,
+          ativo INTEGER NOT NULL DEFAULT 1,
+          criado_em TEXT NOT NULL, atualizado_em TEXT NOT NULL, autor_id TEXT,
+          UNIQUE (lista, codigo)
+        );
+        CREATE INDEX ix_opcoes_lista ON opcoes_lista(lista, ordem);
+        ALTER TABLE pessoas ADD COLUMN empresa TEXT;
+        ALTER TABLE pessoas ADD COLUMN segmento_id TEXT REFERENCES opcoes_lista(id);
+        ALTER TABLE pessoas ADD COLUMN subsegmento TEXT;
+        ALTER TABLE pessoas ADD COLUMN responsavel_id TEXT REFERENCES usuarios(id);
+        ALTER TABLE pessoas ADD COLUMN data_entrada TEXT;
+        ALTER TABLE pessoas ADD COLUMN status_id TEXT REFERENCES opcoes_lista(id);
+        ALTER TABLE pessoas ADD COLUMN saude_id TEXT REFERENCES opcoes_lista(id);
+        ALTER TABLE pessoas ADD COLUMN engajamento_id TEXT REFERENCES opcoes_lista(id);
+        ALTER TABLE pessoas ADD COLUMN em_risco INTEGER NOT NULL DEFAULT 0;
+        ALTER TABLE matriculas ADD COLUMN canal_venda_id TEXT REFERENCES opcoes_lista(id);
+        CREATE TABLE campos_visibilidade (
+          campo TEXT PRIMARY KEY,
+          visivel_aluna INTEGER NOT NULL DEFAULT 0,
+          atualizado_em TEXT NOT NULL, autor_id TEXT
+        );
+      `)
+      const agora = new Date().toISOString()
+      const ins = db.prepare('INSERT INTO opcoes_lista (id, lista, codigo, nome, cor, ordem, criado_em, atualizado_em) VALUES (?,?,?,?,?,?,?,?)')
+      const ordem: Record<string, number> = {}
+      for (const o of OPCOES_INICIAIS) {
+        ordem[o.lista] = (ordem[o.lista] ?? 0) + 1
+        ins.run(randomUUID(), o.lista, o.codigo, o.nome, o.cor, ordem[o.lista], agora, agora)
+      }
+      const insCampo = db.prepare('INSERT INTO campos_visibilidade (campo, visivel_aluna, atualizado_em) VALUES (?,?,?)')
+      for (const c of CAMPOS_ALUNA) insCampo.run(c.campo, c.padrao ? 1 : 0, agora)
+
+      // Estado inicial de cada aluna, a partir da matrícula mais recente: status, responsável e data de entrada.
+      const hoje = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date())
+      const idStatus = (codigo: string) => (db.prepare("SELECT id FROM opcoes_lista WHERE lista = 'status_aluna' AND codigo = ?").get(codigo) as { id: string }).id
+      const pessoas = db.prepare('SELECT id FROM pessoas').all() as { id: string }[]
+      for (const p of pessoas) {
+        const m = db
+          .prepare('SELECT situacao, data_inicio, responsavel_id FROM matriculas WHERE pessoa_id = ? ORDER BY data_inicio DESC, criado_em DESC LIMIT 1')
+          .get(p.id) as { situacao: string; data_inicio: string; responsavel_id: string | null } | undefined
+        if (!m) continue
+        const entrada = (db.prepare('SELECT MIN(data_inicio) AS d FROM matriculas WHERE pessoa_id = ?').get(p.id) as { d: string }).d
+        db.prepare('UPDATE pessoas SET status_id = ?, responsavel_id = ?, data_entrada = ? WHERE id = ?').run(
+          idStatus(codigoStatusPelaMatricula(m.situacao, m.data_inicio, hoje)), m.responsavel_id, entrada, p.id)
+      }
+
+      // Nova permissão: ver todas as alunas. Sem ela, o perfil vê só a própria carteira.
+      // Num banco que já tem regras gravadas, Administração, Coordenação e Suporte/CS continuam vendo tudo.
+      const temRegras = (db.prepare('SELECT COUNT(*) AS n FROM perfil_permissoes').get() as { n: number }).n > 0
+      if (temRegras) for (const perfil of ['admin', 'coordenacao', 'suporte']) db.prepare("INSERT OR IGNORE INTO perfil_permissoes (perfil, permissao) VALUES (?, 'alunas:todas')").run(perfil)
+    },
+  },
+  {
+    versao: 4,
+    descricao: 'Avisos às alunas escritos pela equipe, com recorrência',
+    aplicar(db) {
+      db.exec(/* sql */ `
+        -- Avisos que a equipe programa para o sino do portal. Nada sai do sistema (sem e-mail ou WhatsApp).
+        CREATE TABLE avisos_programados (
+          id TEXT PRIMARY KEY,
+          titulo TEXT NOT NULL,
+          detalhe TEXT,
+          link TEXT,
+          publico TEXT NOT NULL CHECK (publico IN ('aluna','turma','ativas')),
+          pessoa_id TEXT REFERENCES pessoas(id),
+          turma_id TEXT REFERENCES turmas(id),
+          inicio TEXT NOT NULL,
+          recorrencia TEXT NOT NULL DEFAULT 'nenhuma' CHECK (recorrencia IN ('nenhuma','diaria','semanal','mensal')),
+          fim TEXT,
+          proximo_envio TEXT,
+          envios INTEGER NOT NULL DEFAULT 0,
+          ultimo_envio TEXT,
+          ativo INTEGER NOT NULL DEFAULT 1,
+          criado_em TEXT NOT NULL, atualizado_em TEXT NOT NULL, autor_id TEXT
+        );
+        CREATE INDEX ix_avisos_proximo ON avisos_programados(ativo, proximo_envio);
+        ALTER TABLE notificacoes ADD COLUMN aviso_id TEXT REFERENCES avisos_programados(id);
+      `)
+      const temRegras = (db.prepare('SELECT COUNT(*) AS n FROM perfil_permissoes').get() as { n: number }).n > 0
+      if (temRegras) for (const perfil of ['admin', 'coordenacao', 'suporte']) db.prepare("INSERT OR IGNORE INTO perfil_permissoes (perfil, permissao) VALUES (?, 'avisos:enviar')").run(perfil)
     },
   },
 ]

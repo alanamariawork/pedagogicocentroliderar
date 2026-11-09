@@ -3,7 +3,8 @@ import type { Request } from 'express'
 import { z } from 'zod'
 import { agoraIso, novoId, type BD } from './db'
 import { ErroHttp, tem } from './auth'
-import { dataValida, horarioValido, hojeSP } from '../shared/datas'
+import { agoraSP, dataValida, horarioValido, hojeSP, somarDias, somarMeses } from '../shared/datas'
+import { codigoStatusPelaMatricula } from '../shared/listas'
 
 /* ---------------- Validação ---------------- */
 
@@ -96,6 +97,13 @@ export function escopoMatriculas(req: Request, alias = 'm'): { sql: string; para
         UNION SELECT matricula_id FROM itens_contratados WHERE profissional_id = @escopo_prof
         UNION SELECT matricula_id FROM ocorrencias WHERE profissional_id = @escopo_prof)`,
       params: { escopo_prof: u.profissional_id ?? '__nenhum__' },
+    }
+  }
+  // Sem "ver todas", o perfil (ex.: Suporte/CS) vê só a própria carteira: alunas em que é a responsável.
+  if (!tem(req, 'alunas:todas')) {
+    return {
+      sql: `${alias}.pessoa_id IN (SELECT id FROM pessoas WHERE responsavel_id = @escopo_usuario)`,
+      params: { escopo_usuario: u.id },
     }
   }
   return { sql: '1=1', params: {} }
@@ -249,4 +257,78 @@ export function notificarAluna(db: BD, matriculaId: string, aviso: { titulo: str
     .all(matriculaId) as { id: string }[]
   const ins = db.prepare('INSERT INTO notificacoes (id, usuario_id, titulo, detalhe, link, criado_em) VALUES (?, ?, ?, ?, ?, ?)')
   for (const u of usuarios) ins.run(randomUUID(), u.id, aviso.titulo, aviso.detalhe ?? null, aviso.link ?? null, new Date().toISOString())
+}
+
+/* ---------------- Listas configuráveis e estado da aluna ---------------- */
+
+/** Confere se a opção existe e é da lista certa (ex.: um id de "saúde" não pode ir para "segmento"). */
+export function exigirOpcao(db: BD, id: string | null | undefined, lista: string, rotulo: string) {
+  if (!id) return
+  if (!db.prepare('SELECT 1 FROM opcoes_lista WHERE id = ? AND lista = ?').get(id, lista)) throw new ErroHttp(400, `Escolha ${rotulo} entre as opções cadastradas.`)
+}
+
+/**
+ * Atualiza o status da aluna quando a matrícula mais recente muda de situação (pausa, retorno,
+ * encerramento, cancelamento, nova matrícula). Só usa opções com código; se a opção foi desativada, não muda.
+ */
+export function sincronizarStatusAluna(db: BD, req: Request, pessoaId: string) {
+  const m = db.prepare('SELECT situacao, data_inicio FROM matriculas WHERE pessoa_id = ? ORDER BY data_inicio DESC, criado_em DESC LIMIT 1').get(pessoaId) as
+    | { situacao: string; data_inicio: string }
+    | undefined
+  if (!m) return
+  const codigo = codigoStatusPelaMatricula(m.situacao, m.data_inicio, hoje())
+  const op = db.prepare("SELECT id FROM opcoes_lista WHERE lista = 'status_aluna' AND codigo = ? AND ativo = 1").get(codigo) as { id: string } | undefined
+  if (!op) return
+  const p = db.prepare('SELECT status_id, data_entrada FROM pessoas WHERE id = ?').get(pessoaId) as { status_id: string | null; data_entrada: string | null }
+  if (p.status_id !== op.id) {
+    db.prepare('UPDATE pessoas SET status_id = ?, atualizado_em = ? WHERE id = ?').run(op.id, agoraIso(), pessoaId)
+    auditar(db, req, { entidade: 'pessoa', entidade_id: pessoaId, acao: 'status_atualizado', pessoa_id: pessoaId, dados: { codigo } })
+  }
+  if (!p.data_entrada) db.prepare('UPDATE pessoas SET data_entrada = (SELECT MIN(data_inicio) FROM matriculas WHERE pessoa_id = ?) WHERE id = ?').run(pessoaId, pessoaId)
+}
+
+/* ---------------- Avisos programados pela equipe ---------------- */
+
+/** Próximo envio depois de `de`, pulando os que já passaram (não manda atrasados em lote). */
+export function proximoEnvio(de: string, recorrencia: string, agora: string): string | null {
+  if (recorrencia === 'nenhuma') return null
+  const hora = de.slice(10)
+  let x = de
+  do {
+    if (recorrencia === 'diaria') x = somarDias(x, 1)
+    else if (recorrencia === 'semanal') x = somarDias(x, 7)
+    else x = somarMeses(x, 1) + hora
+  } while (x <= agora)
+  return x
+}
+
+/**
+ * Entrega os avisos cujo horário chegou: um aviso no sino para cada aluna com acesso ao portal.
+ * Roda a cada minuto no servidor e também quando a aluna abre o portal.
+ */
+export function processarAvisos(db: BD, agora = agoraSP()) {
+  const devidos = db.prepare('SELECT * FROM avisos_programados WHERE ativo = 1 AND proximo_envio IS NOT NULL AND proximo_envio <= ?').all(agora) as Record<string, string | number | null>[]
+  if (!devidos.length) return
+  const ins = db.prepare('INSERT INTO notificacoes (id, usuario_id, titulo, detalhe, link, aviso_id, criado_em) VALUES (?, ?, ?, ?, ?, ?, ?)')
+  db.transaction(() => {
+    for (const a of devidos) {
+      for (const u of destinatariosAviso(db, a)) ins.run(randomUUID(), u, a.titulo, a.detalhe, a.link, a.id, agoraIso())
+      let prox = proximoEnvio(a.proximo_envio as string, a.recorrencia as string, agora)
+      if (prox && a.fim && prox.slice(0, 10) > (a.fim as string)) prox = null
+      db.prepare('UPDATE avisos_programados SET envios = envios + 1, ultimo_envio = ?, proximo_envio = ?, ativo = ? WHERE id = ?').run(agora, prox, prox ? 1 : 0, a.id)
+    }
+  })()
+}
+
+/** Usuárias do portal que recebem o aviso, conforme o público escolhido. */
+export function destinatariosAviso(db: BD, a: Record<string, unknown>): string[] {
+  const base = "SELECT DISTINCT u.id FROM usuarios u JOIN pessoas p ON p.id = u.pessoa_id WHERE u.perfil = 'aluna' AND u.ativo = 1"
+  const ativa = "EXISTS (SELECT 1 FROM matriculas m WHERE m.pessoa_id = p.id AND m.situacao IN ('ativa','pausada')"
+  const linhas =
+    a.publico === 'aluna'
+      ? db.prepare(`${base} AND p.id = ?`).all(a.pessoa_id)
+      : a.publico === 'turma'
+        ? db.prepare(`${base} AND ${ativa} AND m.turma_id = ?)`).all(a.turma_id)
+        : db.prepare(`${base} AND ${ativa})`).all()
+  return (linhas as { id: string }[]).map((l) => l.id)
 }

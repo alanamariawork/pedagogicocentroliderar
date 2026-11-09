@@ -16,6 +16,7 @@ export const NOME_PERFIL: Record<Perfil, string> = {
 
 export const PERMISSOES = {
   'alunas:ver': 'Ver alunas e matrículas',
+  'alunas:todas': 'Ver todas as alunas (sem esta permissão, só a própria carteira: alunas em que é a responsável)',
   'alunas:editar': 'Cadastrar e editar dados básicos de alunas',
   'matriculas:criar': 'Criar matrículas e renovações',
   'comercial:ver': 'Ver condições comerciais, contrato, pacote e bônus',
@@ -37,6 +38,7 @@ export const PERMISSOES = {
   'conquistas:validar': 'Validar conquistas e liberar para a aluna',
   'indicadores:ver': 'Ver visão geral e indicadores',
   'config:editar': 'Editar programas, pacotes, tipos, profissionais e motivos',
+  'avisos:enviar': 'Escrever e programar avisos para as alunas (aparecem no sino do portal)',
   'decisoes:editar': 'Registrar e decidir questões pendentes',
   'auditoria:ver': 'Ver histórico de alterações',
   'usuarios:admin': 'Administrar usuários e regras de acesso',
@@ -48,8 +50,11 @@ const TODAS = Object.keys(PERMISSOES) as Permissao[]
 export const PERMISSOES_PADRAO: Record<Perfil, Permissao[]> = {
   admin: TODAS,
   coordenacao: TODAS.filter((p) => p !== 'usuarios:admin'),
+  // Todas as alunas são de responsabilidade do Suporte/CS.
   suporte: [
     'alunas:ver',
+    'alunas:todas',
+    'avisos:enviar',
     'alunas:editar',
     'matriculas:criar',
     'comercial:ver',

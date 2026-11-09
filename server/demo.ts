@@ -451,6 +451,35 @@ export async function popularDemonstracao(db: BD) {
     await aluna1.post('/portal/metas', { nome: '[Demo] Faturamento mensal', unidade: 'R$', valor_inicial: 30000, valor_alvo: 45000, valor_atual: 34000 })
     await aluna1.post('/portal/metas', { nome: '[Demo] Reuniões de equipe por mês', unidade: 'reuniões', valor_inicial: 0, valor_alvo: 4, valor_atual: 1 })
 
+    /* ---------- Administrativo: estado das alunas, segmentos, canais e categorias (tudo de demonstração) ---------- */
+    const opcao = (lista: string, codigo: string) => (db.prepare('SELECT id FROM opcoes_lista WHERE lista = ? AND codigo = ?').get(lista, codigo) as { id: string }).id
+    const segmentos: string[] = []
+    for (const nome of ['Moda e varejo (demo)', 'Saúde e estética (demo)', 'Serviços (demo)'])
+      segmentos.push((await api.post<{ id: string }>('/catalogos/segmentos', { nome })).id)
+    const canais: string[] = []
+    for (const nome of ['Indicação (demo)', 'Instagram (demo)', 'Evento presencial (demo)'])
+      canais.push((await api.post<{ id: string }>('/catalogos/canais-venda', { nome })).id)
+    const demoPessoas = db.prepare('SELECT id, nome FROM pessoas WHERE demonstracao = 1 ORDER BY codigo').all() as { id: string; nome: string }[]
+    const estados: [string, string, boolean, string | null][] = [
+      ['saudavel', 'alto', false, suporte],
+      ['atencao', 'medio', true, suporte],
+      ['saudavel', 'medio', false, suporte],
+      ['critico', 'baixo', true, suporte],
+      ['atencao', 'baixo', false, suporte],
+      ['saudavel', 'alto', false, null], // exemplo de aluna ainda sem responsável
+    ]
+    demoPessoas.forEach((p, n) => {
+      const [saude, eng, risco, resp] = estados[n % estados.length]
+      db.prepare('UPDATE pessoas SET empresa = ?, segmento_id = ?, subsegmento = ?, saude_id = ?, engajamento_id = ?, em_risco = ?, responsavel_id = ? WHERE id = ?').run(
+        `[Demo] Negócio de ${p.nome.split(' ')[0]}`, segmentos[n % 3], n % 2 ? 'Loja física' : 'Atendimento online', opcao('saude', saude), opcao('engajamento', eng), risco ? 1 : 0, resp, p.id)
+      db.prepare('UPDATE matriculas SET canal_venda_id = ? WHERE pessoa_id = ?').run(canais[n % 3], p.id)
+    })
+
+    /* ---------- Avisos escritos pela equipe (demonstração) ---------- */
+    const beatrizId = demoPessoas[0].id
+    await api.post('/avisos', { publico: 'aluna', pessoa_id: beatrizId, titulo: '[Demo] Sua próxima mentoria está chegando', detalhe: 'Separe suas dúvidas sobre a rotina de gestão.', link: '#/mentorias' })
+    await api.post('/avisos', { publico: 'ativas', titulo: '[Demo] Atualize seus indicadores', detalhe: 'Toda segunda-feira, reserve 5 minutos para atualizar suas metas.', link: '#/diagnostico', inicio: `${somarDias(h, 7 - ((new Date(h + 'T12:00:00Z').getUTCDay() + 6) % 7))}T09:00`, recorrencia: 'semanal' })
+
     /* ---------- Decisões pendentes ---------- */
     for (const [questao, impacto, responsavel] of [
       ['Qual é a numeração/ordem oficial das trilhas (Diamantes em Ação, Diamante no Jogo, Diamante que Age)?', 'Ordem exibida na jornada e no portal da aluna.', 'Coordenação pedagógica'],

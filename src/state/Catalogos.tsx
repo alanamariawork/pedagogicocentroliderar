@@ -11,6 +11,12 @@ export interface Catalogos {
   turmas: Reg[]
   links: Reg[]
   frases: Reg[]
+  'status-aluna': Reg[]
+  saude: Reg[]
+  engajamento: Reg[]
+  segmentos: Reg[]
+  'canais-venda': Reg[]
+  campos_visibilidade: { campo: string; visivel_aluna: number }[]
   configuracoes: Record<string, string>
   usuarios: Reg[]
 }
@@ -56,3 +62,11 @@ export function useCatalogos(): Catalogos | null {
 
 export const ativos = (lista: Reg[] | undefined) => (lista ?? []).filter((x) => x.ativo !== 0)
 export const equipe = (c: Catalogos | null) => (c?.usuarios ?? []).filter((u) => u.perfil !== 'aluna' && u.ativo !== 0)
+
+/** Todas as opções das listas configuráveis, por id (status, saúde, engajamento, segmento, canal, categoria). */
+export function opcoesPorId(c: Catalogos | null): Map<string, Reg> {
+  const m = new Map<string, Reg>()
+  if (!c) return m
+  for (const k of ['status-aluna', 'saude', 'engajamento', 'segmentos', 'canais-venda'] as const) for (const o of c[k] ?? []) m.set(o.id, o)
+  return m
+}

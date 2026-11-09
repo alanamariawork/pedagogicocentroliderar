@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { ArrowLeft, Pencil, Plus } from 'lucide-react'
+import { ArrowLeft, Megaphone, Pencil, Plus } from 'lucide-react'
+import { DialogAviso } from './Avisos'
 import { Carregando, EstadoErro, Secao, Vazio } from '../components/Estados'
 import { Campo, FormDialog, Opcoes, useValores } from '../components/Form'
 import { IdAluna, Selo, TOM_MATRICULA } from '../components/Selos'
@@ -16,9 +17,12 @@ import { JornadaAluna } from './ficha/Jornada'
 import { DiagnosticoAluna } from './ficha/Diagnostico'
 import { Continuidade } from './ficha/Continuidade'
 import { Anotacoes, Conquistas, Contatos, Historico } from './ficha/Registros'
+import { DialogPessoa, PerfilAluna, SeloOpcao } from './ficha/Perfil'
+import { ResumoExecutivo } from './ficha/ResumoExecutivo'
 
 const ABAS = [
-  { id: 'resumo', nome: 'Resumo' },
+  { id: 'perfil', nome: 'Perfil' },
+  { id: 'resumo', nome: 'Programa' },
   { id: 'entregaveis', nome: 'Entregáveis' },
   { id: 'encontros', nome: 'Encontros' },
   { id: 'jornada', nome: 'Jornada' },
@@ -30,18 +34,18 @@ const ABAS = [
   { id: 'historico', nome: 'Histórico' },
 ]
 
-export function Ficha({ pessoaId, aba = 'resumo' }: { pessoaId: string; aba?: string }) {
+export function Ficha({ pessoaId, aba = 'perfil' }: { pessoaId: string; aba?: string }) {
   const { dados, erro, recarregar } = useDados(`/pessoas/${pessoaId}`)
   const { pode } = useSessao()
   const [matriculaId, setMatriculaId] = useState<string | null>(null)
-  const [dialogo, setDialogo] = useState<null | 'pessoa' | 'matricula' | 'acesso'>(null)
+  const [dialogo, setDialogo] = useState<null | 'pessoa' | 'matricula' | 'acesso' | 'aviso'>(null)
 
   if (erro) return <EstadoErro mensagem={erro} onTentar={recarregar} />
   if (!dados) return <Carregando />
   const { pessoa, matriculas } = dados as { pessoa: Reg; matriculas: Reg[] }
   const m = matriculas.find((x) => x.id === matriculaId) ?? matriculas[0]
   const abas = ABAS.filter((a) => (a.id === 'historico' ? !!dados.auditoria : a.id === 'jornada' || a.id === 'diagnostico' ? pode('jornada:ver') : a.id === 'anotacoes' ? pode('notas:internas') || pode('notas:pedagogicas') : true))
-  const abaAtual = abas.some((a) => a.id === aba) ? aba : 'resumo'
+  const abaAtual = aba === 'programa' ? 'resumo' : abas.some((a) => a.id === aba) ? aba : 'perfil'
 
   return (
     <div className="space-y-4">
@@ -54,6 +58,12 @@ export function Ficha({ pessoaId, aba = 'resumo' }: { pessoaId: string; aba?: st
             <IdAluna codigo={pessoa.codigo} className="align-middle text-sm" />
             {pessoa.nome} {pessoa.demonstracao ? <Selo tom="info">Demonstração</Selo> : null}
           </h2>
+          <div className="my-1 flex flex-wrap items-center gap-1.5">
+            {pessoa.empresa && <span className="mr-1 text-sm text-ink-soft">{pessoa.empresa}</span>}
+            <SeloOpcao id={pessoa.status_id} vazio="" />
+            <SeloOpcao id={pessoa.saude_id} vazio="" />
+            {pessoa.em_risco ? <Selo tom="perigo">Em risco</Selo> : null}
+          </div>
           <p className="text-sm text-ink-muted">{[pessoa.email, pessoa.telefone, pessoa.cidade].filter(Boolean).join(' · ') || 'Sem contato cadastrado'}</p>
           {(pessoa.instagram || pessoa.linkedin || pessoa.site) && (
             <p className="text-xs text-ink-muted">{[pessoa.instagram && `Instagram: ${pessoa.instagram}`, pessoa.linkedin && `LinkedIn: ${pessoa.linkedin}`, pessoa.site].filter(Boolean).join(' · ')}</p>
@@ -71,6 +81,11 @@ export function Ficha({ pessoaId, aba = 'resumo' }: { pessoaId: string; aba?: st
               <Pencil className="size-4" aria-hidden /> Dados
             </button>
           )}
+          {pode('avisos:enviar') && dados.acesso_portal?.ativo ? (
+            <button type="button" className="btn-secondary" onClick={() => setDialogo('aviso')}>
+              <Megaphone className="size-4" aria-hidden /> Enviar aviso
+            </button>
+          ) : null}
           {pode('usuarios:admin') && !dados.acesso_portal && (
             <button type="button" className="btn-secondary" onClick={() => setDialogo('acesso')}>
               Criar acesso ao portal
@@ -85,7 +100,10 @@ export function Ficha({ pessoaId, aba = 'resumo' }: { pessoaId: string; aba?: st
       </div>
 
       {matriculas.length === 0 ? (
-        <Vazio>Esta pessoa ainda não tem matrícula. Use "Nova matrícula" para registrar vigência e entregáveis.</Vazio>
+        <>
+          <Vazio>Esta pessoa ainda não tem matrícula. Use "Nova matrícula" para registrar vigência e entregáveis.</Vazio>
+          <PerfilAluna pessoa={pessoa} recarregar={recarregar} />
+        </>
       ) : (
         <>
           {matriculas.length > 1 && (
@@ -106,6 +124,7 @@ export function Ficha({ pessoaId, aba = 'resumo' }: { pessoaId: string; aba?: st
               ))}
             </div>
           )}
+          <ResumoExecutivo m={m} pessoa={pessoa} />
           <nav aria-label="Seções da ficha" className="flex gap-1 overflow-x-auto border-b border-line">
             {abas.map((a) => (
               <a
@@ -124,6 +143,7 @@ export function Ficha({ pessoaId, aba = 'resumo' }: { pessoaId: string; aba?: st
 
       {dialogo === 'pessoa' && <DialogPessoa pessoa={pessoa} onFechar={() => setDialogo(null)} onConcluir={recarregar} />}
       {dialogo === 'matricula' && <DialogMatricula pessoa={pessoa} onFechar={() => setDialogo(null)} onConcluir={recarregar} />}
+      {dialogo === 'aviso' && <DialogAviso pessoa={pessoa} onFechar={() => setDialogo(null)} />}
       {dialogo === 'acesso' && <DialogAcesso pessoa={pessoa} onFechar={() => setDialogo(null)} onConcluir={recarregar} />}
     </div>
   )
@@ -149,8 +169,10 @@ function ConteudoAba({ aba, m, matriculas, pessoa, auditoria, recarregar }: { ab
       return <Anotacoes m={m} recarregar={recarregar} />
     case 'historico':
       return <Historico auditoria={auditoria ?? []} />
+    case 'resumo':
+      return <Resumo m={m} matriculas={matriculas} pessoa={pessoa} recarregar={recarregar} />
     default:
-      return <Resumo m={m} matriculas={matriculas} recarregar={recarregar} />
+      return <PerfilAluna pessoa={pessoa} recarregar={recarregar} />
   }
 }
 
@@ -163,7 +185,7 @@ function Linha({ rotulo, children }: { rotulo: string; children: React.ReactNode
   )
 }
 
-function Resumo({ m, matriculas, recarregar }: { m: Reg; matriculas: Reg[]; recarregar: () => void }) {
+function Resumo({ m, matriculas, pessoa, recarregar }: { m: Reg; matriculas: Reg[]; pessoa: Reg; recarregar: () => void }) {
   const { pode } = useSessao()
   const fb = useFeedback()
   const [dialogo, setDialogo] = useState<null | 'dados' | 'contrato' | 'onboarding' | 'conferencia'>(null)
@@ -171,8 +193,24 @@ function Resumo({ m, matriculas, recarregar }: { m: Reg; matriculas: Reg[]; reca
   const totais = (m.itens as Reg[]).reduce((t, i) => ({ c: t.c + i.contratada, r: t.r + i.realizadas }), { c: 0, r: 0 })
   const checklist: { item: string; feito: boolean }[] = m.onboarding_checklist ? JSON.parse(m.onboarding_checklist) : []
 
+  const realizadas = (m.ocorrencias as Reg[]).filter((o) => o.situacao === 'realizada').length
   return (
     <div className="grid gap-4 lg:grid-cols-2">
+      <Secao titulo="Programa" descricao="Participação da aluna no programa">
+        <dl>
+          <Linha rotulo="Turma">{m.turma_nome ?? <span className="text-ink-muted">Sem turma</span>}</Linha>
+          <Linha rotulo="Mentorias feitas">
+            {realizadas} de {totais.c} contratada(s)
+          </Linha>
+          <Linha rotulo="Presença em treinamentos">
+            <span className="text-ink-muted">Sem registro: a presença entra na próxima fase</span>
+          </Linha>
+          <Linha rotulo="Frequência no grupo">
+            <span className="text-ink-muted">Sem registro</span>
+          </Linha>
+          <Linha rotulo="Responsável interna">{pessoa.responsavel_nome ?? <Selo tom="alerta">Sem responsável</Selo>}</Linha>
+        </dl>
+      </Secao>
       <Secao
         titulo="Matrícula e vigência"
         acao={
@@ -336,49 +374,6 @@ function FormDialogConferencia({ m, onFechar, onConcluir }: { m: Reg; onFechar: 
   )
 }
 
-function DialogPessoa({ pessoa, onFechar, onConcluir }: { pessoa: Reg; onFechar: () => void; onConcluir: () => void }) {
-  const fb = useFeedback()
-  const { valores, campo } = useValores({
-    nome: pessoa.nome ?? '',
-    email: pessoa.email ?? '',
-    telefone: pessoa.telefone ?? '',
-    cidade: pessoa.cidade ?? '',
-    instagram: pessoa.instagram ?? '',
-    linkedin: pessoa.linkedin ?? '',
-    site: pessoa.site ?? '',
-    observacao_operacional: pessoa.observacao_operacional ?? '',
-  })
-  return (
-    <FormDialog
-      aberto
-      titulo="Dados da aluna"
-      onFechar={onFechar}
-      onEnviar={async () => {
-        await put(`/pessoas/${pessoa.id}`, valores)
-        fb.sucesso('Dados atualizados.')
-        onConcluir()
-      }}
-    >
-      <Campo rotulo="Nome" obrigatorio>
-        {(p) => <input {...p} className="field-control" value={valores.nome} onChange={campo('nome')} />}
-      </Campo>
-      <div className="grid gap-4 sm:grid-cols-2">
-        <Campo rotulo="E-mail">{(p) => <input {...p} type="email" className="field-control" value={valores.email} onChange={campo('email')} />}</Campo>
-        <Campo rotulo="Telefone">{(p) => <input {...p} className="field-control" value={valores.telefone} onChange={campo('telefone')} />}</Campo>
-      </div>
-      <Campo rotulo="Cidade">{(p) => <input {...p} className="field-control" value={valores.cidade} onChange={campo('cidade')} />}</Campo>
-      <div className="grid gap-4 sm:grid-cols-3">
-        <Campo rotulo="Instagram">{(p) => <input {...p} className="field-control" value={valores.instagram} onChange={campo('instagram')} />}</Campo>
-        <Campo rotulo="LinkedIn">{(p) => <input {...p} className="field-control" value={valores.linkedin} onChange={campo('linkedin')} />}</Campo>
-        <Campo rotulo="Site">{(p) => <input {...p} type="url" placeholder="https://" className="field-control" value={valores.site} onChange={campo('site')} />}</Campo>
-      </div>
-      <Campo rotulo="Observação operacional" dica="Só o mínimo necessário para a operação. Não registre diagnósticos ou relatos sensíveis.">
-        {(p) => <textarea {...p} rows={2} className="field-control" value={valores.observacao_operacional} onChange={campo('observacao_operacional')} />}
-      </Campo>
-    </FormDialog>
-  )
-}
-
 function DialogAcesso({ pessoa, onFechar, onConcluir }: { pessoa: Reg; onFechar: () => void; onConcluir: () => void }) {
   const fb = useFeedback()
   const { valores, campo } = useValores({ email: pessoa.email ?? '', senha_inicial: '' })
@@ -416,6 +411,7 @@ function DialogDados({ m, onFechar, onConcluir }: { m: Reg; onFechar: () => void
     data_fim: m.data_fim ?? '',
     responsavel_id: m.responsavel_id ?? '',
     mentora_id: m.mentora_id ?? '',
+    canal_venda_id: m.canal_venda_id ?? '',
     motivo_alteracao_vigencia: '',
   })
   const mudouVigencia = valores.data_inicio !== m.data_inicio || (valores.data_fim || null) !== m.data_fim
@@ -432,6 +428,7 @@ function DialogDados({ m, onFechar, onConcluir }: { m: Reg; onFechar: () => void
           data_boas_vindas: valores.data_boas_vindas || null,
           responsavel_id: valores.responsavel_id || null,
           mentora_id: valores.mentora_id || null,
+          canal_venda_id: valores.canal_venda_id || null,
         })
         fb.sucesso('Matrícula atualizada.')
         onConcluir()
@@ -470,6 +467,13 @@ function DialogDados({ m, onFechar, onConcluir }: { m: Reg; onFechar: () => void
           {(p) => (
             <select {...p} className="field-control" value={valores.mentora_id} onChange={campo('mentora_id')}>
               <Opcoes itens={ativos(cat?.profissionais)} vazio="A definir" />
+            </select>
+          )}
+        </Campo>
+        <Campo rotulo="Canal de venda" dica="Opções em Configurações → Listas.">
+          {(p) => (
+            <select {...p} className="field-control" value={valores.canal_venda_id} onChange={campo('canal_venda_id')}>
+              <Opcoes itens={ativos(cat?.['canais-venda'])} vazio="Não informado" />
             </select>
           )}
         </Campo>

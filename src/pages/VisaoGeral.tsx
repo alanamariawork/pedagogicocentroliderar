@@ -4,12 +4,56 @@ import { Carregando, EstadoErro, Secao, Vazio } from '../components/Estados'
 import { Filtros, SeletorMes, paraQuery, type ValoresFiltro } from '../components/Filtros'
 import { Atraso, IdAluna } from '../components/Selos'
 import { useDados, type Reg } from '../lib/api'
+import { PainelAlunas, Estrategica } from './visao/PainelAlunas'
 import { cx } from '../lib/format'
 import { href } from '../lib/rotas'
 import { filtrosIniciais } from './EntregasMes'
 import { formatarData } from '../../shared/datas'
 
 export function VisaoGeral() {
+  const [visao, setVisao] = useState<'operacional' | 'estrategica'>(() => {
+    try {
+      return localStorage.getItem('visao-geral') === 'estrategica' ? 'estrategica' : 'operacional'
+    } catch {
+      return 'operacional'
+    }
+  })
+  const trocar = (v: 'operacional' | 'estrategica') => {
+    setVisao(v)
+    try {
+      localStorage.setItem('visao-geral', v)
+    } catch {
+      /* sem armazenamento local: só não lembra a escolha */
+    }
+  }
+  const painel = useDados('/painel/alunas')
+  return (
+    <div className="space-y-5">
+      <PainelAlunas painel={painel} />
+      <div className="inline-flex rounded-[var(--radius-control)] border border-line bg-surface p-0.5" role="group" aria-label="Tipo de visão">
+        {(
+          [
+            ['operacional', 'Operacional'],
+            ['estrategica', 'Estratégica'],
+          ] as const
+        ).map(([v, nome]) => (
+          <button
+            key={v}
+            type="button"
+            aria-pressed={visao === v}
+            onClick={() => trocar(v)}
+            className={cx('rounded-[calc(var(--radius-control)-2px)] px-3 py-1.5 text-sm', visao === v ? 'bg-brand-700 font-medium text-white' : 'text-ink-soft hover:bg-surface-muted')}
+          >
+            {nome}
+          </button>
+        ))}
+      </div>
+      {visao === 'estrategica' ? <Estrategica painel={painel} /> : <Operacional />}
+    </div>
+  )
+}
+
+function Operacional() {
   const [filtros, setFiltros] = useState<ValoresFiltro>(filtrosIniciais)
   const [mostrar, setMostrar] = useState(false)
   const { dados, erro, recarregar } = useDados(`/visao-geral?${paraQuery(filtros)}`)
