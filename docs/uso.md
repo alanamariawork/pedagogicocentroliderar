@@ -48,9 +48,11 @@ Cada aluna tem um **ID** (#001, #002…) que segue a ordem de matrícula. As lis
 ### Administrativo (fase 1)
 
 - **Visão geral:** cards de alunas (total, ativas, a iniciar, onboarding marcado e pendente) e um botão para alternar entre **Operacional** (o painel de entregas de antes) e **Estratégica** (alunas por estado, segmento, responsável, canal de venda e turma).
-- **Alunas e matrículas:** indicadores no topo (ativas, sem responsável, em risco, renovam em 90 dias, canceladas), que filtram a lista ao clicar; busca; filtros por status, responsável, engajamento, produto e turma; ordenação; lista ou kanban por status; exportação em CSV. Em cada aluna: Ver perfil, WhatsApp (só abre a conversa, nada é enviado) e Editar.
+- **Alunas e matrículas:** indicadores no topo (ativas, sem responsável, em risco, renovam em 90 dias, canceladas), que filtram a lista ao clicar; busca; filtros por status, responsável, engajamento, produto e turma; ordenação; lista ou cards (a escolha fica lembrada); exportação em CSV. Em cada aluna: Ver perfil, WhatsApp (só abre a conversa, nada é enviado) e Editar.
 - **Ficha:** Resumo Executivo no topo e as abas **Perfil** (Cadastro e Estado, com o olho mostrando o que aparece no portal) e **Programa** (antigo Resumo). As demais abas continuam.
 - **Configurações → Listas:** status, saúde, engajamento, segmentos, e canais de venda. **Campos visíveis:** o que pode aparecer no portal da aluna.
+- **Avisos às alunas:** a equipe escreve avisos para uma aluna, uma turma ou todas as alunas ativas, para agora ou para uma data e hora, e pode repetir todo dia, toda semana ou todo mês, até uma data ou até pausar. Os avisos aparecem no sino do portal junto com os automáticos. Na ficha, o botão **Enviar aviso** já escolhe a aluna.
+- **Decisões pendentes → Exportar pauta:** gera a pauta da reunião com as questões em aberto (com espaço para encaminhamento, responsável e prazo). Dá para imprimir ou salvar em PDF, ou baixar para abrir no Word.
 - **Responsável e carteira:** todas as alunas são de responsabilidade do Suporte/CS, que vê todas. A permissão "Ver todas as alunas" pode ser tirada de um perfil em Regras de acesso; aí ele passa a ver só as alunas em que é responsável.
 - **Resumo Executivo:** todos os entregáveis contam como mentorias (realizadas/contratadas, próxima e última).
 

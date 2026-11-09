@@ -2,7 +2,7 @@ import { Router, type NextFunction, type Request, type Response } from 'express'
 import { z } from 'zod'
 import { agoraIso, novoId, type BD } from '../db'
 import { ErroHttp } from '../auth'
-import { auditar, config, hoje, link, texto, textoObrig, validar } from '../servicos'
+import { auditar, config, hoje, link, processarAvisos, texto, textoObrig, validar } from '../servicos'
 import { AREAS_DIAGNOSTICO, DIAS_DIAGNOSTICO_FIM } from '../../shared/diagnostico'
 import { diferencaDias, somarDias } from '../../shared/datas'
 import { montarJornada } from './pedagogico'
@@ -164,6 +164,7 @@ export function rotasPortal(db: BD) {
 
   /** O que o menu lateral precisa: os tipos de encontro da aluna (submenu Mentorias) e avisos não lidos. */
   r.get('/portal/menu', (req, res) => {
+    processarAvisos(db)
     const m = matriculaAtual(req.usuario!.pessoa_id!)
     const tipos = m
       ? db
@@ -329,6 +330,7 @@ export function rotasPortal(db: BD) {
   })
 
   r.get('/portal/notificacoes', (req, res) => {
+    processarAvisos(db)
     const itens = db.prepare('SELECT id, titulo, detalhe, link, lida_em, criado_em FROM notificacoes WHERE usuario_id = ? ORDER BY criado_em DESC LIMIT 30').all(req.usuario!.id)
     res.json({ itens, nao_lidas: naoLidas(req.usuario!.id) })
   })

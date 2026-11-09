@@ -475,6 +475,11 @@ export async function popularDemonstracao(db: BD) {
       db.prepare('UPDATE matriculas SET canal_venda_id = ? WHERE pessoa_id = ?').run(canais[n % 3], p.id)
     })
 
+    /* ---------- Avisos escritos pela equipe (demonstração) ---------- */
+    const beatrizId = demoPessoas[0].id
+    await api.post('/avisos', { publico: 'aluna', pessoa_id: beatrizId, titulo: '[Demo] Sua próxima mentoria está chegando', detalhe: 'Separe suas dúvidas sobre a rotina de gestão.', link: '#/mentorias' })
+    await api.post('/avisos', { publico: 'ativas', titulo: '[Demo] Atualize seus indicadores', detalhe: 'Toda segunda-feira, reserve 5 minutos para atualizar suas metas.', link: '#/diagnostico', inicio: `${somarDias(h, 7 - ((new Date(h + 'T12:00:00Z').getUTCDay() + 6) % 7))}T09:00`, recorrencia: 'semanal' })
+
     /* ---------- Decisões pendentes ---------- */
     for (const [questao, impacto, responsavel] of [
       ['Qual é a numeração/ordem oficial das trilhas (Diamantes em Ação, Diamante no Jogo, Diamante que Age)?', 'Ordem exibida na jornada e no portal da aluna.', 'Coordenação pedagógica'],

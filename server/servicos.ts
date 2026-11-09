@@ -3,7 +3,7 @@ import type { Request } from 'express'
 import { z } from 'zod'
 import { agoraIso, novoId, type BD } from './db'
 import { ErroHttp, tem } from './auth'
-import { dataValida, horarioValido, hojeSP } from '../shared/datas'
+import { agoraSP, dataValida, horarioValido, hojeSP, somarDias, somarMeses } from '../shared/datas'
 import { codigoStatusPelaMatricula } from '../shared/listas'
 
 /* ---------------- Validação ---------------- */
@@ -285,4 +285,50 @@ export function sincronizarStatusAluna(db: BD, req: Request, pessoaId: string) {
     auditar(db, req, { entidade: 'pessoa', entidade_id: pessoaId, acao: 'status_atualizado', pessoa_id: pessoaId, dados: { codigo } })
   }
   if (!p.data_entrada) db.prepare('UPDATE pessoas SET data_entrada = (SELECT MIN(data_inicio) FROM matriculas WHERE pessoa_id = ?) WHERE id = ?').run(pessoaId, pessoaId)
+}
+
+/* ---------------- Avisos programados pela equipe ---------------- */
+
+/** Próximo envio depois de `de`, pulando os que já passaram (não manda atrasados em lote). */
+export function proximoEnvio(de: string, recorrencia: string, agora: string): string | null {
+  if (recorrencia === 'nenhuma') return null
+  const hora = de.slice(10)
+  let x = de
+  do {
+    if (recorrencia === 'diaria') x = somarDias(x, 1)
+    else if (recorrencia === 'semanal') x = somarDias(x, 7)
+    else x = somarMeses(x, 1) + hora
+  } while (x <= agora)
+  return x
+}
+
+/**
+ * Entrega os avisos cujo horário chegou: um aviso no sino para cada aluna com acesso ao portal.
+ * Roda a cada minuto no servidor e também quando a aluna abre o portal.
+ */
+export function processarAvisos(db: BD, agora = agoraSP()) {
+  const devidos = db.prepare('SELECT * FROM avisos_programados WHERE ativo = 1 AND proximo_envio IS NOT NULL AND proximo_envio <= ?').all(agora) as Record<string, string | number | null>[]
+  if (!devidos.length) return
+  const ins = db.prepare('INSERT INTO notificacoes (id, usuario_id, titulo, detalhe, link, aviso_id, criado_em) VALUES (?, ?, ?, ?, ?, ?, ?)')
+  db.transaction(() => {
+    for (const a of devidos) {
+      for (const u of destinatariosAviso(db, a)) ins.run(randomUUID(), u, a.titulo, a.detalhe, a.link, a.id, agoraIso())
+      let prox = proximoEnvio(a.proximo_envio as string, a.recorrencia as string, agora)
+      if (prox && a.fim && prox.slice(0, 10) > (a.fim as string)) prox = null
+      db.prepare('UPDATE avisos_programados SET envios = envios + 1, ultimo_envio = ?, proximo_envio = ?, ativo = ? WHERE id = ?').run(agora, prox, prox ? 1 : 0, a.id)
+    }
+  })()
+}
+
+/** Usuárias do portal que recebem o aviso, conforme o público escolhido. */
+export function destinatariosAviso(db: BD, a: Record<string, unknown>): string[] {
+  const base = "SELECT DISTINCT u.id FROM usuarios u JOIN pessoas p ON p.id = u.pessoa_id WHERE u.perfil = 'aluna' AND u.ativo = 1"
+  const ativa = "EXISTS (SELECT 1 FROM matriculas m WHERE m.pessoa_id = p.id AND m.situacao IN ('ativa','pausada')"
+  const linhas =
+    a.publico === 'aluna'
+      ? db.prepare(`${base} AND p.id = ?`).all(a.pessoa_id)
+      : a.publico === 'turma'
+        ? db.prepare(`${base} AND ${ativa} AND m.turma_id = ?)`).all(a.turma_id)
+        : db.prepare(`${base} AND ${ativa})`).all()
+  return (linhas as { id: string }[]).map((l) => l.id)
 }

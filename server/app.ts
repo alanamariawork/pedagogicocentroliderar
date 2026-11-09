@@ -10,6 +10,7 @@ import { rotasAlunas } from './rotas/alunas'
 import { rotasOperacao } from './rotas/operacao'
 import { rotasPedagogico } from './rotas/pedagogico'
 import { rotasPortal } from './rotas/portal'
+import { rotasAvisos } from './rotas/avisos'
 
 export function criarApp(db: BD) {
   garantirPermissoesPadrao(db)
@@ -36,6 +37,7 @@ export function criarApp(db: BD) {
   api.use(rotasAcesso(db))
   api.use(rotasPortal(db)) // antes das rotas da equipe: /portal só atende a aluna
   api.use(rotasConfiguracao(db))
+  api.use(rotasAvisos(db))
   api.use(rotasAlunas(db))
   api.use(rotasOperacao(db))
   api.use(rotasPedagogico(db))

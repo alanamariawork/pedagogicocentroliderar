@@ -525,6 +525,36 @@ const MIGRACOES: { versao: number; descricao: string; aplicar: (db: BD) => void 
       if (temRegras) for (const perfil of ['admin', 'coordenacao', 'suporte']) db.prepare("INSERT OR IGNORE INTO perfil_permissoes (perfil, permissao) VALUES (?, 'alunas:todas')").run(perfil)
     },
   },
+  {
+    versao: 4,
+    descricao: 'Avisos às alunas escritos pela equipe, com recorrência',
+    aplicar(db) {
+      db.exec(/* sql */ `
+        -- Avisos que a equipe programa para o sino do portal. Nada sai do sistema (sem e-mail ou WhatsApp).
+        CREATE TABLE avisos_programados (
+          id TEXT PRIMARY KEY,
+          titulo TEXT NOT NULL,
+          detalhe TEXT,
+          link TEXT,
+          publico TEXT NOT NULL CHECK (publico IN ('aluna','turma','ativas')),
+          pessoa_id TEXT REFERENCES pessoas(id),
+          turma_id TEXT REFERENCES turmas(id),
+          inicio TEXT NOT NULL,
+          recorrencia TEXT NOT NULL DEFAULT 'nenhuma' CHECK (recorrencia IN ('nenhuma','diaria','semanal','mensal')),
+          fim TEXT,
+          proximo_envio TEXT,
+          envios INTEGER NOT NULL DEFAULT 0,
+          ultimo_envio TEXT,
+          ativo INTEGER NOT NULL DEFAULT 1,
+          criado_em TEXT NOT NULL, atualizado_em TEXT NOT NULL, autor_id TEXT
+        );
+        CREATE INDEX ix_avisos_proximo ON avisos_programados(ativo, proximo_envio);
+        ALTER TABLE notificacoes ADD COLUMN aviso_id TEXT REFERENCES avisos_programados(id);
+      `)
+      const temRegras = (db.prepare('SELECT COUNT(*) AS n FROM perfil_permissoes').get() as { n: number }).n > 0
+      if (temRegras) for (const perfil of ['admin', 'coordenacao', 'suporte']) db.prepare("INSERT OR IGNORE INTO perfil_permissoes (perfil, permissao) VALUES (?, 'avisos:enviar')").run(perfil)
+    },
+  },
 ]
 
 function migrar(db: BD) {

@@ -1,6 +1,6 @@
 # O que foi testado
 
-## Testes automáticos (`npm test`: 46 testes, todos passando)
+## Testes automáticos (`npm test`: 48 testes, todos passando)
 
 Os testes de aceite (`tests/aceite.test.ts`) sobem o servidor real com um banco em memória e a demonstração. Depois, fazem as chamadas pela API com cada perfil.
 
@@ -51,6 +51,10 @@ Administrativo, fase 1 (7 testes):
 - As listas configuráveis são separadas entre si e só quem tem `config:editar` mexe.
 - O painel da Visão Geral soma o mesmo total em todos os agrupamentos.
 - Saúde, engajamento, risco e observação nunca podem ser marcados como visíveis à aluna.
+
+Avisos da equipe (2 testes):
+- O aviso imediato chega só à aluna escolhida; o link só pode abrir uma página do portal; a mentora não envia.
+- O aviso recorrente repete na data certa, não manda atrasados em lote, respeita a data final e pode ser pausado e retomado.
 
 Os testes de cálculo (`tests/calculos.test.ts`) cobrem:
 - A soma de horas sem contar a sobreposição duas vezes.

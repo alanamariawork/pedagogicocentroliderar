@@ -4,7 +4,7 @@ import {
   Bell,
   CalendarCheck2,
   CalendarClock,
-  ClipboardList,
+  ClipboardList, Megaphone,
   Gem,
   LayoutDashboard,
   LogOut,
@@ -38,6 +38,7 @@ import { Configuracoes } from './pages/Configuracoes'
 import { Decisoes } from './pages/Decisoes'
 import { Conta } from './pages/Conta'
 import { PortalAluna } from './portal/PortalAluna'
+import { Avisos } from './pages/Avisos'
 
 export const NOME_SISTEMA = 'Diamante Business | Gestão da Jornada'
 
@@ -57,6 +58,7 @@ const MENU: ItemMenu[] = [
   { id: 'alertas', nome: 'Alertas', icone: Bell },
   { id: 'jornada', nome: 'Trilhas e etapas', icone: Route, permissoes: ['jornada:ver'] },
   { id: 'pacotes', nome: 'Pacotes', icone: Package, permissoes: ['comercial:ver', 'config:editar'] },
+  { id: 'avisos', nome: 'Avisos às alunas', icone: Megaphone, permissoes: ['avisos:enviar'] },
   { id: 'decisoes', nome: 'Decisões pendentes', icone: ClipboardList },
   { id: 'configuracoes', nome: 'Configurações', icone: Settings, permissoes: ['config:editar', 'usuarios:admin', 'pedagogico:configurar'] },
 ]
@@ -78,6 +80,7 @@ const NOME_PAGINA: Record<PaginaId, string> = {
   alertas: 'Alertas',
   jornada: 'Trilhas e etapas',
   pacotes: 'Pacotes e entregáveis',
+  avisos: 'Avisos às alunas',
   decisoes: 'Decisões pendentes',
   configuracoes: 'Configurações',
   conta: 'Minha conta',
@@ -313,6 +316,8 @@ function Pagina({ rota }: { rota: Rota }) {
       return <Configuracoes />
     case 'decisoes':
       return <Decisoes />
+    case 'avisos':
+      return <Avisos />
     case 'conta':
     default:
       return <Conta />

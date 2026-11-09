@@ -38,6 +38,7 @@ export const PERMISSOES = {
   'conquistas:validar': 'Validar conquistas e liberar para a aluna',
   'indicadores:ver': 'Ver visão geral e indicadores',
   'config:editar': 'Editar programas, pacotes, tipos, profissionais e motivos',
+  'avisos:enviar': 'Escrever e programar avisos para as alunas (aparecem no sino do portal)',
   'decisoes:editar': 'Registrar e decidir questões pendentes',
   'auditoria:ver': 'Ver histórico de alterações',
   'usuarios:admin': 'Administrar usuários e regras de acesso',
@@ -53,6 +54,7 @@ export const PERMISSOES_PADRAO: Record<Perfil, Permissao[]> = {
   suporte: [
     'alunas:ver',
     'alunas:todas',
+    'avisos:enviar',
     'alunas:editar',
     'matriculas:criar',
     'comercial:ver',

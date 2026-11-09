@@ -1,5 +1,7 @@
 import { useState } from 'react'
-import { ClipboardList, Plus } from 'lucide-react'
+import { ClipboardList, FileDown, Plus, Printer } from 'lucide-react'
+import { montarPauta } from './decisoes/pauta'
+import { Dialog } from '../components/Dialog'
 import { Carregando, EstadoErro, EstadoVazio } from '../components/Estados'
 import { Campo, FormDialog, useValores } from '../components/Form'
 import { Selo } from '../components/Selos'
@@ -14,6 +16,7 @@ export function Decisoes() {
   const { pode } = useSessao()
   const { dados, erro, recarregar } = useDados<Reg[]>('/decisoes')
   const [editando, setEditando] = useState<Reg | 'nova' | null>(null)
+  const [pauta, setPauta] = useState(false)
   if (erro) return <EstadoErro mensagem={erro} onTentar={recarregar} />
   if (!dados) return <Carregando />
   const abertas = dados.filter((d) => d.situacao !== 'decidida').length
@@ -23,11 +26,16 @@ export function Decisoes() {
         <p className="max-w-2xl text-sm text-ink-soft">
           Questões que dependem de decisão da coordenação ou da direção antes de virarem regra no sistema. {abertas} em aberto.
         </p>
-        {pode('decisoes:editar') && (
-          <button type="button" className="btn-primary" onClick={() => setEditando('nova')}>
-            <Plus className="size-4" aria-hidden /> Nova questão
+        <div className="flex flex-wrap gap-2">
+          <button type="button" className="btn-secondary" onClick={() => setPauta(true)} disabled={!dados.length}>
+            <FileDown className="size-4" aria-hidden /> Exportar pauta
           </button>
-        )}
+          {pode('decisoes:editar') && (
+            <button type="button" className="btn-primary" onClick={() => setEditando('nova')}>
+              <Plus className="size-4" aria-hidden /> Nova questão
+            </button>
+          )}
+        </div>
       </div>
       {dados.length === 0 ? (
         <EstadoVazio icone={ClipboardList} titulo="Nenhuma decisão pendente registrada." />
@@ -59,6 +67,7 @@ export function Decisoes() {
           ))}
         </ul>
       )}
+      {pauta && <DialogPauta decisoes={dados} onFechar={() => setPauta(false)} />}
       {editando && <DialogDecisao decisao={editando === 'nova' ? null : editando} onFechar={() => setEditando(null)} onConcluir={recarregar} />}
     </div>
   )
@@ -127,5 +136,50 @@ function DialogDecisao({ decisao, onFechar, onConcluir }: { decisao: Reg | null;
         </>
       )}
     </FormDialog>
+  )
+}
+
+function DialogPauta({ decisoes, onFechar }: { decisoes: Reg[]; onFechar: () => void }) {
+  const { valores, campo } = useValores({ titulo: 'Reunião de decisões pendentes', data: hojeSP(), horario: '', local: '', incluirDecididas: false })
+  const html = () => montarPauta(decisoes, valores, 'Diamante Business | Gestão da Jornada')
+  const abertas = decisoes.filter((d) => d.situacao !== 'decidida').length
+  const baixar = () => {
+    const url = URL.createObjectURL(new Blob(['\ufeff' + html()], { type: 'application/msword' }))
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `pauta-decisoes-${valores.data || hojeSP()}.doc`
+    a.click()
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
+  }
+  const imprimir = () => {
+    const w = window.open('', '_blank')
+    if (!w) return
+    w.document.write(html())
+    w.document.close()
+    w.focus()
+    setTimeout(() => w.print(), 300)
+  }
+  return (
+    <Dialog aberto titulo="Exportar pauta de reunião" descricao={`${abertas} questão(ões) em aberto ou em análise entram como itens da pauta, com espaço para encaminhamento.`} onFechar={onFechar}>
+      <div className="space-y-4">
+        <Campo rotulo="Título da reunião">{(p) => <input {...p} className="field-control" value={valores.titulo} onChange={campo('titulo')} />}</Campo>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Campo rotulo="Data">{(p) => <input {...p} type="date" className="field-control" value={valores.data} onChange={campo('data')} />}</Campo>
+          <Campo rotulo="Horário">{(p) => <input {...p} type="time" className="field-control" value={valores.horario} onChange={campo('horario')} />}</Campo>
+        </div>
+        <Campo rotulo="Local ou link">{(p) => <input {...p} className="field-control" value={valores.local} onChange={campo('local')} />}</Campo>
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={valores.incluirDecididas} onChange={campo('incluirDecididas')} /> Incluir as decisões já tomadas, para registro
+        </label>
+        <div className="flex flex-wrap justify-end gap-2 border-t border-line pt-3">
+          <button type="button" className="btn-secondary" onClick={imprimir}>
+            <Printer className="size-4" aria-hidden /> Imprimir ou salvar em PDF
+          </button>
+          <button type="button" className="btn-primary" onClick={baixar}>
+            <FileDown className="size-4" aria-hidden /> Baixar para Word
+          </button>
+        </div>
+      </div>
+    </Dialog>
   )
 }

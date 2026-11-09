@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Download, Eye, LayoutList, Columns3, MessageCircle, Pencil, Plus, Search, Users, X } from 'lucide-react'
+import { Download, Eye, LayoutList, LayoutGrid, MessageCircle, Pencil, Plus, Search, Users, X } from 'lucide-react'
 import { Carregando, EstadoErro, EstadoVazio } from '../components/Estados'
 import { IdAluna, Selo } from '../components/Selos'
 import { DialogMatricula } from '../forms/FormMatricula'
@@ -30,7 +30,21 @@ export function Alunas() {
   const [rapido, setRapido] = useState<Rapido>('')
   const [f, setF] = useState(FILTROS_VAZIOS)
   const [ordem, setOrdem] = useState<Ordem>('id')
-  const [modo, setModo] = useState<'lista' | 'kanban'>('lista')
+  const [modo, setModo] = useState<'lista' | 'cards'>(() => {
+    try {
+      return localStorage.getItem('alunas-modo') === 'cards' ? 'cards' : 'lista'
+    } catch {
+      return 'lista'
+    }
+  })
+  const trocarModo = (v: 'lista' | 'cards') => {
+    setModo(v)
+    try {
+      localStorage.setItem('alunas-modo', v)
+    } catch {
+      /* sem armazenamento local: só não lembra a escolha */
+    }
+  }
   const [novo, setNovo] = useState(false)
   const [editando, setEditando] = useState<string | null>(null)
 
@@ -160,10 +174,10 @@ export function Alunas() {
           {(
             [
               ['lista', 'Lista', LayoutList],
-              ['kanban', 'Kanban', Columns3],
+              ['cards', 'Cards', LayoutGrid],
             ] as const
           ).map(([v, rotulo, Icone]) => (
-            <button key={v} type="button" aria-pressed={modo === v} onClick={() => setModo(v)} className={cx('inline-flex items-center gap-1.5 rounded-[calc(var(--radius-control)-2px)] px-2.5 py-1.5 text-sm', modo === v ? 'bg-brand-700 text-white' : 'text-ink-soft hover:bg-surface-muted')}>
+            <button key={v} type="button" aria-pressed={modo === v} onClick={() => trocarModo(v)} className={cx('inline-flex items-center gap-1.5 rounded-[calc(var(--radius-control)-2px)] px-2.5 py-1.5 text-sm', modo === v ? 'bg-brand-700 text-white' : 'text-ink-soft hover:bg-surface-muted')}>
               <Icone className="size-4" aria-hidden /> {rotulo}
             </button>
           ))}
@@ -217,8 +231,8 @@ export function Alunas() {
             Limpar filtros
           </button>
         </EstadoVazio>
-      ) : modo === 'kanban' ? (
-        <Kanban alunas={filtrados} colunas={ativos(cat['status-aluna'])} onEditar={pode('alunas:editar') ? setEditando : undefined} />
+      ) : modo === 'cards' ? (
+        <Cards alunas={filtrados} onEditar={pode('alunas:editar') ? setEditando : undefined} />
       ) : (
         <div className="card overflow-hidden">
           <ul className="divide-y divide-line">
@@ -291,46 +305,47 @@ function LinhaAluna({ p, onEditar }: { p: Reg; onEditar?: (id: string) => void }
   )
 }
 
-function Kanban({ alunas, colunas, onEditar }: { alunas: Reg[]; colunas: Reg[]; onEditar?: (id: string) => void }) {
-  const cols = [...colunas.map((c) => ({ id: c.id as string | null, nome: c.nome as string })), { id: null, nome: 'Sem status' }]
-  const conhecidos = new Set(colunas.map((c) => c.id))
-  const daColuna = (id: string | null) => alunas.filter((p) => (id ? p.status_id === id : !p.status_id || !conhecidos.has(p.status_id)))
+function Cards({ alunas, onEditar }: { alunas: Reg[]; onEditar?: (id: string) => void }) {
   return (
-    <div className="-mx-1 overflow-x-auto pb-2">
-      <div className="flex min-w-max gap-3 px-1">
-        {cols.map((c) => {
-          const lista = daColuna(c.id)
-          if (!c.id && lista.length === 0) return null
-          return (
-            <section key={c.id ?? 'sem'} className="w-72 shrink-0 rounded-[var(--radius-card)] border border-line bg-surface-muted/50" aria-label={`${c.nome}: ${lista.length}`}>
-              <h3 className="flex items-center justify-between border-b border-line px-3 py-2 text-sm font-medium">
-                {c.id ? <SeloOpcao id={c.id} /> : c.nome}
-                <span className="text-xs text-ink-muted tabular-nums">{lista.length}</span>
-              </h3>
-              <ul className="space-y-2 p-2">
-                {lista.length === 0 && <li className="px-1 py-3 text-center text-xs text-ink-muted">Nenhuma aluna</li>}
-                {lista.map((p) => (
-                  <li key={p.id} className="card p-2.5">
-                    <a href={href({ pagina: 'ficha', id: p.id })} className="block text-sm font-medium hover:text-brand-700">
-                      <IdAluna codigo={p.codigo} />
-                      {p.nome}
-                    </a>
-                    <p className="truncate text-xs text-ink-muted">{[p.empresa, p.responsavel_nome ?? 'sem responsável'].filter(Boolean).join(' · ')}</p>
-                    <div className="mt-1.5 flex flex-wrap items-center justify-between gap-1">
-                      <span className="flex flex-wrap gap-1">
-                        <SeloOpcao id={p.saude_id} vazio="" />
-                        {p.em_risco ? <Selo tom="perigo">Em risco</Selo> : null}
-                      </span>
-                      <Acoes p={p} onEditar={onEditar} compacto />
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          )
-        })}
-      </div>
-    </div>
+    <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+      {alunas.map((p) => {
+        const m = p.matricula_atual
+        return (
+          <li key={p.id} className="card flex flex-col p-4">
+            <a href={href({ pagina: 'ficha', id: p.id })} className="font-medium text-ink hover:text-brand-700 hover:underline">
+              <IdAluna codigo={p.codigo} />
+              {p.nome}
+            </a>
+            {p.empresa && <p className="truncate text-sm text-ink-soft">{p.empresa}</p>}
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              <SeloOpcao id={p.status_id} vazio="Sem status" />
+              <SeloOpcao id={p.saude_id} vazio="" />
+              {p.em_risco ? <Selo tom="perigo">Em risco</Selo> : null}
+              {p.demonstracao ? <Selo tom="info">Demonstração</Selo> : null}
+            </div>
+            <dl className="mt-3 grid grid-cols-[6.5rem_1fr] gap-x-2 gap-y-1 text-xs">
+              <dt className="text-ink-muted">Programa</dt>
+              <dd className="truncate">{m?.programa_nome ?? '—'}</dd>
+              <dt className="text-ink-muted">Turma</dt>
+              <dd className="truncate">{m?.turma_nome ?? '—'}</dd>
+              <dt className="text-ink-muted">Vigência</dt>
+              <dd>{m ? `${formatarData(m.data_inicio)} a ${formatarData(m.data_fim)}` : 'Sem matrícula'}</dd>
+              <dt className="text-ink-muted">Responsável</dt>
+              <dd className="truncate">{p.responsavel_nome ?? <span className="text-warning">sem responsável</span>}</dd>
+            </dl>
+            {(m?.entregas_vencidas > 0 || (m && m.contrato_situacao !== 'assinado')) && (
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {m.contrato_situacao !== 'assinado' && <Selo tom="alerta">{SITUACAO_CONTRATO[m.contrato_situacao]}</Selo>}
+                {m.entregas_vencidas > 0 && <Selo tom="perigo">{m.entregas_vencidas} vencida(s)</Selo>}
+              </div>
+            )}
+            <div className="mt-auto flex justify-end border-t border-line pt-2">
+              <Acoes p={p} onEditar={onEditar} compacto />
+            </div>
+          </li>
+        )
+      })}
+    </ul>
   )
 }
 

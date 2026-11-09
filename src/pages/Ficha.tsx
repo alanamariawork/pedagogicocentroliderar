@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { ArrowLeft, Pencil, Plus } from 'lucide-react'
+import { ArrowLeft, Megaphone, Pencil, Plus } from 'lucide-react'
+import { DialogAviso } from './Avisos'
 import { Carregando, EstadoErro, Secao, Vazio } from '../components/Estados'
 import { Campo, FormDialog, Opcoes, useValores } from '../components/Form'
 import { IdAluna, Selo, TOM_MATRICULA } from '../components/Selos'
@@ -37,7 +38,7 @@ export function Ficha({ pessoaId, aba = 'perfil' }: { pessoaId: string; aba?: st
   const { dados, erro, recarregar } = useDados(`/pessoas/${pessoaId}`)
   const { pode } = useSessao()
   const [matriculaId, setMatriculaId] = useState<string | null>(null)
-  const [dialogo, setDialogo] = useState<null | 'pessoa' | 'matricula' | 'acesso'>(null)
+  const [dialogo, setDialogo] = useState<null | 'pessoa' | 'matricula' | 'acesso' | 'aviso'>(null)
 
   if (erro) return <EstadoErro mensagem={erro} onTentar={recarregar} />
   if (!dados) return <Carregando />
@@ -80,6 +81,11 @@ export function Ficha({ pessoaId, aba = 'perfil' }: { pessoaId: string; aba?: st
               <Pencil className="size-4" aria-hidden /> Dados
             </button>
           )}
+          {pode('avisos:enviar') && dados.acesso_portal?.ativo ? (
+            <button type="button" className="btn-secondary" onClick={() => setDialogo('aviso')}>
+              <Megaphone className="size-4" aria-hidden /> Enviar aviso
+            </button>
+          ) : null}
           {pode('usuarios:admin') && !dados.acesso_portal && (
             <button type="button" className="btn-secondary" onClick={() => setDialogo('acesso')}>
               Criar acesso ao portal
@@ -137,6 +143,7 @@ export function Ficha({ pessoaId, aba = 'perfil' }: { pessoaId: string; aba?: st
 
       {dialogo === 'pessoa' && <DialogPessoa pessoa={pessoa} onFechar={() => setDialogo(null)} onConcluir={recarregar} />}
       {dialogo === 'matricula' && <DialogMatricula pessoa={pessoa} onFechar={() => setDialogo(null)} onConcluir={recarregar} />}
+      {dialogo === 'aviso' && <DialogAviso pessoa={pessoa} onFechar={() => setDialogo(null)} />}
       {dialogo === 'acesso' && <DialogAcesso pessoa={pessoa} onFechar={() => setDialogo(null)} onConcluir={recarregar} />}
     </div>
   )

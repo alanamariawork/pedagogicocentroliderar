@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { abrirBanco, type BD } from '../server/db'
 import { criarApp } from '../server/app'
+import { processarAvisos } from '../server/servicos'
 import { popularDemonstracao, SENHA_DEMO } from '../server/demo'
 import { hojeSP, mesDe, somarDias } from '../shared/datas'
 
@@ -427,7 +428,7 @@ describe('Permissões e segurança', () => {
   describe('Portal da aluna, fase 1', () => {
     it('as migrações numeradas ficam registradas e a turma vira cadastro', () => {
       const versoes = (db.prepare('SELECT versao FROM versao_esquema ORDER BY versao').all() as J[]).map((v) => v.versao)
-      expect(versoes).toEqual([1, 2, 3])
+      expect(versoes).toEqual([1, 2, 3, 4])
       // As matrículas da demonstração receberam uma das duas turmas cadastradas
       const turmas = db.prepare('SELECT COUNT(DISTINCT turma_id) AS n FROM matriculas WHERE turma_id IS NOT NULL').get() as J
       expect(turmas.n).toBe(2)
@@ -592,6 +593,46 @@ describe('Permissões e segurança', () => {
       await c.admin.ok('PUT', '/campos-visibilidade', { empresa: false })
       expect((db.prepare("SELECT visivel_aluna FROM campos_visibilidade WHERE campo = 'empresa'").get() as J).visivel_aluna).toBe(0)
       await c.admin.ok('PUT', '/campos-visibilidade', { empresa: true })
+    })
+  })
+
+  describe('Avisos da equipe para as alunas', () => {
+    it('aviso imediato chega só à aluna escolhida, e o link só pode ser do portal', async () => {
+      await c.beatriz.ok('POST', '/portal/notificacoes/lidas')
+      await c.carla.ok('POST', '/portal/notificacoes/lidas')
+      const beatriz = await pessoaPorNome('Beatriz')
+      expect((await c.mentora.req('POST', '/avisos', { publico: 'aluna', pessoa_id: beatriz.id, titulo: 'x' })).status).toBe(403)
+      expect((await c.admin.req('POST', '/avisos', { publico: 'aluna', pessoa_id: beatriz.id, titulo: 'x', link: 'https://exemplo.com' })).status).toBe(400)
+      expect((await c.admin.req('POST', '/avisos', { publico: 'turma', titulo: 'x' })).status).toBe(400)
+      const r = await c.suporte.ok('POST', '/avisos', { publico: 'aluna', pessoa_id: beatriz.id, titulo: 'Lembrete da mentoria', detalhe: 'Traga suas dúvidas.', link: '#/mentorias' })
+      expect(r.envios).toBe(1)
+      const b = await c.beatriz.ok('GET', '/portal/notificacoes')
+      expect(b.itens[0].titulo).toBe('Lembrete da mentoria')
+      expect(b.itens[0].link).toBe('#/mentorias')
+      expect((await c.carla.ok('GET', '/portal/notificacoes')).nao_lidas).toBe(0)
+    })
+
+    it('aviso recorrente: repete na data certa, não manda atrasados em lote, respeita o fim e pode ser pausado', async () => {
+      const r = await c.admin.ok('POST', '/avisos', { publico: 'ativas', titulo: 'Preencha sua rotina', inicio: `${somarDias(hoje, 1)}T08:00`, recorrencia: 'semanal', fim: somarDias(hoje, 15) })
+      expect(r.envios).toBe(0) // programado para amanhã
+      const destinos = (await c.admin.ok('GET', '/avisos')).find((a: J) => a.id === r.id).destinatarias
+      expect(destinos).toBeGreaterThan(1)
+      const conta = () => (db.prepare('SELECT COUNT(*) AS n FROM notificacoes WHERE aviso_id = ?').get(r.id) as J).n
+      processarAvisos(db, `${somarDias(hoje, 1)}T08:00`)
+      expect(conta()).toBe(destinos)
+      // Muito tempo depois: entrega uma vez só e marca o próximo depois de "agora"; passou do fim, encerra.
+      processarAvisos(db, `${somarDias(hoje, 9)}T09:00`)
+      expect(conta()).toBe(destinos * 2)
+      let a = db.prepare('SELECT * FROM avisos_programados WHERE id = ?').get(r.id) as J
+      expect(a.proximo_envio).toBe(`${somarDias(hoje, 15)}T08:00`)
+      await c.admin.ok('POST', `/avisos/${r.id}/ativo`, { ativo: false })
+      processarAvisos(db, `${somarDias(hoje, 15)}T08:00`)
+      expect(conta()).toBe(destinos * 2) // pausado não envia
+      await c.admin.ok('POST', `/avisos/${r.id}/ativo`, { ativo: true })
+      processarAvisos(db, `${somarDias(hoje, 15)}T08:00`)
+      expect(conta()).toBe(destinos * 3)
+      a = db.prepare('SELECT * FROM avisos_programados WHERE id = ?').get(r.id) as J
+      expect(a.ativo).toBe(0) // o próximo passaria do fim
     })
   })
 })
