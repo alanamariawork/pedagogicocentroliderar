@@ -12,6 +12,7 @@
  * Uma sessão aberta pelo Portal nunca vale como equipe, mesmo que a pessoa também seja da equipe.
  */
 import type { BD } from './bd'
+import type { Autor } from './contexto'
 import { ErroHttp, type Handler, type Req } from './http'
 import { PERFIS, PERMISSOES_PADRAO, type Perfil, type Permissao } from '../shared/permissoes'
 
@@ -159,6 +160,12 @@ export const exigirEquipe: Handler = (req, _res, next) => {
   if (!req.usuario) throw new ErroHttp(401, 'Sua sessão expirou. Entre novamente.')
   if (req.usuario.perfil === 'aluna' || req.usuario.escopo !== 'equipe') throw new ErroHttp(403, 'Acesso não permitido para este perfil.')
   next()
+}
+
+/** Quem pede, para as chamadas a Clientes: a conta e o escopo da sessão. */
+export function autorDe(req: Req): Autor {
+  if (!req.usuario) throw new ErroHttp(401, 'Sua sessão terminou. Entre novamente.')
+  return { usuarioId: req.usuario.id, escopo: req.usuario.escopo }
 }
 
 export function tem(req: Req, p: Permissao): boolean {

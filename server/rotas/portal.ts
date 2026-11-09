@@ -2,7 +2,7 @@ import { Router, type Req as Request, type Res as Response, type Next as NextFun
 import type { ContextoApp } from '../contexto'
 import { z } from 'zod'
 import { agoraIso, novoId, transacao, type BD } from '../db'
-import { ErroHttp } from '../auth'
+import { autorDe, ErroHttp } from '../auth'
 import { auditar, config, hoje, link, processarAvisos, texto, textoObrig, validar } from '../servicos'
 import { AREAS_DIAGNOSTICO, DIAS_DIAGNOSTICO_FIM } from '../../shared/diagnostico'
 import { diferencaDias, somarDias } from '../../shared/datas'
@@ -209,7 +209,7 @@ export function rotasPortal(db: BD, ctx: ContextoApp) {
     const d = validar(z.object({ telefone: texto(40), cidade: texto(120), instagram: texto(200), linkedin: texto(200), site: link() }), req.body)
     const atual = await db.get<{ telefone: string | null }>('SELECT telefone FROM ped_pessoas WHERE id = ?', pessoaId)
     const telefone = d.telefone ? d.telefone.replace(/\D/g, '') : null
-    if ((atual?.telefone ?? null) !== telefone) await ctx.clientes.atualizarPessoa(req.usuario!.id, pessoaId, { telefone })
+    if ((atual?.telefone ?? null) !== telefone) await ctx.clientes.atualizarPessoa(autorDe(req), pessoaId, { telefone })
     await db.run('UPDATE ped_alunas SET cidade=?, instagram=?, linkedin=?, site=?, atualizado_em=? WHERE id=?', d.cidade ?? null, d.instagram ?? null, d.linkedin ?? null, d.site ?? null, agoraIso(), pessoaId)
     await auditar(db, req, { entidade: 'pessoa', entidade_id: pessoaId, acao: 'dados_atualizados_pela_aluna', pessoa_id: pessoaId, dados: d })
     res.json({ ok: true })

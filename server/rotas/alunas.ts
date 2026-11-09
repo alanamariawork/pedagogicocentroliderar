@@ -2,7 +2,7 @@ import { Router, type Req as Request } from '../http'
 import type { ContextoApp } from '../contexto'
 import { z } from 'zod'
 import { agoraIso, novoId, transacao, type BD, type BDouTX, type TX } from '../db'
-import { ErroHttp, exigir, exigirEquipe, tem } from '../auth'
+import { autorDe, ErroHttp, exigir, exigirEquipe, tem } from '../auth'
 import {
   SQL_OCORRENCIAS,
   auditar,
@@ -259,7 +259,7 @@ export function rotasAlunas(db: BD, ctx: ContextoApp) {
       throw new ErroHttp(409, 'Já existe um cadastro em Clientes com este e-mail. Busque e selecione esse cadastro em vez de criar outro.')
     }
     const plano = d.matricula ? await prepararMatricula(d.pessoa_id ?? null, d.matricula) : null
-    const pid = d.pessoa_id ?? (await ctx.clientes.criarPessoa(req.usuario!.id, { nome: d.nome, email: d.email ?? null, telefone: soDigitos(d.telefone) })).id
+    const pid = d.pessoa_id ?? (await ctx.clientes.criarPessoa(autorDe(req), { nome: d.nome, email: d.email ?? null, telefone: soDigitos(d.telefone) })).id
     let mid: string | null = null
     await transacao(db, async (tx) => {
       const agora = agoraIso()
@@ -288,7 +288,7 @@ export function rotasAlunas(db: BD, ctx: ContextoApp) {
     if ((d.email ?? null) !== atual.email) identidade.email = d.email ?? null
     if (soDigitos(d.telefone) !== atual.telefone) identidade.telefone = soDigitos(d.telefone)
     if (identidade.email && (await db.get('SELECT 1 FROM pessoa WHERE email = ? AND id <> ?', identidade.email, pid))) throw new ErroHttp(409, 'Já existe outro cadastro em Clientes com este e-mail.')
-    if (Object.keys(identidade).length) await ctx.clientes.atualizarPessoa(req.usuario!.id, pid, identidade)
+    if (Object.keys(identidade).length) await ctx.clientes.atualizarPessoa(autorDe(req), pid, identidade)
     await db.run('UPDATE ped_alunas SET cidade=?, observacao_operacional=?, instagram=?, linkedin=?, site=?, empresa=?, segmento_id=?, subsegmento=?, atualizado_em=?, autor_id=? WHERE id=?', d.cidade ?? null, d.observacao_operacional ?? null, d.instagram ?? null, d.linkedin ?? null, d.site ?? null,
         d.empresa ?? null, d.segmento_id ?? null, d.subsegmento ?? null, agoraIso(), req.usuario!.id, pid)
     await auditar(db, req, { entidade: 'pessoa', entidade_id: req.params.id as string, acao: 'atualizada', pessoa_id: req.params.id as string, dados: d })

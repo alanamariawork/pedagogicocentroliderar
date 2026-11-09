@@ -384,8 +384,11 @@ function DialogAcesso({ pessoa, onFechar, onConcluir }: { pessoa: Reg; onFechar:
       onFechar={onFechar}
       rotulo="Enviar convite"
       onEnviar={async () => {
-        const r = await post<{ email: string; situacao: string }>(`/pessoas/${pessoa.id}/convite-portal`, {})
-        fb.sucesso(r.situacao === 'ja_tem_acesso' ? `Ela já tem acesso ao Portal com ${r.email}.` : `Convite enviado para ${r.email}.`)
+        const r = await post<{ email: string; situacao: string; mensagem: string }>(`/pessoas/${pessoa.id}/convite-portal`, {})
+        if (r.situacao === 'ja_tem_acesso') fb.sucesso(`Ela já tem acesso ao Portal com ${r.email}.`)
+        else if (r.situacao === 'enviado') fb.sucesso(`Convite enviado para ${r.email}.`)
+        // Convite recente, envio em andamento, e-mail inválido ou falha: a mensagem é a do backoffice.
+        else fb.erro(r.mensagem || 'O convite não foi enviado. Tente novamente mais tarde.')
         onConcluir()
       }}
     >

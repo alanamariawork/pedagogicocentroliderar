@@ -31,7 +31,7 @@ export function Conta() {
       </Secao>
       <Secao titulo="Senha e acesso">
         <p className="text-sm text-ink-soft">
-          O login é o mesmo do backoffice. Para trocar a senha, saia e use “Esqueci minha senha” na tela de entrada. Nome e e-mail da conta são cuidados em Configurações › Equipe, no backoffice.
+          O login é o mesmo do backoffice. Para trocar a senha, use “Alterar senha” (ícone de chave) no backoffice. Nome e e-mail da conta são cuidados em Configurações › Equipe, no backoffice.
         </p>
       </Secao>
     </div>

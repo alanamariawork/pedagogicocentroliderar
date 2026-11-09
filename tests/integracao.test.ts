@@ -24,7 +24,7 @@ beforeAll(async () => {
   c.aluna = await amb.entrar(u.aluna, 'portal')
 
   // Cliente do backoffice (ex.: participante do MQA 13) que não é aluna do pedagógico.
-  const outra = await amb.clientes.criarPessoa(u.admin, { nome: 'Participante MQA', email: 'mqa@teste.local' })
+  const outra = await amb.clientes.criarPessoa({ usuarioId: u.admin, escopo: 'equipe' }, { nome: 'Participante MQA', email: 'mqa@teste.local' })
   u.mqaPessoa = outra.id
   u.mqa = await amb.criarAcessoPortal('mqa@teste.local', outra.id)
   c.mqa = await amb.entrar(u.mqa, 'portal')
@@ -144,6 +144,8 @@ describe('Ligação com Clientes', () => {
   it('a aluna muda o próprio telefone pelo portal e ele vai para Clientes', async () => {
     await c.aluna.put('/portal/perfil', { telefone: '(21) 96666-5555' })
     expect((await amb.db.get<J>('SELECT telefone FROM pessoa WHERE id = ?', u.alunaPessoa))!.telefone).toBe('21966665555')
+    // O backoffice recebe o escopo da sessão: pelo portal, a regra dele só aceita o próprio telefone.
+    expect(amb.clientes.autores.at(-1)).toEqual({ usuarioId: u.aluna, escopo: 'portal' })
   })
 
   it('o acesso ao portal é um convite do backoffice, sem senha na tela', async () => {
@@ -153,7 +155,7 @@ describe('Ligação com Clientes', () => {
     const ja = await c.admin.post(`/pessoas/${u.alunaPessoa}/convite-portal`, {})
     expect(ja.situacao).toBe('ja_tem_acesso')
     const nova = await c.coord.post('/pessoas', { nome: 'Sem Acesso Ainda', email: 'semacesso@teste.local' })
-    expect((await c.admin.post(`/pessoas/${nova.id}/convite-portal`, {})).situacao).toBe('convite_enviado')
+    expect((await c.admin.post(`/pessoas/${nova.id}/convite-portal`, {})).situacao).toBe('enviado')
     expect(amb.clientes.convites.map((x) => x.email)).toContain('semacesso@teste.local')
     const ficha = await c.admin.get(`/pessoas/${u.alunaPessoa}`)
     expect(ficha.acesso_portal).toMatchObject({ id: u.aluna, email: 'aluna@teste.local' })

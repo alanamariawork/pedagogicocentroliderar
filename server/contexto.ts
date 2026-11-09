@@ -14,16 +14,32 @@ export interface DadosPessoa {
   cpf?: string | null
 }
 
+/** Quem pediu a alteração: a conta e o escopo da sessão (o backoffice confere as permissões de novo). */
+export interface Autor {
+  usuarioId: string
+  escopo: 'equipe' | 'portal'
+}
+
+/**
+ * Resultado do convite do Portal, como o backoffice devolve. 'enviado' = e-mail saiu agora;
+ * 'ja_tem_acesso' = a conta já foi ativada; as demais (ja_convidada, reenvio_recente, sem_email,
+ * email_invalido, envio_em_andamento, falha_envio) vêm com a mensagem do backoffice.
+ */
+export interface ConvitePortal {
+  situacao: string
+  mensagem: string
+}
+
 export interface Clientes {
   /** Cria a pessoa em Clientes e devolve o id. Erros de validação voltam com a mensagem do backoffice. */
-  criarPessoa(autorUsuarioId: string, dados: DadosPessoa): Promise<{ id: string }>
+  criarPessoa(autor: Autor, dados: DadosPessoa): Promise<{ id: string }>
   /**
    * Altera nome, e-mail, telefone ou CPF da pessoa em Clientes. Campo ausente = não muda.
    * O autor pode ser da equipe ou a própria aluna (só o telefone, pelo portal).
    */
-  atualizarPessoa(autorUsuarioId: string, pessoaId: string, dados: Partial<DadosPessoa>): Promise<void>
+  atualizarPessoa(autor: Autor, pessoaId: string, dados: Partial<DadosPessoa>): Promise<void>
   /** Convida a pessoa para o Portal (e-mail de primeiro acesso do backoffice). */
-  convidarPortal(autorUsuarioId: string, pessoaId: string): Promise<{ email: string; situacao: 'convite_enviado' | 'ja_tem_acesso' }>
+  convidarPortal(autor: Autor, pessoaId: string, reenviar?: boolean): Promise<ConvitePortal>
 }
 
 export interface Arquivos {

@@ -2,7 +2,7 @@ import { Router } from '../http'
 import type { ContextoApp } from '../contexto'
 import { z } from 'zod'
 import { agoraIso, transacao, type BD } from '../db'
-import { ErroHttp, exigir, exigirEquipe, exigirLogin } from '../auth'
+import { autorDe, ErroHttp, exigir, exigirEquipe, exigirLogin } from '../auth'
 import { auditar, id, validar } from '../servicos'
 import { PERFIS, PERMISSOES, type Perfil, type Permissao } from '../../shared/permissoes'
 
@@ -112,9 +112,9 @@ export function rotasAcesso(db: BD, ctx: ContextoApp) {
     const aluna = await db.get<{ id: string; email: string | null }>('SELECT id, email FROM ped_pessoas WHERE id = ?', req.params.id)
     if (!aluna) throw new ErroHttp(404, 'Aluna não encontrada.')
     if (!aluna.email) throw new ErroHttp(400, 'Cadastre o e-mail da aluna antes de convidar para o portal.')
-    const r2 = await ctx.clientes.convidarPortal(req.usuario!.id, aluna.id)
+    const r2 = await ctx.clientes.convidarPortal(autorDe(req), aluna.id, req.body?.reenviar === true)
     await auditar(db, req, { entidade: 'pessoa', entidade_id: aluna.id, acao: 'convite_portal', pessoa_id: aluna.id, dados: { situacao: r2.situacao } })
-    res.json(r2)
+    res.json({ ...r2, email: aluna.email })
   })
 
   return r

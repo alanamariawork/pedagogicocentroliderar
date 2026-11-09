@@ -10,16 +10,16 @@
  */
 import { ErroHttp } from './http'
 import type { BD } from './bd'
-import type { Clientes, DadosPessoa } from './contexto'
+import type { Autor, Clientes, ConvitePortal, DadosPessoa } from './contexto'
 
 /** O que o backoffice responde pelo RPC. Erros de regra voltam como dado, não como exceção. */
 export type RespostaRpc<T> = { ok: true; dados: T } | { ok: false; status: number; erro: string }
 
 /** Métodos que o entrypoint "Pedagogico" do backoffice expõe. */
 export interface BackofficePedagogico {
-  criarPessoa(autorUsuarioId: string, dados: DadosPessoa): Promise<RespostaRpc<{ id: string }>>
-  atualizarPessoa(autorUsuarioId: string, pessoaId: string, dados: Partial<DadosPessoa>): Promise<RespostaRpc<null>>
-  convidarPortal(autorUsuarioId: string, pessoaId: string): Promise<RespostaRpc<{ email: string; situacao: 'convite_enviado' | 'ja_tem_acesso' }>>
+  criarPessoa(autor: Autor, dados: DadosPessoa): Promise<RespostaRpc<{ id: string }>>
+  atualizarPessoa(autor: Autor, pessoaId: string, dados: Partial<DadosPessoa>): Promise<RespostaRpc<null>>
+  convidarPortal(autor: Autor, pessoaId: string, reenviar?: boolean): Promise<RespostaRpc<ConvitePortal>>
 }
 
 function abrir<T>(r: RespostaRpc<T>): T {
@@ -36,8 +36,8 @@ export function clientesPeloBackoffice(bo: BackofficePedagogico): Clientes {
     async atualizarPessoa(autor, pessoaId, dados) {
       abrir(await bo.atualizarPessoa(autor, pessoaId, dados))
     },
-    async convidarPortal(autor, pessoaId) {
-      return abrir(await bo.convidarPortal(autor, pessoaId))
+    async convidarPortal(autor, pessoaId, reenviar = false) {
+      return abrir(await bo.convidarPortal(autor, pessoaId, reenviar))
     },
   }
 }
@@ -72,11 +72,15 @@ function normalizar(d: Partial<DadosPessoa>): Partial<DadosPessoa> {
 /**
  * Imitação local da regra de Clientes, para testes. Convites não enviam e-mail: ficam em `convites`.
  */
-export function clientesLocais(db: BD): Clientes & { convites: { pessoaId: string; email: string }[] } {
+export function clientesLocais(db: BD): Clientes & { convites: { pessoaId: string; email: string }[]; autores: Autor[] } {
   const convites: { pessoaId: string; email: string }[] = []
+  /** Quem pediu cada alteração (para os testes conferirem o escopo enviado ao backoffice). */
+  const autores: Autor[] = []
   return {
     convites,
-    async criarPessoa(_autor, dados) {
+    autores,
+    async criarPessoa(autor, dados) {
+      autores.push(autor)
       const d = normalizar(dados)
       if (!d.nome) throw new ErroHttp(400, 'Informe o nome.')
       if (d.cpf && (await db.get('SELECT 1 FROM pessoa WHERE cpf = ?', d.cpf))) throw new ErroHttp(409, 'Já existe uma pessoa com este CPF.')
@@ -86,7 +90,8 @@ export function clientesLocais(db: BD): Clientes & { convites: { pessoaId: strin
       await db.run('INSERT INTO pessoa (id, organizacao_id, nome, email, telefone, cpf) VALUES (?,?,?,?,?,?)', id, org, d.nome, d.email ?? null, d.telefone ?? null, d.cpf ?? null)
       return { id }
     },
-    async atualizarPessoa(_autor, pessoaId, dados) {
+    async atualizarPessoa(autor, pessoaId, dados) {
+      autores.push(autor)
       const d = normalizar(dados)
       const campos = Object.keys(d) as (keyof DadosPessoa)[]
       if (!campos.length) return
@@ -102,9 +107,9 @@ export function clientesLocais(db: BD): Clientes & { convites: { pessoaId: strin
       const p = await db.get<{ email: string | null }>('SELECT email FROM pessoa WHERE id = ?', pessoaId)
       if (!p) throw new ErroHttp(404, 'Pessoa não encontrada em Clientes.')
       if (!p.email) throw new ErroHttp(400, 'Cadastre o e-mail da aluna antes de convidar para o portal.')
-      if (await db.get('SELECT 1 FROM cliente WHERE pessoa_id = ?', pessoaId)) return { email: p.email, situacao: 'ja_tem_acesso' }
+      if (await db.get('SELECT 1 FROM cliente WHERE pessoa_id = ?', pessoaId)) return { situacao: 'ja_tem_acesso', mensagem: 'Esta pessoa já ativou o acesso ao Portal.' }
       convites.push({ pessoaId, email: p.email })
-      return { email: p.email, situacao: 'convite_enviado' }
+      return { situacao: 'enviado', mensagem: `Convite enviado para ${p.email}.` }
     },
   }
 }
