@@ -62,7 +62,7 @@ export type Handler = (req: Req, res: Res, next: Next) => unknown
 
 type Camada =
   | { tipo: 'mw'; prefixo: string; fn: Handler }
-  | { tipo: 'router'; prefixo: string; router: Router }
+  | { tipo: 'router'; prefixo: string; router: Roteador }
   | { tipo: 'rota'; metodo: string; padrao: RegExp; nomes: string[]; fns: Handler[] }
 
 function compilar(caminho: string) {
@@ -86,13 +86,13 @@ async function executar(fn: Handler, req: Req, res: Res): Promise<boolean> {
   return seguir && !res.enviado
 }
 
-export class Router {
+export class Roteador {
   private camadas: Camada[] = []
 
-  use(a: string | Handler | Router, b?: Handler | Router) {
+  use(a: string | Handler | Roteador, b?: Handler | Roteador) {
     const prefixo = typeof a === 'string' ? a : ''
     const alvo = (typeof a === 'string' ? b : a)!
-    if (alvo instanceof Router) this.camadas.push({ tipo: 'router', prefixo, router: alvo })
+    if (alvo instanceof Roteador) this.camadas.push({ tipo: 'router', prefixo, router: alvo })
     else this.camadas.push({ tipo: 'mw', prefixo, fn: alvo })
     return this
   }
@@ -140,6 +140,8 @@ export class Router {
     return false
   }
 }
+
+export const Router = () => new Roteador()
 
 function lerCookies(cabecalho: string | null): Record<string, string> {
   const r: Record<string, string> = {}

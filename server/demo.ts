@@ -43,8 +43,7 @@ type Ficha = { matriculas: { id: string; itens: { id: string; descricao: string 
 
 export async function popularDemonstracao(db: BD) {
   const agora = agoraIso()
-  db.prepare("INSERT INTO usuarios (id, nome, email, senha_hash, perfil, ativo, criado_em, atualizado_em) VALUES (?,?,?,?, 'admin', 1, ?, ?)").run(
-    novoId(), USUARIOS_DEMO[0].nome, USUARIOS_DEMO[0].email, gerarHashSenha(SENHA_DEMO), agora, agora)
+  await db.run("INSERT INTO ped_usuarios (id, nome, email, senha_hash, perfil, ativo, criado_em, atualizado_em) VALUES (?,?,?,?, 'admin', 1, ?, ?)", novoId(), USUARIOS_DEMO[0].nome, USUARIOS_DEMO[0].email, gerarHashSenha(SENHA_DEMO), agora, agora)
 
   const servidor = criarApp(db).listen(0, '127.0.0.1')
   await new Promise((ok) => servidor.once('listening', ok))
@@ -111,7 +110,7 @@ export async function popularDemonstracao(db: BD) {
         profissional_id: 'profissional' in u ? prof.tutoria : null,
       })
     }
-    db.prepare('UPDATE usuarios SET trocar_senha = 0').run()
+    await db.run('UPDATE ped_usuarios SET trocar_senha = 0')
     const usuarios = await api.get<{ id: string; email?: string }[]>('/usuarios')
     const uid = (email: string) => usuarios.find((u) => u.email === email)!.id
     const suporte = uid('suporte@demo.local')
@@ -215,10 +214,10 @@ export async function popularDemonstracao(db: BD) {
     /* ---------- Helpers ---------- */
     const novaAluna = async (nome: string, email: string, matricula: Record<string, unknown>) => {
       const r = await api.post<{ id: string; matricula_id: string }>('/pessoas', { nome, email, telefone: '(00) 00000-0000', matricula: { programa_id: programa, ...matricula } })
-      db.prepare('UPDATE pessoas SET demonstracao = 1, fonte = ? WHERE id = ?').run('demonstração', r.id)
-      db.prepare('UPDATE matriculas SET demonstracao = 1 WHERE pessoa_id = ?').run(r.id)
+      await db.run('UPDATE ped_alunas SET demonstracao = 1, fonte = ? WHERE id = ?', 'demonstração', r.id)
+      await db.run('UPDATE ped_matriculas SET demonstracao = 1 WHERE pessoa_id = ?', r.id)
       await api.post('/usuarios', { nome, email, perfil: 'aluna', pessoa_id: r.id, senha_inicial: SENHA_DEMO })
-      db.prepare('UPDATE usuarios SET trocar_senha = 0 WHERE email = ?').run(email)
+      await db.run('UPDATE ped_usuarios SET trocar_senha = 0 WHERE email = ?', email)
       return r
     }
     const ficha = (pid: string) => api.get<Ficha>(`/pessoas/${pid}`)
@@ -378,7 +377,7 @@ export async function popularDemonstracao(db: BD) {
       responsavel_id: suporte,
       mentora_id: prof.tutoria,
     })
-    db.prepare('UPDATE matriculas SET demonstracao = 1 WHERE id = ?').run(ren.id)
+    await db.run('UPDATE ped_matriculas SET demonstracao = 1 WHERE id = ?', ren.id)
     await api.post(`/matriculas/${ren.id}/conferencia`, { conferida: true })
     // Transferência explícita da pendência (1 plano individual) para o novo ciclo
     const transf = await api.post<{ id: string }>(`/matriculas/${ren.id}/transferencias`, { item_origem_id: p4.item, quantidade: 1, motivo: 'Encontro 5 do 1º ciclo não realizado; transferido na renovação conforme decisão da coordenação (demonstração).' })
@@ -428,9 +427,9 @@ export async function popularDemonstracao(db: BD) {
     /* ---------- Portal da aluna: turmas, frases, links, diagnóstico e metas (tudo de demonstração) ---------- */
     const turmaA = (await api.post<{ id: string }>('/catalogos/turmas', { nome: 'Turma Demo A', descricao: 'Turma de demonstração.', data_inicio: somarDias(h, -100) })).id
     const turmaB = (await api.post<{ id: string }>('/catalogos/turmas', { nome: 'Turma Demo B', descricao: 'Turma de demonstração.', data_inicio: somarDias(h, -12) })).id
-    db.prepare('UPDATE matriculas SET turma_id = CASE WHEN data_inicio < ? THEN ? ELSE ? END').run(somarDias(h, -30), turmaA, turmaB)
-    db.prepare("UPDATE matriculas SET data_boas_vindas = onboarding_data WHERE onboarding_situacao = 'realizado'").run()
-    db.prepare("UPDATE pessoas SET instagram = '@' || lower(substr(nome, 1, instr(nome, ' ') - 1)) || '.demo' WHERE demonstracao = 1").run()
+    await db.run('UPDATE ped_matriculas SET turma_id = CASE WHEN data_inicio < ? THEN ? ELSE ? END', somarDias(h, -30), turmaA, turmaB)
+    await db.run("UPDATE ped_matriculas SET data_boas_vindas = onboarding_data WHERE onboarding_situacao = 'realizado'")
+    await db.run("UPDATE ped_alunas SET instagram = '@' || lower(substr(nome, 1, instr(nome, ' ') - 1)) || '.demo' WHERE demonstracao = 1")
     for (const texto of [
       'Feito é melhor que perfeito. (frase de demonstração)',
       'Um passo por dia ainda é um passo. (frase de demonstração)',
@@ -452,14 +451,14 @@ export async function popularDemonstracao(db: BD) {
     await aluna1.post('/portal/metas', { nome: '[Demo] Reuniões de equipe por mês', unidade: 'reuniões', valor_inicial: 0, valor_alvo: 4, valor_atual: 1 })
 
     /* ---------- Administrativo: estado das alunas, segmentos, canais e categorias (tudo de demonstração) ---------- */
-    const opcao = (lista: string, codigo: string) => (db.prepare('SELECT id FROM opcoes_lista WHERE lista = ? AND codigo = ?').get(lista, codigo) as { id: string }).id
+    const opcao = (lista: string, codigo: string) => ((await db.get('SELECT id FROM ped_opcoes_lista WHERE lista = ? AND codigo = ?', lista, codigo)) as { id: string }).id
     const segmentos: string[] = []
     for (const nome of ['Moda e varejo (demo)', 'Saúde e estética (demo)', 'Serviços (demo)'])
       segmentos.push((await api.post<{ id: string }>('/catalogos/segmentos', { nome })).id)
     const canais: string[] = []
     for (const nome of ['Indicação (demo)', 'Instagram (demo)', 'Evento presencial (demo)'])
       canais.push((await api.post<{ id: string }>('/catalogos/canais-venda', { nome })).id)
-    const demoPessoas = db.prepare('SELECT id, nome FROM pessoas WHERE demonstracao = 1 ORDER BY codigo').all() as { id: string; nome: string }[]
+    const demoPessoas = (await db.all('SELECT id, nome FROM ped_pessoas WHERE demonstracao = 1 ORDER BY codigo')) as { id: string; nome: string }[]
     const estados: [string, string, boolean, string | null][] = [
       ['saudavel', 'alto', false, suporte],
       ['atencao', 'medio', true, suporte],
@@ -470,9 +469,8 @@ export async function popularDemonstracao(db: BD) {
     ]
     demoPessoas.forEach((p, n) => {
       const [saude, eng, risco, resp] = estados[n % estados.length]
-      db.prepare('UPDATE pessoas SET empresa = ?, segmento_id = ?, subsegmento = ?, saude_id = ?, engajamento_id = ?, em_risco = ?, responsavel_id = ? WHERE id = ?').run(
-        `[Demo] Negócio de ${p.nome.split(' ')[0]}`, segmentos[n % 3], n % 2 ? 'Loja física' : 'Atendimento online', opcao('saude', saude), opcao('engajamento', eng), risco ? 1 : 0, resp, p.id)
-      db.prepare('UPDATE matriculas SET canal_venda_id = ? WHERE pessoa_id = ?').run(canais[n % 3], p.id)
+      await db.run('UPDATE ped_alunas SET empresa = ?, segmento_id = ?, subsegmento = ?, saude_id = ?, engajamento_id = ?, em_risco = ?, responsavel_id = ? WHERE id = ?', `[Demo] Negócio de ${p.nome.split(' ')[0]}`, segmentos[n % 3], n % 2 ? 'Loja física' : 'Atendimento online', opcao('saude', saude), opcao('engajamento', eng), risco ? 1 : 0, resp, p.id)
+      await db.run('UPDATE ped_matriculas SET canal_venda_id = ? WHERE pessoa_id = ?', canais[n % 3], p.id)
     })
 
     /* ---------- Avisos escritos pela equipe (demonstração) ---------- */

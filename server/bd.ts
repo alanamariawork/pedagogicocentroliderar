@@ -33,11 +33,52 @@ export interface TX extends Leitura {
 /** Banco aceito por funções que tanto podem gravar na hora quanto entrar numa transação. */
 export type BDouTX = BD | TX
 
-const normalizar = (params: unknown[]): Valor[] =>
-  params.map((p) => (p === undefined ? null : typeof p === 'boolean' ? (p ? 1 : 0) : (p as Valor)))
+const valor = (p: unknown): Valor => (p === undefined ? null : typeof p === 'boolean' ? (p ? 1 : 0) : (p as Valor))
+
+const ehObjetoSimples = (p: unknown): p is Record<string, unknown> =>
+  !!p && typeof p === 'object' && !Array.isArray(p) && !(p instanceof ArrayBuffer) && !(p instanceof Uint8Array)
+
+/**
+ * O D1 só aceita parâmetros por posição (?). Parâmetros com nome (@id), passados num objeto,
+ * viram posicionais aqui, fora de trechos entre aspas.
+ */
+export function preparar(sql: string, params: unknown[]): Instrucao {
+  if (params.length === 1 && ehObjetoSimples(params[0])) {
+    const obj = params[0]
+    const lista: Valor[] = []
+    let out = ''
+    let i = 0
+    while (i < sql.length) {
+      const ch = sql[i]
+      if (ch === "'" || ch === '"') {
+        const fim = sql.indexOf(ch, i + 1)
+        const ate = fim < 0 ? sql.length : fim + 1
+        out += sql.slice(i, ate)
+        i = ate
+        continue
+      }
+      const m = ch === '@' ? /^@([A-Za-z_][A-Za-z0-9_]*)/.exec(sql.slice(i)) : null
+      if (m) {
+        if (!(m[1] in obj)) throw new Error(`Parâmetro @${m[1]} sem valor`)
+        lista.push(valor(obj[m[1]]))
+        out += '?'
+        i += m[0].length
+        continue
+      }
+      out += ch
+      i++
+    }
+    return { sql: out, params: lista }
+  }
+  return { sql, params: params.map(valor) }
+}
+
 
 export function bancoD1(d1: D1Database): BD {
-  const prep = (sql: string, params: unknown[]) => d1.prepare(sql).bind(...normalizar(params))
+  const prep = (sql: string, params: unknown[]) => {
+    const p = preparar(sql, params)
+    return d1.prepare(p.sql).bind(...p.params)
+  }
   return {
     async get(sql, ...params) {
       return ((await prep(sql, params).first()) ?? undefined) as never
@@ -51,7 +92,7 @@ export function bancoD1(d1: D1Database): BD {
     },
     async lote(instrucoes) {
       if (!instrucoes.length) return
-      await d1.batch(instrucoes.map((i) => prep(i.sql, i.params)))
+      await d1.batch(instrucoes.map((i) => d1.prepare(i.sql).bind(...i.params)))
     },
   }
 }
@@ -67,7 +108,7 @@ export async function transacao<R>(db: BD, fn: (tx: TX) => Promise<R>): Promise<
     get: (sql, ...p) => db.get(sql, ...p),
     all: (sql, ...p) => db.all(sql, ...p),
     run: (sql, ...p) => {
-      pendentes.push({ sql, params: normalizar(p) })
+      pendentes.push(preparar(sql, p))
     },
   }
   const r = await fn(tx)
