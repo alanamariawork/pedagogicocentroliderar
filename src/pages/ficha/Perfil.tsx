@@ -127,6 +127,7 @@ export function DialogPessoa({ pessoa, onFechar, onConcluir }: { pessoa: Reg; on
     <FormDialog
       aberto
       titulo="Cadastro da aluna"
+      descricao="Nome, e-mail e telefone ficam no cadastro de Clientes do backoffice e mudam lá também."
       onFechar={onFechar}
       onEnviar={async () => {
         await put(`/pessoas/${pessoa.id}`, { ...valores, segmento_id: valores.segmento_id || null })

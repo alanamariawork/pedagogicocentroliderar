@@ -116,15 +116,6 @@ export function PortalAluna() {
             </div>
           </header>
           <main id="conteudo" tabIndex={-1} className="mx-auto w-full max-w-6xl flex-1 px-4 py-5 outline-none sm:px-6 lg:px-8">
-            {eu!.trocar_senha && rota.pagina !== 'conta' && (
-              <p role="status" className="mb-4 rounded-[var(--radius-control)] border border-gold-line bg-gold-soft px-3 py-2 text-sm text-ink-soft">
-                Sua senha foi criada pela equipe.{' '}
-                <a className="font-medium text-brand-700 underline" href={hrefAluna('conta')}>
-                  Troque agora
-                </a>
-                .
-              </p>
-            )}
             <PaginaAluna rota={rota} tipos={tipos} />
           </main>
         </div>

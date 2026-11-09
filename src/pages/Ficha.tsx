@@ -88,7 +88,7 @@ export function Ficha({ pessoaId, aba = 'perfil' }: { pessoaId: string; aba?: st
           ) : null}
           {pode('usuarios:admin') && !dados.acesso_portal && (
             <button type="button" className="btn-secondary" onClick={() => setDialogo('acesso')}>
-              Criar acesso ao portal
+              Convidar para o portal
             </button>
           )}
           {pode('matriculas:criar') && (
@@ -376,26 +376,22 @@ function FormDialogConferencia({ m, onFechar, onConcluir }: { m: Reg; onFechar: 
 
 function DialogAcesso({ pessoa, onFechar, onConcluir }: { pessoa: Reg; onFechar: () => void; onConcluir: () => void }) {
   const fb = useFeedback()
-  const { valores, campo } = useValores({ email: pessoa.email ?? '', senha_inicial: '' })
   return (
     <FormDialog
       aberto
-      titulo="Criar acesso ao portal"
-      descricao="A aluna verá somente os próprios dados. Ela deverá trocar a senha no primeiro acesso."
+      titulo="Convidar para o portal"
+      descricao="O backoffice envia agora um e-mail de primeiro acesso para a aluna. Ela cria a própria senha, aceita os termos e entra no Portal, onde vê somente os próprios dados."
       onFechar={onFechar}
-      rotulo="Criar acesso"
+      rotulo="Enviar convite"
       onEnviar={async () => {
-        await post('/usuarios', { nome: pessoa.nome, email: valores.email, perfil: 'aluna', pessoa_id: pessoa.id, senha_inicial: valores.senha_inicial })
-        fb.sucesso('Acesso criado. Envie a senha inicial à aluna por um canal seguro.')
+        const r = await post<{ email: string; situacao: string }>(`/pessoas/${pessoa.id}/convite-portal`, {})
+        fb.sucesso(r.situacao === 'ja_tem_acesso' ? `Ela já tem acesso ao Portal com ${r.email}.` : `Convite enviado para ${r.email}.`)
         onConcluir()
       }}
     >
-      <Campo rotulo="E-mail de acesso" obrigatorio>
-        {(p) => <input {...p} type="email" className="field-control" value={valores.email} onChange={campo('email')} />}
-      </Campo>
-      <Campo rotulo="Senha inicial" obrigatorio dica="Mínimo de 10 caracteres, com letras e números.">
-        {(p) => <input {...p} type="text" autoComplete="off" className="field-control" value={valores.senha_inicial} onChange={campo('senha_inicial')} />}
-      </Campo>
+      <p className="text-sm text-ink-soft">
+        E-mail do convite: <strong>{pessoa.email || 'sem e-mail cadastrado'}</strong>. Para mudar, edite os dados da aluna (o e-mail fica no cadastro de Clientes).
+      </p>
     </FormDialog>
   )
 }

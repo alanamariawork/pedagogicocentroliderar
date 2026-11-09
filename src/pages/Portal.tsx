@@ -125,7 +125,7 @@ function Conteudo({ dados, recarregar, secao, tipoId, etapaId }: { dados: Reg; r
                   return ultimo?.anexos?.length ? (
                     <div className="mt-2">
                       <p className="text-xs text-ink-muted">Arquivos do seu último envio:</p>
-                      <ListaAnexos anexos={ultimo.anexos} base="/api/portal/anexos" />
+                      <ListaAnexos anexos={ultimo.anexos} base="/api/ped/portal/anexos" />
                     </div>
                   ) : null
                 })()}

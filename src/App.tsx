@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   BadgeCheck,
   Bell,
@@ -8,6 +8,7 @@ import {
   Gem,
   LayoutDashboard,
   LogOut,
+  ArrowLeft,
   Menu,
   Package,
   Route,
@@ -22,7 +23,6 @@ import { AlertaErro, Carregando } from './components/Estados'
 import { ProvedorSessao, useSessao } from './state/Sessao'
 import { href, irPara, useRota, type PaginaId, type Rota } from './lib/rotas'
 import { cx } from './lib/format'
-import { mensagemDeErro } from './lib/api'
 import { NOME_PERFIL, type Permissao } from '../shared/permissoes'
 import { VisaoGeral } from './pages/VisaoGeral'
 import { EntregasMes } from './pages/EntregasMes'
@@ -105,7 +105,7 @@ function Raiz() {
         <Carregando texto="Abrindo…" />
       </div>
     )
-  if (!eu) return <Login />
+  if (!eu) return <SemSessao />
   if (eu.perfil === 'aluna') return <PortalAluna />
   return <Equipe />
 }
@@ -124,52 +124,24 @@ function Marca({ claro }: { claro?: boolean }) {
   )
 }
 
-function Login() {
-  const { entrar } = useSessao()
-  const [email, setEmail] = useState('')
-  const [senha, setSenha] = useState('')
-  const [erro, setErro] = useState<string | null>(null)
-  const [enviando, setEnviando] = useState(false)
-
-  async function enviar(e: FormEvent) {
-    e.preventDefault()
-    setErro(null)
-    setEnviando(true)
-    try {
-      await entrar(email.trim(), senha)
-    } catch (err) {
-      setErro(mensagemDeErro(err))
-    } finally {
-      setEnviando(false)
-    }
-  }
-
+/** Sem sessão válida (ela terminou ou a conta não tem perfil pedagógico). O login é o do backoffice. */
+function SemSessao() {
+  const { erro } = useSessao()
+  const portal = window.location.pathname.startsWith('/portal/')
+  const semPerfil = erro?.status === 403
   return (
     <main className="flex min-h-screen items-center justify-center bg-gradient-to-b from-brand-50 to-canvas px-4 py-10">
       <div className="w-full max-w-sm">
         <div className="mb-6 flex justify-center">
           <Marca />
         </div>
-        <form onSubmit={enviar} className="card space-y-4 p-6" noValidate>
-          <h1 className="font-display text-xl font-semibold text-ink">Entrar</h1>
-          {erro && <AlertaErro mensagem={erro} />}
-          <div>
-            <label htmlFor="email" className="mb-1 block text-sm font-medium text-ink-soft">
-              E-mail
-            </label>
-            <input id="email" type="email" autoComplete="username" className="field-control" value={email} onChange={(e) => setEmail(e.target.value)} required />
-          </div>
-          <div>
-            <label htmlFor="senha" className="mb-1 block text-sm font-medium text-ink-soft">
-              Senha
-            </label>
-            <input id="senha" type="password" autoComplete="current-password" className="field-control" value={senha} onChange={(e) => setSenha(e.target.value)} required />
-          </div>
-          <button type="submit" className="btn-primary w-full" disabled={enviando || !email || !senha}>
-            {enviando ? 'Entrando…' : 'Entrar'}
-          </button>
-          <p className="text-xs text-ink-muted">Esqueceu a senha? Peça à Administração para redefinir o seu acesso.</p>
-        </form>
+        <div className="card space-y-4 p-6">
+          <h1 className="font-display text-xl font-semibold text-ink">{semPerfil ? 'Sem acesso' : 'Sua sessão terminou'}</h1>
+          {semPerfil ? <AlertaErro mensagem={erro!.mensagem} /> : <p className="text-sm text-ink-soft">Entre novamente para continuar.</p>}
+          <a className="btn-primary w-full text-center" href={semPerfil ? (portal ? '/portal' : '/') : portal ? '/portal/entrar' : `/entrar?de=${encodeURIComponent('/produtos/')}`}>
+            {semPerfil ? 'Voltar' : 'Entrar'}
+          </a>
+        </div>
       </div>
     </main>
   )
@@ -227,6 +199,10 @@ function Equipe() {
             <span className="block text-xs">{NOME_PERFIL[eu!.perfil]}</span>
           </span>
         </a>
+        <a href="/" className="mt-1 flex items-center gap-3 rounded-[var(--radius-control)] px-3 py-2 text-sm text-sidebar-muted hover:bg-white/5 hover:text-sidebar-ink">
+          <ArrowLeft className="size-4" aria-hidden />
+          Voltar ao backoffice
+        </a>
         <button type="button" onClick={sair} className="mt-1 flex w-full items-center gap-3 rounded-[var(--radius-control)] px-3 py-2 text-left text-sm text-sidebar-muted hover:bg-white/5 hover:text-sidebar-ink">
           <LogOut className="size-4" aria-hidden />
           Sair
@@ -270,19 +246,10 @@ function Equipe() {
             </div>
           </header>
           <main id="conteudo" tabIndex={-1} className="flex-1 px-4 py-5 outline-none sm:px-6 lg:px-8">
-            {eu!.trocar_senha && rota.pagina !== 'conta' && (
-              <p role="status" className="mb-4 rounded-[var(--radius-control)] border border-gold-line bg-gold-soft px-3 py-2 text-sm text-ink-soft">
-                Sua senha foi definida pela Administração.{' '}
-                <a className="font-medium text-brand-700 underline" href={href({ pagina: 'conta' })}>
-                  Troque sua senha agora
-                </a>
-                .
-              </p>
-            )}
             <Pagina rota={rota} />
           </main>
           <footer className="border-t border-line px-4 py-3 text-xs text-ink-muted sm:px-6 lg:px-8">
-            {NOME_SISTEMA} · Piloto · Sem integrações externas: nenhuma mensagem é enviada automaticamente.
+            {NOME_SISTEMA} · Piloto · Nenhuma mensagem é enviada automaticamente pelo sistema.
           </footer>
         </div>
       </div>

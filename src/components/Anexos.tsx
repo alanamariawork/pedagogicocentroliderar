@@ -7,7 +7,7 @@ export const ANEXO_MAX_BYTES = 10 * 1024 * 1024
 export const ANEXOS_POR_ENVIO = 5
 const ACEITOS = '.pdf,.jpg,.jpeg,.png,.webp,.heic,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.mp3,.m4a,.mp4'
 
-/** Links de download dos anexos de um envio. `base` é '/api/anexos' (equipe) ou '/api/portal/anexos' (aluna). */
+/** Links de download dos anexos de um envio. `base` é '/api/ped/anexos' (equipe) ou '/api/ped/portal/anexos' (aluna). */
 export function ListaAnexos({ anexos, base }: { anexos?: Reg[]; base: string }) {
   if (!anexos?.length) return null
   return (

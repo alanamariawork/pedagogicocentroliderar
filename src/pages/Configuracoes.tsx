@@ -327,18 +327,13 @@ function Parametros() {
 
 function Usuarios() {
   const { dados, erro, recarregar } = useDados<Reg[]>('/usuarios')
-  const [editando, setEditando] = useState<Reg | 'novo' | null>(null)
+  const [editando, setEditando] = useState<Reg | null>(null)
   if (erro) return <EstadoErro mensagem={erro} onTentar={recarregar} />
   if (!dados) return <Carregando />
   return (
     <Secao
-      titulo="Usuários"
-      descricao="Cada pessoa da equipe tem o próprio login. Acesso de aluna também pode ser criado pela ficha."
-      acao={
-        <button type="button" className="btn-primary btn-sm" onClick={() => setEditando('novo')}>
-          <Plus className="size-4" aria-hidden /> Novo usuário
-        </button>
-      }
+      titulo="Equipe no sistema pedagógico"
+      descricao="As contas são as do backoffice (criadas em Configurações › Equipe, lá). Aqui você escolhe o perfil de cada pessoa no sistema pedagógico. Sem perfil, a pessoa não vê “Produtos & Entrega”. Alunas entram pelo convite do Portal, na ficha."
     >
       <div className="overflow-x-auto">
         <table className="tabela w-full min-w-[40rem]">
@@ -346,9 +341,8 @@ function Usuarios() {
             <tr>
               <th>Nome</th>
               <th>E-mail</th>
-              <th>Perfil</th>
-              <th>Vínculo</th>
-              <th>Situação</th>
+              <th>Perfil pedagógico</th>
+              <th>Profissional</th>
               <th>
                 <span className="sr-only">Ações</span>
               </th>
@@ -359,11 +353,11 @@ function Usuarios() {
               <tr key={u.id}>
                 <td>{u.nome}</td>
                 <td>{u.email}</td>
-                <td>{NOME_PERFIL[u.perfil as Perfil]}</td>
-                <td className="text-xs text-ink-muted">{u.pessoa_nome ?? u.profissional_nome ?? '—'}</td>
                 <td>
-                  {u.ativo ? <Selo tom="sucesso">Ativo</Selo> : <Selo>Inativo</Selo>} {u.trocar_senha ? <Selo tom="alerta">Troca de senha pendente</Selo> : null}
+                  {u.perfil ? NOME_PERFIL[u.perfil as Perfil] : <Selo>Sem acesso</Selo>}
+                  {!u.perfil_pedagogico && u.perfil === 'admin' ? <span className="block text-xs text-ink-muted">Administradora do backoffice</span> : null}
                 </td>
+                <td className="text-xs text-ink-muted">{u.profissional_nome ?? '—'}</td>
                 <td>
                   <button type="button" className="btn-ghost btn-sm" onClick={() => setEditando(u)}>
                     Editar
@@ -376,7 +370,7 @@ function Usuarios() {
       </div>
       {editando && (
         <DialogUsuario
-          usuario={editando === 'novo' ? null : editando}
+          usuario={editando}
           onFechar={() => setEditando(null)}
           onConcluir={() => {
             invalidarCatalogos()
@@ -388,51 +382,34 @@ function Usuarios() {
   )
 }
 
-function DialogUsuario({ usuario, onFechar, onConcluir }: { usuario: Reg | null; onFechar: () => void; onConcluir: () => void }) {
+function DialogUsuario({ usuario, onFechar, onConcluir }: { usuario: Reg; onFechar: () => void; onConcluir: () => void }) {
   const fb = useFeedback()
   const cat = useCatalogos()
-  const pessoas = useDados<Reg[]>('/pessoas').dados
   const { valores, campo } = useValores({
-    nome: usuario?.nome ?? '',
-    email: usuario?.email ?? '',
-    perfil: (usuario?.perfil as string) ?? 'suporte',
-    pessoa_id: usuario?.pessoa_id ?? '',
-    profissional_id: usuario?.profissional_id ?? '',
-    ativo: usuario ? !!usuario.ativo : true,
-    senha: '',
+    perfil: (usuario.perfil_pedagogico as string) ?? '',
+    profissional_id: usuario.profissional_id ?? '',
   })
   return (
     <FormDialog
       aberto
-      titulo={usuario ? 'Editar usuário' : 'Novo usuário'}
-      descricao="A senha inicial deve ser entregue à pessoa por um canal seguro. No primeiro acesso, ela será orientada a trocar."
+      titulo={`Perfil de ${usuario.nome}`}
+      descricao="Nome, e-mail e senha são cuidados no backoffice. A mudança de perfil vale no próximo clique da pessoa."
       onFechar={onFechar}
       onEnviar={async () => {
-        const corpo = {
-          nome: valores.nome,
-          email: valores.email,
-          perfil: valores.perfil,
-          ativo: valores.ativo,
-          pessoa_id: valores.perfil === 'aluna' ? valores.pessoa_id || null : null,
+        await put(`/usuarios/${usuario.id}`, {
+          perfil: valores.perfil || null,
           profissional_id: valores.perfil === 'mentora' ? valores.profissional_id || null : null,
-        }
-        if (usuario) await put(`/usuarios/${usuario.id}`, { ...corpo, nova_senha: valores.senha || undefined })
-        else await post('/usuarios', { ...corpo, senha_inicial: valores.senha })
-        fb.sucesso('Usuário salvo.')
+        })
+        fb.sucesso('Perfil salvo.')
         onConcluir()
       }}
     >
       <div className="grid gap-3 sm:grid-cols-2">
-        <Campo rotulo="Nome" obrigatorio>
-          {(p) => <input className="field-control" {...p} value={valores.nome} onChange={campo('nome')} />}
-        </Campo>
-        <Campo rotulo="E-mail de acesso" obrigatorio>
-          {(p) => <input type="email" className="field-control" {...p} value={valores.email} onChange={campo('email')} />}
-        </Campo>
-        <Campo rotulo="Perfil" obrigatorio>
+        <Campo rotulo="Perfil pedagógico" dica="Administradoras do backoffice sem perfil escolhido entram como Administração.">
           {(p) => (
             <select className="field-control" {...p} value={valores.perfil} onChange={campo('perfil')}>
-              {PERFIS.map((x) => (
+              <option value="">Sem perfil escolhido</option>
+              {PERFIS.filter((x) => x !== 'aluna').map((x) => (
                 <option key={x} value={x}>
                   {NOME_PERFIL[x]}
                 </option>
@@ -440,15 +417,6 @@ function DialogUsuario({ usuario, onFechar, onConcluir }: { usuario: Reg | null;
             </select>
           )}
         </Campo>
-        {valores.perfil === 'aluna' && (
-          <Campo rotulo="Aluna vinculada" obrigatorio>
-            {(p) => (
-              <select className="field-control" {...p} value={valores.pessoa_id} onChange={campo('pessoa_id')}>
-                <Opcoes itens={pessoas ?? []} vazio="Selecione" />
-              </select>
-            )}
-          </Campo>
-        )}
         {valores.perfil === 'mentora' && (
           <Campo rotulo="Profissional vinculada" obrigatorio dica="A mentora só verá as matrículas em que atende.">
             {(p) => (
@@ -459,14 +427,6 @@ function DialogUsuario({ usuario, onFechar, onConcluir }: { usuario: Reg | null;
           </Campo>
         )}
       </div>
-      <Campo rotulo={usuario ? 'Redefinir senha' : 'Senha inicial'} obrigatorio={!usuario} dica={usuario ? 'Deixe vazio para manter. Redefinir encerra as sessões abertas.' : 'Pelo menos 10 caracteres, com letras e números.'}>
-        {(p) => <input type="password" autoComplete="new-password" className="field-control" {...p} value={valores.senha} onChange={campo('senha')} />}
-      </Campo>
-      {usuario && (
-        <label className="flex items-center gap-2 text-sm">
-          <input type="checkbox" checked={valores.ativo} onChange={campo('ativo')} /> Acesso ativo
-        </label>
-      )}
     </FormDialog>
   )
 }

@@ -1,69 +1,6 @@
-import { useState, type FormEvent } from 'react'
-import { AlertaErro, Secao } from '../components/Estados'
-import { useFeedback } from '../components/Feedback'
-import { mensagemDeErro, post } from '../lib/api'
+import { Secao } from '../components/Estados'
 import { useSessao } from '../state/Sessao'
 import { NOME_PERFIL, PERMISSOES } from '../../shared/permissoes'
-
-/** Troca de senha do próprio usuário (equipe e aluna). */
-export function FormSenha() {
-  const { recarregar } = useSessao()
-  const fb = useFeedback()
-  const [atual, setAtual] = useState('')
-  const [nova, setNova] = useState('')
-  const [confirma, setConfirma] = useState('')
-  const [erro, setErro] = useState<string | null>(null)
-  const [salvando, setSalvando] = useState(false)
-
-  async function enviar(e: FormEvent) {
-    e.preventDefault()
-    setErro(null)
-    if (nova !== confirma) return setErro('A confirmação não é igual à nova senha.')
-    setSalvando(true)
-    try {
-      await post('/auth/senha', { atual, nova })
-      setAtual('')
-      setNova('')
-      setConfirma('')
-      fb.sucesso('Senha alterada.')
-      await recarregar()
-    } catch (err) {
-      setErro(mensagemDeErro(err))
-    } finally {
-      setSalvando(false)
-    }
-  }
-
-  return (
-    <form onSubmit={enviar} className="max-w-sm space-y-3" noValidate>
-      {erro && <AlertaErro mensagem={erro} />}
-      <div>
-        <label htmlFor="senha-atual" className="mb-1 block text-sm font-medium text-ink-soft">
-          Senha atual
-        </label>
-        <input id="senha-atual" type="password" autoComplete="current-password" className="field-control" value={atual} onChange={(e) => setAtual(e.target.value)} />
-      </div>
-      <div>
-        <label htmlFor="senha-nova" className="mb-1 block text-sm font-medium text-ink-soft">
-          Nova senha
-        </label>
-        <input id="senha-nova" type="password" autoComplete="new-password" aria-describedby="senha-dica" className="field-control" value={nova} onChange={(e) => setNova(e.target.value)} />
-        <p id="senha-dica" className="mt-1 text-xs text-ink-muted">
-          Pelo menos 10 caracteres, com letras e números.
-        </p>
-      </div>
-      <div>
-        <label htmlFor="senha-confirma" className="mb-1 block text-sm font-medium text-ink-soft">
-          Confirme a nova senha
-        </label>
-        <input id="senha-confirma" type="password" autoComplete="new-password" className="field-control" value={confirma} onChange={(e) => setConfirma(e.target.value)} />
-      </div>
-      <button type="submit" className="btn-primary" disabled={salvando || !atual || !nova}>
-        {salvando ? 'Salvando…' : 'Alterar senha'}
-      </button>
-    </form>
-  )
-}
 
 export function Conta() {
   const { eu } = useSessao()
@@ -92,8 +29,10 @@ export function Conta() {
           ))}
         </ul>
       </Secao>
-      <Secao titulo="Alterar senha" descricao={eu.trocar_senha ? 'Sua senha foi definida pela Administração. Troque-a agora.' : undefined}>
-        <FormSenha />
+      <Secao titulo="Senha e acesso">
+        <p className="text-sm text-ink-soft">
+          O login é o mesmo do backoffice. Para trocar a senha, saia e use “Esqueci minha senha” na tela de entrada. Nome e e-mail da conta são cuidados em Configurações › Equipe, no backoffice.
+        </p>
       </Secao>
     </div>
   )

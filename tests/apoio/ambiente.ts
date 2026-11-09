@@ -13,7 +13,7 @@ import { bancoD1, type BD } from '../../server/bd'
 import { criarApi, type Api } from '../../server/app'
 import { sha256 } from '../../server/auth'
 import { clientesLocais } from '../../server/integracao'
-import { atender, type Env } from '../../server/worker'
+import { atender, type Env } from '../../server/paginas'
 import type { Arquivos } from '../../server/contexto'
 
 export const ORIGEM = 'https://sistema.teste'
@@ -92,8 +92,9 @@ function arquivosEmMemoria(): Arquivos {
   }
 }
 
-export async function abrirAmbiente(): Promise<Ambiente> {
-  const dir = mkdtempSync(join(tmpdir(), 'ped-teste-'))
+/** `pasta`: usa (e mantém) uma pasta fixa, por exemplo .wrangler/state para o `wrangler dev`. */
+export async function abrirAmbiente(opcoes: { pasta?: string } = {}): Promise<Ambiente> {
+  const dir = opcoes.pasta ?? mkdtempSync(join(tmpdir(), 'ped-teste-'))
   aplicarMigrations('wrangler.backoffice-local.jsonc', dir)
   aplicarMigrations('wrangler.jsonc', dir)
   const arquivos = arquivosEmMemoria()
@@ -152,7 +153,7 @@ export async function abrirAmbiente(): Promise<Ambiente> {
     },
     async fechar() {
       await atual.proxy.dispose()
-      rmSync(dir, { recursive: true, force: true })
+      if (!opcoes.pasta) rmSync(dir, { recursive: true, force: true })
     },
   }
   return amb

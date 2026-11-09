@@ -148,7 +148,7 @@ export function JornadaAluna({ m }: { m: Reg }) {
                                 link
                               </a>
                             )}
-                            <ListaAnexos anexos={ev.anexos} base="/api/anexos" />
+                            <ListaAnexos anexos={ev.anexos} base="/api/ped/anexos" />
                             <span className="text-ink-muted">
                               {' '}
                               · {ev.registrada_por_equipe ? `registrada pela equipe (${ev.autor_nome})` : 'enviada pela aluna'} · executada em {formatarData(ev.data_execucao)}
