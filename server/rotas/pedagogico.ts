@@ -12,17 +12,19 @@ type Linha = Record<string, any>
 
 /** Monta a jornada de uma matrícula com etapas, cadeados explicados e atividades. Usada pela equipe e pelo portal. */
 export async function montarJornada(db: BDouTX, matriculaId: string, opcoes: { paraAluna: boolean }) {
-  const jornada = (await db.get('SELECT j.*, t.nome AS trilha_nome, pl.nome AS pilar_nome FROM ped_jornadas j LEFT JOIN ped_trilhas t ON t.id = j.trilha_id LEFT JOIN ped_pilares pl ON pl.id = j.pilar_id WHERE j.matricula_id = ?', matriculaId)) as Linha | undefined
+  const jornada = (await db.get('SELECT j.*, t.nome AS trilha_nome, pl.nome AS pilar_nome, pl.cor AS pilar_cor, pl.ordem AS pilar_ordem FROM ped_jornadas j LEFT JOIN ped_trilhas t ON t.id = j.trilha_id LEFT JOIN ped_pilares pl ON pl.id = j.pilar_id WHERE j.matricula_id = ?', matriculaId)) as Linha | undefined
   if (!jornada) return null
-  const etapas = (await db.all(`SELECT je.*, e.titulo, e.objetivo, e.criterio_conclusao, e.links, e.ordem, e.trilha_id, e.pilar_id, t.nome AS trilha_nome, t.ordem AS trilha_ordem,
-              pl.nome AS pilar_nome, pl.ordem AS pilar_ordem, uv.nome AS validador_nome
+  const etapas = (await db.all(`SELECT je.*, COALESCE(je.titulo_personalizado, e.titulo) AS titulo, e.titulo AS titulo_modelo, COALESCE(je.objetivo_personalizado, e.objetivo) AS objetivo, e.objetivo AS objetivo_modelo,
+              e.criterio_conclusao, e.links, e.ordem, e.trilha_id, e.pilar_id, t.nome AS trilha_nome, t.ordem AS trilha_ordem,
+              pl.nome AS pilar_nome, pl.ordem AS pilar_ordem, pl.cor AS pilar_cor, uv.nome AS validador_nome, up.nome AS personalizada_por_nome
        FROM ped_jornada_etapas je JOIN ped_etapas e ON e.id = je.etapa_id LEFT JOIN ped_trilhas t ON t.id = e.trilha_id LEFT JOIN ped_pilares pl ON pl.id = e.pilar_id
-       LEFT JOIN ped_usuarios uv ON uv.id = je.validador_id
+       LEFT JOIN ped_usuarios uv ON uv.id = je.validador_id LEFT JOIN ped_usuarios up ON up.id = je.personalizada_por
        WHERE je.jornada_id = ? ORDER BY t.ordem, pl.ordem, e.ordem`, jornada.id)) as Linha[]
   const situacaoPorEtapa = new Map(etapas.map((e) => [e.etapa_id as string, e.situacao as string]))
   const nomes = new Map(((await db.all('SELECT id, titulo FROM ped_etapas')) as { id: string; titulo: string }[]).map((e) => [e.id, e.titulo]))
   const prereqs = (await db.all('SELECT * FROM ped_etapa_prerequisitos')) as { etapa_id: string; requer_etapa_id: string }[]
-  const atividades = (await db.all('SELECT * FROM ped_atividades WHERE matricula_id = ? ORDER BY criado_em', matriculaId)) as Linha[]
+  // Atividade retirada desta matrícula some do portal; a equipe continua vendo (e as evidências ficam guardadas).
+  const atividades = (await db.all(`SELECT * FROM ped_atividades WHERE matricula_id = ? ${opcoes.paraAluna ? 'AND arquivada = 0' : ''} ORDER BY criado_em`, matriculaId)) as Linha[]
   const evidencias = (await db.all('SELECT ev.*, u.nome AS autor_nome FROM ped_evidencias ev LEFT JOIN ped_usuarios u ON u.id = ev.autor_id WHERE ev.atividade_id IN (SELECT id FROM ped_atividades WHERE matricula_id = ?) ORDER BY ev.criado_em', matriculaId)) as Linha[]
   const anexos = await anexosPorEvidencia(db, evidencias.map((ev) => ev.id as string))
   for (const ev of evidencias) ev.anexos = anexos.get(ev.id) ?? []
@@ -41,22 +43,26 @@ export async function montarJornada(db: BDouTX, matriculaId: string, opcoes: { p
         evidencias: evidencias.filter((ev) => ev.atividade_id === a.id),
         validacoes: validacoes.filter((v) => v.alvo_tipo === 'atividade' && v.alvo_id === a.id).map((v) => (opcoes.paraAluna ? { decisao: v.decisao, comentario: v.comentario, criado_em: v.criado_em } : v)),
       }))
-    const validadas = ativs.filter((a) => a.situacao === 'validada').length
+    const vigentes = ativs.filter((a) => !a.arquivada)
+    const validadas = vigentes.filter((a) => a.situacao === 'validada').length
     let falta: string[] = []
     if (e.situacao === 'bloqueada') {
       falta = requisitos.filter((r) => !r.concluida).map((r) => `Concluir a etapa "${r.titulo}"`)
       falta.push('Validação da equipe pedagógica para liberar esta etapa')
     } else if (e.situacao === 'liberada') {
-      const pendentes = ativs.filter((a) => a.situacao !== 'validada').length
+      const pendentes = vigentes.filter((a) => a.situacao !== 'validada').length
       if (pendentes) falta.push(`${pendentes} atividade(s) ainda sem validação`)
       falta.push('Validação da equipe pedagógica para concluir a etapa')
     }
+    const extra: Linha = opcoes.paraAluna ? { personalizada_por: undefined, personalizada_por_nome: undefined, titulo_modelo: undefined, objetivo_modelo: undefined } : {}
     return {
       ...e,
+      ...extra,
+      personalizada: !!(e.titulo_personalizado || e.objetivo_personalizado),
       links: e.links ? JSON.parse(e.links as string) : [],
       requisitos,
       atividades: ativs,
-      progresso: { validadas, total: ativs.length, texto: `${validadas} de ${ativs.length} atividade(s) validada(s) nesta etapa` },
+      progresso: { validadas, total: vigentes.length, texto: `${validadas} de ${vigentes.length} atividade(s) validada(s) nesta etapa` },
       falta,
       validacoes: opcoes.paraAluna ? [] : validacoes.filter((v) => (v.alvo_tipo === 'etapa_liberacao' || v.alvo_tipo === 'etapa_conclusao') && v.alvo_id === e.id),
     }
@@ -233,12 +239,45 @@ export function rotasPedagogico(db: BD, ctx: ContextoApp) {
     return je
   }
 
+  /**
+   * Prazo, validador e adaptação da etapa para ESTA matrícula (título e objetivo). O modelo geral
+   * (ped_etapas) e a jornada das outras alunas não mudam; quem alterou e quando fica registrado.
+   */
   r.put('/jornada-etapas/:id', async (req, res) => {
     exigir(req, 'jornada:editar')
     const je = await carregarJE(req, req.params.id as string)
-    const d = validar(z.object({ prazo_individual: data('o prazo individual'), validador_id: id() }), req.body)
-    await db.run('UPDATE ped_jornada_etapas SET prazo_individual=?, validador_id=? WHERE id=?', d.prazo_individual ?? null, d.validador_id ?? null, je.id)
-    await auditar(db, req, { entidade: 'jornada_etapa', entidade_id: je.id as string, acao: 'prazo_validador', matricula_id: je.matricula_id as string, dados: d })
+    const d = validar(
+      z.object({
+        prazo_individual: data('o prazo individual'),
+        validador_id: id(),
+        titulo_personalizado: texto(300).optional(),
+        objetivo_personalizado: texto(2000).optional(),
+      }),
+      req.body,
+    )
+    const muda = (k: 'titulo_personalizado' | 'objetivo_personalizado') => d[k] !== undefined && (d[k] ?? null) !== (je[k] ?? null)
+    const personaliza = muda('titulo_personalizado') || muda('objetivo_personalizado')
+    const agora = agoraIso()
+    await db.run(
+      `UPDATE ped_jornada_etapas SET prazo_individual=?, validador_id=?,
+         titulo_personalizado = CASE WHEN ? THEN ? ELSE titulo_personalizado END,
+         objetivo_personalizado = CASE WHEN ? THEN ? ELSE objetivo_personalizado END,
+         personalizada_por = CASE WHEN ? THEN ? ELSE personalizada_por END,
+         personalizada_em = CASE WHEN ? THEN ? ELSE personalizada_em END
+       WHERE id=?`,
+      d.prazo_individual ?? null, d.validador_id ?? null,
+      d.titulo_personalizado !== undefined ? 1 : 0, d.titulo_personalizado ?? null,
+      d.objetivo_personalizado !== undefined ? 1 : 0, d.objetivo_personalizado ?? null,
+      personaliza ? 1 : 0, req.usuario!.id, personaliza ? 1 : 0, agora,
+      je.id,
+    )
+    await auditar(db, req, {
+      entidade: 'jornada_etapa',
+      entidade_id: je.id as string,
+      acao: personaliza ? 'etapa_adaptada_para_matricula' : 'prazo_validador',
+      matricula_id: je.matricula_id as string,
+      dados: { antes: { prazo_individual: je.prazo_individual, titulo_personalizado: je.titulo_personalizado, objetivo_personalizado: je.objetivo_personalizado }, depois: d },
+    })
     res.json({ ok: true })
   })
 
@@ -261,7 +300,7 @@ export function rotasPedagogico(db: BD, ctx: ContextoApp) {
     await transacao(db, async (tx) => {
       const je = await carregarJE(req, req.params.id as string)
       if (je.situacao !== 'liberada') throw new ErroHttp(409, 'Só é possível concluir uma etapa liberada.')
-      const pendentes = ((await tx.get("SELECT COUNT(*) n FROM ped_atividades WHERE jornada_etapa_id = ? AND situacao <> 'validada'", je.id)) as { n: number }).n
+      const pendentes = ((await tx.get("SELECT COUNT(*) n FROM ped_atividades WHERE jornada_etapa_id = ? AND arquivada = 0 AND situacao <> 'validada'", je.id)) as { n: number }).n
       const excecao = pendentes > 0
       if (excecao && !d.justificativa) throw new ErroHttp(400, `${pendentes} atividade(s) ainda sem validação. Para concluir como exceção, informe a justificativa.`)
       tx.run("UPDATE ped_jornada_etapas SET situacao='concluida', concluida_em=?, concluida_por=? WHERE id=?", agoraIso(), req.usuario!.id, je.id)
@@ -291,13 +330,28 @@ export function rotasPedagogico(db: BD, ctx: ContextoApp) {
     return a
   }
 
+  // A atividade já é desta matrícula (cópia do modelo): adaptar aqui não muda o modelo nem as outras alunas.
   r.put('/atividades/:id', async (req, res) => {
     exigir(req, 'jornada:editar')
     const a = await carregarAtividade(req, req.params.id as string)
     const d = validar(z.object({ situacao: z.enum(['pendente', 'em_execucao']).optional(), prazo: data('o prazo'), titulo: textoObrig('o título', 300), descricao: texto(2000), link: link() }), req.body)
     if (a.situacao === 'validada' && d.situacao) throw new ErroHttp(409, 'Atividade já validada. Para reabrir, a equipe pedagógica deve marcar "Em revisão".')
-    await db.run('UPDATE ped_atividades SET situacao=COALESCE(?, situacao), prazo=?, titulo=?, descricao=?, link=?, atualizado_em=? WHERE id=?', d.situacao ?? null, d.prazo ?? null, d.titulo, d.descricao ?? null, d.link ?? null, agoraIso(), a.id)
-    await auditar(db, req, { entidade: 'atividade', entidade_id: a.id as string, acao: 'atualizada', matricula_id: a.matricula_id as string, dados: d })
+    const adaptada = d.titulo !== a.titulo || (d.descricao ?? null) !== (a.descricao ?? null) || (d.link ?? null) !== (a.link ?? null) || (d.prazo ?? null) !== (a.prazo ?? null)
+    await db.run(
+      'UPDATE ped_atividades SET situacao=COALESCE(?, situacao), prazo=?, titulo=?, descricao=?, link=?, personalizada_por=CASE WHEN ? THEN ? ELSE personalizada_por END, personalizada_em=CASE WHEN ? THEN ? ELSE personalizada_em END, atualizado_em=? WHERE id=?',
+      d.situacao ?? null, d.prazo ?? null, d.titulo, d.descricao ?? null, d.link ?? null, adaptada ? 1 : 0, req.usuario!.id, adaptada ? 1 : 0, agoraIso(), agoraIso(), a.id,
+    )
+    await auditar(db, req, { entidade: 'atividade', entidade_id: a.id as string, acao: adaptada ? 'atividade_adaptada_para_matricula' : 'atualizada', matricula_id: a.matricula_id as string, dados: { antes: { titulo: a.titulo, descricao: a.descricao, link: a.link, prazo: a.prazo }, depois: d } })
+    res.json({ ok: true })
+  })
+
+  /** Retira (ou devolve) a atividade só desta matrícula. Nada é apagado: as evidências continuam guardadas. */
+  r.post('/atividades/:id/arquivar', async (req, res) => {
+    exigir(req, 'jornada:editar')
+    const a = await carregarAtividade(req, req.params.id as string)
+    const d = validar(z.object({ arquivada: z.boolean(), motivo: textoObrig('o motivo', 500) }), req.body)
+    await db.run('UPDATE ped_atividades SET arquivada=?, personalizada_por=?, personalizada_em=?, atualizado_em=? WHERE id=?', d.arquivada ? 1 : 0, req.usuario!.id, agoraIso(), agoraIso(), a.id)
+    await auditar(db, req, { entidade: 'atividade', entidade_id: a.id as string, acao: d.arquivada ? 'atividade_retirada_da_matricula' : 'atividade_devolvida_a_matricula', matricula_id: a.matricula_id as string, dados: d })
     res.json({ ok: true })
   })
 
@@ -367,7 +421,7 @@ export function rotasPedagogico(db: BD, ctx: ContextoApp) {
          FROM ped_atividades a JOIN ped_jornada_etapas je ON je.id = a.jornada_etapa_id JOIN ped_etapas e ON e.id = je.etapa_id
          JOIN ped_matriculas m ON m.id = a.matricula_id JOIN ped_pessoas p ON p.id = m.pessoa_id LEFT JOIN ped_usuarios uv ON uv.id = je.validador_id
          WHERE ${esc.sql} AND a.situacao = 'enviada' ORDER BY a.atualizado_em`, esc.params)) as Linha[]
-    const conquistas = (await db.all(`SELECT c.*, p.nome AS pessoa_nome, p.codigo AS pessoa_codigo, p.id AS pessoa_id FROM ped_conquistas c JOIN ped_matriculas m ON m.id = c.matricula_id JOIN ped_pessoas p ON p.id = m.pessoa_id WHERE ${esc.sql} AND c.validada = 0 ORDER BY c.data`, esc.params))
+    const conquistas = (await db.all(`SELECT c.*, p.nome AS pessoa_nome, p.codigo AS pessoa_codigo, p.id AS pessoa_id FROM ped_conquistas c JOIN ped_matriculas m ON m.id = c.matricula_id JOIN ped_pessoas p ON p.id = m.pessoa_id WHERE ${esc.sql} AND c.validada = 0 AND c.validada_em IS NULL ORDER BY c.data`, esc.params))
     const saida = []
     for (const a of atividades) {
       const ev = await db.get<Linha>('SELECT id, texto, link, data_execucao, registrada_por_equipe FROM ped_evidencias WHERE atividade_id = ? ORDER BY criado_em DESC LIMIT 1', a.id)
@@ -406,7 +460,8 @@ export function rotasPedagogico(db: BD, ctx: ContextoApp) {
     const d = validar(z.object({ validada: z.boolean(), visivel_aluna: z.boolean() }), req.body)
     if (d.visivel_aluna && !d.validada) throw new ErroHttp(400, 'Só conquistas validadas podem aparecer para a aluna.')
     await transacao(db, async (tx) => {
-      tx.run('UPDATE ped_conquistas SET validada=?, validada_por=?, validada_em=?, visivel_aluna=?, atualizado_em=? WHERE id=?', d.validada ? 1 : 0, d.validada ? req.usuario!.id : null, d.validada ? agoraIso() : null, d.visivel_aluna ? 1 : 0, agoraIso(), c.id)
+      // "Não validada" também registra quem decidiu e quando: sai da fila e a aluna vê a análise concluída.
+      tx.run('UPDATE ped_conquistas SET validada=?, validada_por=?, validada_em=?, visivel_aluna=?, atualizado_em=? WHERE id=?', d.validada ? 1 : 0, req.usuario!.id, agoraIso(), d.visivel_aluna ? 1 : 0, agoraIso(), c.id)
       tx.run("INSERT INTO ped_validacoes (id, alvo_tipo, alvo_id, matricula_id, decisao, autor_id, criado_em) VALUES (?, 'conquista', ?, ?, ?, ?, ?)", novoId(), c.id, c.matricula_id, d.validada ? (d.visivel_aluna ? 'validada_visivel' : 'validada_interna') : 'nao_validada', req.usuario!.id, agoraIso())
       await auditar(tx, req, { entidade: 'conquista', entidade_id: c.id as string, acao: 'validacao', matricula_id: c.matricula_id as string, dados: d })
       if (d.visivel_aluna && !c.visivel_aluna) await notificarAluna(tx, c.matricula_id as string, { titulo: 'Nova vitória validada', detalhe: c.titulo as string, link: '#/vitorias' })

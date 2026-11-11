@@ -6,6 +6,7 @@
  *     de gravação). Em produção a chamada vai pelo service binding BACKOFFICE (server/integracao.ts).
  *   - Arquivos: os anexos ficam no R2 (o D1 não guarda valores acima de 2 MB).
  */
+import type { Integracoes as Confirmacoes } from './confirmacoes'
 
 export interface DadosPessoa {
   nome: string
@@ -51,6 +52,8 @@ export interface Arquivos {
 export interface ContextoApp {
   clientes: Clientes
   arquivos: Arquivos
+  /** WhatsApp e Google Agenda (server/confirmacoes.ts). Ausente = nada é enviado. */
+  confirmacoes?: Confirmacoes
 }
 
 /** Arquivos no R2. */

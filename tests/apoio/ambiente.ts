@@ -15,6 +15,7 @@ import { sha256 } from '../../server/auth'
 import { clientesLocais } from '../../server/integracao'
 import { atender, type Env } from '../../server/paginas'
 import type { Arquivos } from '../../server/contexto'
+import type { Integracoes } from '../../server/confirmacoes'
 
 export const ORIGEM = 'https://sistema.teste'
 const RAIZ = fileURLToPath(new URL('../..', import.meta.url).href)
@@ -93,7 +94,7 @@ function arquivosEmMemoria(): Arquivos {
 }
 
 /** `pasta`: usa (e mantém) uma pasta fixa, por exemplo .wrangler/state para o `wrangler dev`. */
-export async function abrirAmbiente(opcoes: { pasta?: string } = {}): Promise<Ambiente> {
+export async function abrirAmbiente(opcoes: { pasta?: string; confirmacoes?: Integracoes } = {}): Promise<Ambiente> {
   const dir = opcoes.pasta ?? mkdtempSync(join(tmpdir(), 'ped-teste-'))
   aplicarMigrations('wrangler.backoffice-local.jsonc', dir)
   aplicarMigrations('wrangler.jsonc', dir)
@@ -102,7 +103,7 @@ export async function abrirAmbiente(opcoes: { pasta?: string } = {}): Promise<Am
     const proxy = await getPlatformProxy<{ DB: D1Database }>({ configPath: join(RAIZ, 'wrangler.backoffice-local.jsonc'), persist: { path: join(dir, 'v3') }, remoteBindings: false })
     const db = bancoD1(proxy.env.DB)
     const clientes = clientesLocais(db)
-    const api = criarApi(db, { clientes, arquivos })
+    const api = criarApi(db, { clientes, arquivos, confirmacoes: opcoes.confirmacoes })
     const env = {
       DB: proxy.env.DB,
       ASSETS: { fetch: async () => new Response('<!doctype html><title>Diamante Business</title>', { headers: { 'Content-Type': 'text/html' } }) } as unknown as Fetcher,

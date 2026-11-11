@@ -8,7 +8,9 @@ import { rotasAlunas } from './rotas/alunas'
 import { rotasOperacao } from './rotas/operacao'
 import { rotasPedagogico } from './rotas/pedagogico'
 import { rotasPortal } from './rotas/portal'
+import { rotasPortalServicos } from './rotas/portalServicos'
 import { rotasAvisos } from './rotas/avisos'
+import { rotasAcompanhamento } from './rotas/acompanhamento'
 
 /** Prefixo da API do sistema pedagógico no endereço do backoffice. */
 export const PREFIXO_API = '/api/ped'
@@ -29,11 +31,13 @@ export function criarApi(db: BD, ctx: ContextoApp): Api {
   api.get('/saude', (_req, res) => res.json({ ok: true }))
   api.use(rotasAcesso(db, ctx))
   api.use(rotasPortal(db, ctx)) // antes das rotas da equipe: /portal só atende a aluna
+  api.use(rotasPortalServicos(db, ctx))
   api.use(rotasConfiguracao(db, ctx))
   api.use(rotasAvisos(db, ctx))
   api.use(rotasAlunas(db, ctx))
   api.use(rotasOperacao(db, ctx))
   api.use(rotasPedagogico(db, ctx))
+  api.use(rotasAcompanhamento(db, ctx))
 
   return async (request) => {
     const res = new Res()

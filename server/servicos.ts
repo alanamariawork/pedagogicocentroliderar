@@ -206,7 +206,7 @@ export async function historico(
 export const SQL_OCORRENCIAS = `
 SELECT o.*,
   i.descricao AS item_descricao, i.tipo_id, t.nome AS tipo_nome, i.origem AS item_origem, i.especialidade,
-  COALESCE(o.duracao_min, i.duracao_min) AS duracao_efetiva,
+  COALESCE(o.duracao_min, i.duracao_min, t.duracao_padrao_min) AS duracao_efetiva,
   COALESCE(o.profissional_id, i.profissional_id) AS profissional_efetivo_id,
   pr.nome AS profissional_nome,
   m.pessoa_id, p.nome AS pessoa_nome, p.codigo AS pessoa_codigo, p.demonstracao, m.data_inicio, m.data_fim, m.situacao AS matricula_situacao,
@@ -219,7 +219,9 @@ SELECT o.*,
   (SELECT c.proxima_tentativa FROM ped_contatos c WHERE c.matricula_id = o.matricula_id AND (c.ocorrencia_id = o.id OR c.ocorrencia_id IS NULL)
      ORDER BY c.data DESC, c.criado_em DESC LIMIT 1) AS proxima_tentativa,
   (SELECT i.quantidade + COALESCE(SUM(a.delta),0) FROM ped_ajustes_obrigacao a WHERE a.item_id = i.id) AS item_contratada,
-  (SELECT COUNT(*) FROM ped_ocorrencias o2 WHERE o2.item_id = i.id AND o2.situacao = 'realizada') AS item_realizadas
+  (SELECT COUNT(*) FROM ped_ocorrencias o2 WHERE o2.item_id = i.id AND o2.situacao = 'realizada') AS item_realizadas,
+  (SELECT COUNT(*) FROM ped_integracoes ig WHERE ig.ocorrencia_id = o.id AND ig.situacao IN ('pendente','falhou','nao_configurado')) AS confirmacoes_pendentes,
+  (SELECT GROUP_CONCAT(ig.detalhe, ' ') FROM ped_integracoes ig WHERE ig.ocorrencia_id = o.id AND ig.situacao IN ('falhou','nao_configurado')) AS confirmacoes_detalhe
 FROM ped_ocorrencias o
 JOIN ped_itens_contratados i ON i.id = o.item_id
 JOIN ped_matriculas m ON m.id = o.matricula_id

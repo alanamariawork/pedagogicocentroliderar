@@ -2,6 +2,8 @@ import { Router, type Req as Request } from '../http'
 import type { ContextoApp } from '../contexto'
 import { z } from 'zod'
 import { agoraIso, novoId, transacao, type BD, type TX } from '../db'
+import { comConflitoDeHorario, esquemaAgenda, liberarReserva as liberar, reservar } from '../agenda'
+import { enfileirar, processarIntegracoes, situacaoIntegracoes } from '../confirmacoes'
 import { ErroHttp, exigir, exigirEquipe, tem } from '../auth'
 import {
   SQL_OCORRENCIAS,
@@ -25,9 +27,8 @@ import {
   validar,
   notificarAluna,
 } from '../servicos'
-import { RE_MES, formatarData, limitesDoMes, mesDe, somarDias, somarMinutos } from '../../shared/datas'
+import { RE_MES, formatarData, limitesDoMes, mesDe, somarDias } from '../../shared/datas'
 import {
-  contido,
   emAberto,
   grupoDoMes,
   indicadorAtraso,
@@ -62,9 +63,31 @@ export function rotasOperacao(db: BD, ctx: ContextoApp) {
 
   async function liberarReserva(tx: TX, req: Request, o: Linha, motivo: string) {
     if (!o.reserva_id) return
-    tx.run('UPDATE ped_reservas SET ativa = 0, liberada_em = ?, liberada_motivo = ? WHERE id = ?', agoraIso(), motivo, o.reserva_id)
+    liberar(tx, o, motivo)
     await auditar(tx, req, { entidade: 'reserva', entidade_id: o.reserva_id as string, acao: 'horario_liberado', matricula_id: o.matricula_id as string, dados: { motivo } })
   }
+
+  /** Envia o que ficou na fila de confirmação (depois de gravada a reserva) e devolve a situação. */
+  async function confirmar(ocorrenciaId: string) {
+    await processarIntegracoes(db, ctx.confirmacoes, ocorrenciaId)
+    return situacaoIntegracoes(db, ocorrenciaId)
+  }
+
+  r.get('/ocorrencias/:id/confirmacoes', async (req, res) => {
+    exigir(req, 'entregas:ver')
+    const o = await carregarOcorrencia(req, req.params.id as string)
+    res.json(await situacaoIntegracoes(db, o.id as string))
+  })
+
+  // Tenta de novo a confirmação pendente: usa as mesmas linhas, sem nova reserva, mensagem ou evento.
+  r.post('/ocorrencias/:id/confirmacoes/tentar', async (req, res) => {
+    exigir(req, 'entregas:editar')
+    const o = await carregarOcorrencia(req, req.params.id as string)
+    const antes = await situacaoIntegracoes(db, o.id as string)
+    const depois = await confirmar(o.id as string)
+    await auditar(db, req, { entidade: 'ocorrencia', entidade_id: o.id as string, acao: 'confirmacao_reenviada', matricula_id: o.matricula_id as string, dados: { pendente_antes: antes.pendente, pendente_depois: depois.pendente } })
+    res.json(depois)
+  })
 
   /* ---------------- Planejamento de previsões (ET05, RN10) ---------------- */
 
@@ -121,46 +144,6 @@ export function rotasOperacao(db: BD, ctx: ContextoApp) {
 
   /* ---------------- Agendar, reagendar, desmarcar (RF05, RN11, CA06, CA07) ---------------- */
 
-  const esquemaAgenda = z.object({
-    inicio: horarioObrig('o horário'),
-    duracao_min: minutos().optional(),
-    profissional_id: id(),
-    fora_disponibilidade: z.boolean().default(false),
-    motivo: texto(500),
-  })
-
-  async function reservar(tx: TX, req: Request, o: Linha, d: z.infer<typeof esquemaAgenda>) {
-    const profissional = (d.profissional_id ?? o.profissional_efetivo_id) as string | null
-    if (!profissional) throw new ErroHttp(400, 'Defina a profissional responsável antes de agendar.')
-    const duracao = (d.duracao_min ?? o.duracao_efetiva) as number | null
-    if (!duracao) throw new ErroHttp(400, 'Esta entrega não tem duração definida. Informe a duração para reservar o horário.')
-    const intervalo: Intervalo = { inicio: d.inicio, fim: somarMinutos(d.inicio, duracao) }
-    if (!d.fora_disponibilidade) {
-      const disp = (await db.all('SELECT inicio, fim FROM ped_disponibilidades WHERE profissional_id = ? AND inicio < ? AND fim > ?', profissional, intervalo.fim, intervalo.inicio)) as Intervalo[]
-      if (!contido(intervalo, disp))
-        throw new ErroHttp(409, 'O horário escolhido está fora da disponibilidade cadastrada da profissional. Cadastre a disponibilidade ou marque "fora da disponibilidade" com motivo.')
-    } else if (!d.motivo) {
-      throw new ErroHttp(400, 'Informe o motivo para agendar fora da disponibilidade cadastrada.')
-    }
-    // Conflitos de horário são barrados pelos gatilhos do banco no momento da gravação (ver comConflitoDeHorario).
-    tx.run('INSERT INTO ped_reservas (id, profissional_id, ocorrencia_id, inicio, fim, ativa, fora_disponibilidade, criado_em, autor_id) VALUES (?,?,?,?,?,1,?,?,?)', novoId(), profissional, o.id, intervalo.inicio, intervalo.fim, d.fora_disponibilidade ? 1 : 0, agoraIso(), req.usuario!.id)
-    tx.run("UPDATE ped_ocorrencias SET situacao='agendada', data_agendada=?, profissional_id=?, duracao_min=?, atualizado_em=? WHERE id=?", intervalo.inicio, profissional, duracao, agoraIso(), o.id)
-    // Contatos e impedimentos ativos deixam de bloquear quando o encontro é agendado.
-    tx.run('UPDATE ped_impedimentos SET ativo = 0, resolvido_em = ?, resolucao = ? WHERE ocorrencia_id = ? AND ativo = 1', agoraIso(), 'Encontro agendado', o.id)
-  }
-
-  /** Traduz os erros dos gatilhos de reserva (que só aparecem quando o lote é gravado). */
-  async function comConflitoDeHorario<T>(p: Promise<T>): Promise<T> {
-    try {
-      return await p
-    } catch (e) {
-      const msg = (e as Error)?.message ?? ''
-      if (msg.includes('conflito_horario')) throw new ErroHttp(409, 'Este horário já está reservado para outro encontro desta profissional. Escolha outro horário.')
-      if (msg.includes('ocorrencia_ja_reservada')) throw new ErroHttp(409, 'Esta entrega já tem um horário reservado. Use "Reagendar".')
-      throw e
-    }
-  }
-
   // RN07/CA05: atividades pedagógicas pendentes NÃO bloqueiam o agendamento.
   r.post('/ocorrencias/:id/agendar', async (req, res) => {
     exigir(req, 'entregas:editar')
@@ -169,12 +152,13 @@ export function rotasOperacao(db: BD, ctx: ContextoApp) {
       const o = await carregarOcorrencia(req, req.params.id as string)
       await exigirAberta(o)
       if (o.situacao === 'agendada') throw new ErroHttp(409, 'Esta entrega já está agendada. Use "Reagendar".')
-      await reservar(tx, req, o, d)
+      const reserva = await reservar(db, tx, req, o, d)
+      enfileirar(tx, o.id as string, 'confirmar', reserva)
       await historico(tx, req, o.id as string, 'agendada', null, d.inicio, d.motivo ?? null)
       await notificarAluna(tx, o.matricula_id as string, { titulo: 'Encontro agendado', detalhe: `${formatarData(d.inicio.slice(0, 10))} às ${d.inicio.slice(11, 16)}`, link: '#/mentorias' })
       await auditar(tx, req, { entidade: 'ocorrencia', entidade_id: o.id as string, acao: 'agendada', matricula_id: o.matricula_id as string, dados: d })
     }))
-    res.json({ ok: true })
+    res.json({ ok: true, confirmacao: await confirmar(req.params.id as string) })
   })
 
   r.post('/ocorrencias/:id/reagendar', async (req, res) => {
@@ -186,13 +170,14 @@ export function rotasOperacao(db: BD, ctx: ContextoApp) {
       if (o.situacao !== 'agendada') throw new ErroHttp(409, 'Só é possível reagendar um encontro agendado.')
       const anterior = o.data_agendada as string
       await liberarReserva(tx, req, o, `Reagendamento: ${d.motivo}`)
-      await reservar(tx, req, { ...o, reserva_id: null }, d)
+      const reserva = await reservar(db, tx, req, { ...o, reserva_id: null }, d)
+      enfileirar(tx, o.id as string, 'atualizar', reserva)
       // Histórico preserva previsão original, data anterior, nova data, motivo, autor e momento (RN11).
       await historico(tx, req, o.id as string, 'reagendada', anterior, d.inicio, d.motivo)
       await notificarAluna(tx, o.matricula_id as string, { titulo: 'Encontro remarcado', detalhe: `Nova data: ${formatarData(d.inicio.slice(0, 10))} às ${d.inicio.slice(11, 16)}`, link: '#/mentorias' })
       await auditar(tx, req, { entidade: 'ocorrencia', entidade_id: o.id as string, acao: 'reagendada', matricula_id: o.matricula_id as string, dados: { de: anterior, para: d.inicio, motivo: d.motivo } })
     }))
-    res.json({ ok: true })
+    res.json({ ok: true, confirmacao: await confirmar(req.params.id as string) })
   })
 
   r.post('/ocorrencias/:id/desmarcar', async (req, res) => {
@@ -202,13 +187,14 @@ export function rotasOperacao(db: BD, ctx: ContextoApp) {
       const o = await carregarOcorrencia(req, req.params.id as string)
       if (o.situacao !== 'agendada') throw new ErroHttp(409, 'Esta entrega não está agendada.')
       await liberarReserva(tx, req, o, d.motivo)
+      enfileirar(tx, o.id as string, 'cancelar', o.reserva_id as string)
       // Desmarcar libera o horário mas NÃO reduz a obrigação: a entrega volta a aguardar agenda.
       tx.run("UPDATE ped_ocorrencias SET situacao='aguardando_agenda', data_agendada=NULL, atualizado_em=? WHERE id=?", agoraIso(), o.id)
       await historico(tx, req, o.id as string, 'desmarcada', o.data_agendada as string, null, d.motivo)
       await notificarAluna(tx, o.matricula_id as string, { titulo: 'Encontro desmarcado', detalhe: 'A equipe vai combinar uma nova data com você.', link: '#/mentorias' })
       await auditar(tx, req, { entidade: 'ocorrencia', entidade_id: o.id as string, acao: 'desmarcada', matricula_id: o.matricula_id as string, dados: d })
     })
-    res.json({ ok: true })
+    res.json({ ok: true, confirmacao: await confirmar(req.params.id as string) })
   })
 
   /* ---------------- Realizar (ET07, CA13) ---------------- */
@@ -276,6 +262,7 @@ export function rotasOperacao(db: BD, ctx: ContextoApp) {
       const o = await carregarOcorrencia(req, req.params.id as string)
       await exigirAberta(o)
       await liberarReserva(tx, req, o, `Cancelamento: ${d.motivo}`)
+      if (o.reserva_id) enfileirar(tx, o.id as string, 'cancelar', o.reserva_id as string)
       tx.run("UPDATE ped_ocorrencias SET situacao='cancelada', cancelamento_motivo=?, data_agendada=NULL, atualizado_em=? WHERE id=?", d.motivo, agoraIso(), o.id)
       await historico(tx, req, o.id as string, 'cancelada', null, null, d.motivo)
       if (!d.manter_obrigacao) {
@@ -286,7 +273,7 @@ export function rotasOperacao(db: BD, ctx: ContextoApp) {
       if (d.manter_obrigacao) await sincronizarOcorrencias(tx, req, o.item_id as string, d.motivo, { delta: 1 })
       await auditar(tx, req, { entidade: 'ocorrencia', entidade_id: o.id as string, acao: d.manter_obrigacao ? 'cancelada_obrigacao_mantida' : 'cancelada_obrigacao_reduzida', matricula_id: o.matricula_id as string, dados: d })
     })
-    res.json({ ok: true })
+    res.json({ ok: true, confirmacao: await confirmar(req.params.id as string) })
   })
 
   /* ---------------- Contatos e impedimentos (RF06) ---------------- */

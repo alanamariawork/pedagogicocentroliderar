@@ -6,11 +6,26 @@ import { autorDe, ErroHttp } from '../auth'
 import { auditar, config, hoje, link, processarAvisos, texto, textoObrig, validar } from '../servicos'
 import { AREAS_DIAGNOSTICO, DIAS_DIAGNOSTICO_FIM } from '../../shared/diagnostico'
 import { diferencaDias, somarDias } from '../../shared/datas'
+import { JANELA_TERMINO_PADRAO, situacaoVigencia } from '../../shared/vigencia'
 import { montarJornada } from './pedagogico'
 import { ANEXOS_POR_ENVIO, corpoDoArquivo, entregarAnexo, guardarAnexo, vincularAnexos } from '../anexos'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Linha = Record<string, any>
+
+/**
+ * Matrícula que o portal mostra: o ciclo vigente (ativo e já iniciado). Uma renovação com início
+ * no futuro só assume o portal quando começa; antes disso vale o ciclo atual.
+ */
+export async function matriculaDaAluna(db: BD, pessoaId: string, h = hoje()) {
+  return (await db.get(`SELECT m.id, m.data_inicio, m.data_fim, m.situacao, pg.nome AS programa_nome, m.proximo_passo, pr.nome AS mentora_nome,
+              tu.nome AS turma_nome, m.data_boas_vindas, m.contrato_situacao, m.contrato_link
+       FROM ped_matriculas m LEFT JOIN ped_programas pg ON pg.id = m.programa_id LEFT JOIN ped_profissionais pr ON pr.id = m.mentora_id
+       LEFT JOIN ped_turmas tu ON tu.id = m.turma_id
+       WHERE m.pessoa_id = ?
+       ORDER BY CASE WHEN m.situacao = 'ativa' AND m.data_inicio <= ? THEN 0 WHEN m.situacao = 'pausada' THEN 1 WHEN m.situacao = 'ativa' THEN 2 ELSE 3 END,
+                CASE WHEN m.data_inicio <= ? THEN m.data_inicio END DESC, m.data_inicio ASC LIMIT 1`, pessoaId, h, h)) as Linha | undefined
+}
 
 /**
  * Espelho da Aluna (RF08). Todas as consultas usam SOMENTE a pessoa vinculada ao
@@ -26,13 +41,7 @@ export function rotasPortal(db: BD, ctx: ContextoApp) {
     next()
   })
 
-  async function matriculaAtual(pessoaId: string) {
-    return (await db.get(`SELECT m.id, m.data_inicio, m.data_fim, m.situacao, pg.nome AS programa_nome, m.proximo_passo, pr.nome AS mentora_nome,
-                tu.nome AS turma_nome, m.data_boas_vindas, m.contrato_situacao, m.contrato_link
-         FROM ped_matriculas m LEFT JOIN ped_programas pg ON pg.id = m.programa_id LEFT JOIN ped_profissionais pr ON pr.id = m.mentora_id
-         LEFT JOIN ped_turmas tu ON tu.id = m.turma_id
-         WHERE m.pessoa_id = ? ORDER BY CASE m.situacao WHEN 'ativa' THEN 0 WHEN 'pausada' THEN 1 ELSE 2 END, m.data_inicio DESC LIMIT 1`, pessoaId)) as Linha | undefined
-  }
+  const matriculaAtual = (pessoaId: string) => matriculaDaAluna(db, pessoaId)
 
   /** Tudo o que a aluna vê da própria matrícula: jornada, encontros, vitórias validadas e o próximo passo. */
   async function dadosPortal(pessoaId: string): Promise<Linha> {
@@ -156,6 +165,7 @@ export function rotasPortal(db: BD, ctx: ContextoApp) {
   })
 
   r.get('/portal/inicio', async (req, res) => {
+    await processarAvisos(db)
     const pessoaId = req.usuario!.pessoa_id!
     const d = await dadosPortal(pessoaId)
     const h = hoje()
@@ -171,6 +181,10 @@ export function rotasPortal(db: BD, ctx: ContextoApp) {
     const porTipo = new Map<string, number>()
     for (const o of realizados) porTipo.set(o.tipo_nome ?? o.item_descricao, (porTipo.get(o.tipo_nome ?? o.item_descricao) ?? 0) + 1)
     const metas = (await db.all('SELECT id, nome, unidade, valor_inicial, valor_alvo, valor_atual FROM ped_metas WHERE matricula_id = ? AND ativo = 1 ORDER BY criado_em', m.id))
+    const janela = Number(await config(db, 'janela_termino_dias', String(JANELA_TERMINO_PADRAO))) || JANELA_TERMINO_PADRAO
+    const etapaAtual = iEtapa >= 0 ? etapas[iEtapa] : null
+    const proximoEncontro = encontros.filter((o) => o.situacao === 'agendada' && String(o.data_agendada).slice(0, 10) >= h).sort((a, b) => String(a.data_agendada).localeCompare(String(b.data_agendada)))[0] ?? null
+    const contratados = encontros.length
     res.json({
       nome: d.nome,
       hoje: h,
@@ -193,6 +207,19 @@ export function rotasPortal(db: BD, ctx: ContextoApp) {
       atalhos: links,
       frases,
       metas,
+      // Resumo executivo da aluna: só campos liberados para o portal (nada de notas, responsável interno ou comercial).
+      resumo: {
+        programa: m.programa_nome ?? null,
+        etapa_atual: etapaAtual
+          ? { titulo: etapaAtual.titulo, situacao: etapaAtual.situacao, pilar_nome: etapaAtual.pilar_nome ?? null, pilar_cor: etapaAtual.pilar_cor ?? null, pilar_ordem: etapaAtual.pilar_ordem ?? null, prazo_individual: etapaAtual.prazo_individual ?? null }
+          : null,
+        proximo_passo: d.proximo_passo ?? null,
+        proximo_encontro: proximoEncontro ? { id: proximoEncontro.id, tipo: proximoEncontro.tipo_nome ?? proximoEncontro.item_descricao, data: proximoEncontro.data_agendada, profissional_nome: proximoEncontro.profissional_nome } : null,
+        vigencia: { data_inicio: m.data_inicio, ...situacaoVigencia(m.data_fim as string | null, h, janela), janela_dias: janela },
+        mentorias: { realizadas: realizados.length, contratadas: contratados },
+      },
+      // Avisos da equipe (os mesmos do sino). Aviso programado só existe depois da data de publicação.
+      avisos: await db.all('SELECT id, titulo, detalhe, link, lida_em, criado_em FROM ped_notificacoes WHERE usuario_id = ? AND aviso_id IS NOT NULL ORDER BY criado_em DESC LIMIT 5', req.usuario!.id),
     })
   })
 

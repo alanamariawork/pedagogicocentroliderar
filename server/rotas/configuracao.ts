@@ -6,6 +6,7 @@ import { ErroHttp, exigir, exigirEquipe } from '../auth'
 import { auditar, booleano, data, id, idObrig, link, minutos, texto, textoObrig, validar } from '../servicos'
 import { CAMPOS_ALUNA, CORES_OPCAO, type Lista } from '../../shared/listas'
 import type { Permissao } from '../../shared/permissoes'
+import { CORES_PILAR } from '../../shared/pilares'
 
 const bool = () => booleano().optional()
 const ordem = () => z.coerce.number().int().min(0).max(999).optional()
@@ -31,7 +32,14 @@ const CATALOGOS: Record<string, Catalogo> = {
   profissionais: {
     tabela: 'profissionais',
     permissao: 'config:editar',
-    esquema: z.object({ nome: textoObrig('o nome'), especialidade: texto(200), contato: texto(200), ativo: bool() }),
+    esquema: z.object({
+      nome: textoObrig('o nome'),
+      especialidade: texto(200),
+      contato: texto(200),
+      // E-mail profissional da agenda. Vazio = vale o e-mail da conta da equipe vinculada (Equipe e permissões).
+      email: z.union([z.literal(''), z.string().trim().toLowerCase().email('Informe um e-mail válido.').max(200)]).optional().transform((v) => v || null),
+      ativo: bool(),
+    }),
     ordem: 'nome',
   },
   'tipos-entregavel': {
@@ -87,7 +95,7 @@ const CATALOGOS: Record<string, Catalogo> = {
   pilares: {
     tabela: 'pilares',
     permissao: 'pedagogico:configurar',
-    esquema: z.object({ nome: textoObrig('o nome'), descricao: texto(), ordem: ordem(), ativo: bool() }),
+    esquema: z.object({ nome: textoObrig('o nome'), descricao: texto(), cor: z.enum(CORES_PILAR).optional(), ordem: ordem(), ativo: bool() }),
     ordem: 'ordem, nome',
   },
 }
@@ -95,6 +103,10 @@ const CATALOGOS: Record<string, Catalogo> = {
 const CHAVES_CONFIG = {
   janela_termino_dias: z.coerce.number().int().min(1).max(365),
   texto_ajuda_aluna: z.string().trim().max(2000),
+  agenda_antecedencia_horas: z.coerce.number().int().min(0).max(720),
+  agenda_dias_a_frente: z.coerce.number().int().min(1).max(180),
+  mural_publicacao: z.enum(['direta', 'moderada', 'somente_equipe']),
+  mural_visibilidade: z.enum(['ativas', 'todas']),
 } as const
 
 export function rotasConfiguracao(db: BD, ctx: ContextoApp) {

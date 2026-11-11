@@ -15,12 +15,23 @@ import { COOKIE, lerSessao } from './auth'
 import { PREFIXO_API, criarApi, type Api } from './app'
 import { arquivosR2 } from './contexto'
 import { clientesPeloBackoffice, type BackofficePedagogico } from './integracao'
+import { configDoAmbiente } from './confirmacoes'
 
 export interface Env {
   DB: D1Database
   ASSETS: Fetcher
   ANEXOS: R2Bucket
   BACKOFFICE: BackofficePedagogico
+  /** Segredos opcionais (wrangler secret put). Sem eles, a confirmação fica "não configurada". */
+  WHATSAPP_TOKEN?: string
+  WHATSAPP_PHONE_NUMBER_ID?: string
+  WHATSAPP_MODELO_CONFIRMAR?: string
+  WHATSAPP_MODELO_ATUALIZAR?: string
+  WHATSAPP_MODELO_CANCELAR?: string
+  WHATSAPP_IDIOMA?: string
+  GOOGLE_CLIENT_EMAIL?: string
+  GOOGLE_PRIVATE_KEY?: string
+  GOOGLE_AGIR_COMO_MENTORA?: string
 }
 
 export const BASE_EQUIPE = '/produtos/'
@@ -32,7 +43,11 @@ let cache: { d1: D1Database; db: BD; api: Api } | null = null
 export function montar(env: Env) {
   if (!cache || cache.d1 !== env.DB) {
     const db = bancoD1(env.DB)
-    cache = { d1: env.DB, db, api: criarApi(db, { clientes: clientesPeloBackoffice(env.BACKOFFICE), arquivos: arquivosR2(env.ANEXOS) }) }
+    cache = { d1: env.DB, db, api: criarApi(db, {
+        clientes: clientesPeloBackoffice(env.BACKOFFICE),
+        arquivos: arquivosR2(env.ANEXOS),
+        confirmacoes: { config: configDoAmbiente(env as unknown as Record<string, unknown>), fetch: (i, o) => fetch(i, o) },
+      }) }
   }
   return cache
 }

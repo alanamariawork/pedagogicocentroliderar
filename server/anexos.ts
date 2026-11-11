@@ -52,6 +52,22 @@ function nomeSeguro(bruto: string | undefined) {
   return nome
 }
 
+/** Lê o arquivo enviado (nome no cabeçalho X-Nome-Arquivo), aceitando só as extensões informadas. */
+export function arquivoEnviado(req: Request, extensoes: string[], mensagem: string) {
+  const nome = nomeSeguro(req.get('X-Nome-Arquivo'))
+  const ext = nome.includes('.') ? nome.split('.').pop()!.toLowerCase() : ''
+  const tipo = extensoes.includes(ext) ? TIPOS[ext] : undefined
+  if (!tipo) throw new ErroHttp(400, mensagem)
+  const dados = req.body
+  if (!(dados instanceof ArrayBuffer) || dados.byteLength === 0) throw new ErroHttp(400, 'O arquivo está vazio.')
+  return { nome, tipo, ext, dados }
+}
+
+export async function hashArquivo(dados: ArrayBuffer): Promise<string> {
+  const h = new Uint8Array(await crypto.subtle.digest('SHA-256', dados))
+  return [...h].map((b) => b.toString(16).padStart(2, '0')).join('')
+}
+
 /**
  * Guarda um arquivo ainda sem envio vinculado: o conteúdo vai para o R2 e o registro para o D1.
  * Arquivos não vinculados há mais de 1 dia são apagados.
