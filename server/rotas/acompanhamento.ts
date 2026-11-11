@@ -203,7 +203,7 @@ export function rotasAcompanhamento(db: BD, ctx: ContextoApp) {
     await transacao(db, async (tx) => {
       if (d.passo === 'publicar') tx.run("UPDATE ped_acoes SET situacao='publicada', revisada_por=?, revisada_em=?, publicada_por=?, publicada_em=?, atualizado_em=? WHERE id=?", u, agora, u, agora, agora, a.id)
       else tx.run('UPDATE ped_acoes SET situacao=?, atualizado_em=? WHERE id=?', regra.para, agora, a.id)
-      if (d.passo === 'publicar') await notificarAluna(tx, a.matricula_id, { titulo: 'Nova ação no seu Plano de Ação', detalhe: String(a.titulo).slice(0, 120), link: '#/plano-acao' })
+      if (d.passo === 'publicar') await notificarAluna(tx, a.matricula_id, { titulo: 'Nova ação no seu Plano de Ação', detalhe: String(a.titulo).slice(0, 120), link: '#/acoes' })
       await auditar(tx, req, { entidade: 'acao', entidade_id: a.id, acao: `acao_${d.passo}`, matricula_id: a.matricula_id, dados: { de: a.situacao, para: regra.para, motivo: d.motivo ?? null } })
     })
     res.json({ ok: true })

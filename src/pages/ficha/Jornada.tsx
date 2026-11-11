@@ -3,7 +3,7 @@ import { ListaAnexos } from '../../components/Anexos'
 import { CheckCircle2, ExternalLink, Plus } from 'lucide-react'
 import { Carregando, EstadoErro, Secao, Vazio } from '../../components/Estados'
 import { Campo, FormDialog, Opcoes, useValores } from '../../components/Form'
-import { Selo, SeloCadeado, TOM_ATIVIDADE, TOM_ETAPA } from '../../components/Selos'
+import { Selo, SeloCadeado, SeloPilar, TOM_ATIVIDADE, TOM_ETAPA } from '../../components/Selos'
 import { useFeedback } from '../../components/Feedback'
 import { post, put, useDados, type Reg } from '../../lib/api'
 import { SITUACAO_ATIVIDADE, SITUACAO_ETAPA } from '../../lib/format'
@@ -21,6 +21,7 @@ export function JornadaAluna({ m }: { m: Reg }) {
   const { dados: j, erro, carregando, recarregar } = useDados(`/matriculas/${m.id}/jornada`)
   const { pode } = useSessao()
   const [dialogo, setDialogo] = useState<Dialogo | null>(null)
+  const fb = useFeedback()
   const fechar = () => setDialogo(null)
 
   if (erro) return <EstadoErro mensagem={erro} onTentar={recarregar} />
@@ -41,12 +42,24 @@ export function JornadaAluna({ m }: { m: Reg }) {
     )
 
   const etapas = j.etapas as Reg[]
+  async function arquivar(a: Reg) {
+    const retirar = !a.arquivada
+    if (retirar && !(await fb.confirmar({ titulo: 'Retirar esta atividade da matrícula?', mensagem: 'Ela deixa de aparecer no portal desta aluna e não conta mais para a etapa. Nada é apagado: as evidências ficam guardadas e o modelo não muda.', rotuloConfirmar: 'Retirar' }))) return
+    try {
+      await post(`/atividades/${a.id}/arquivar`, { arquivada: retirar })
+      fb.sucesso(retirar ? 'Atividade retirada desta matrícula.' : 'Atividade devolvida à jornada.')
+      recarregar()
+    } catch (err) {
+      fb.erro(err instanceof Error ? err.message : 'Não foi possível atualizar.')
+    }
+  }
   return (
     <div className="space-y-4">
       <Secao
         titulo={
           <>
-            {j.trilha_nome ?? 'Trilha não definida'} <span className="text-ink-muted">· pilar atual: {j.pilar_nome ?? '—'}</span>
+            {j.trilha_nome ?? 'Trilha não definida'}{' '}
+            {j.pilar_nome ? <SeloPilar pilar={{ nome: j.pilar_nome, cor: j.pilar_cor, ordem: j.pilar_ordem }} prefixo="Pilar atual:" className="align-middle" /> : <span className="text-ink-muted">· pilar atual: —</span>}
           </>
         }
         descricao="Tempo de contrato não define a evolução: avanços dependem de validação pedagógica."
@@ -66,10 +79,16 @@ export function JornadaAluna({ m }: { m: Reg }) {
         <section key={e.id} className="card">
           <div className="flex flex-wrap items-start justify-between gap-3 border-b border-line px-4 py-3">
             <div>
-              <p className="eyebrow">
-                {e.trilha_nome} · {e.pilar_nome ?? 'sem pilar'}
+              <p className="eyebrow flex flex-wrap items-center gap-2">
+                {e.trilha_nome} {e.pilar_nome ? <SeloPilar pilar={{ nome: e.pilar_nome, cor: e.pilar_cor, ordem: e.pilar_ordem }} /> : '· sem pilar'}
               </p>
               <h3 className="font-display text-base font-semibold">{e.titulo}</h3>
+              {e.personalizada && (
+                <p className="text-xs text-ink-muted">
+                  Adaptada para esta aluna{e.personalizada_por_nome ? ` por ${e.personalizada_por_nome}` : ''}
+                  {e.personalizada_em ? ` em ${formatarCarimbo(e.personalizada_em)}` : ''} · modelo: “{e.titulo_modelo}”
+                </p>
+              )}
               <div className="mt-1 flex flex-wrap gap-1.5">
                 {e.situacao === 'bloqueada' ? <SeloCadeado /> : <Selo tom={TOM_ETAPA[e.situacao]}>{SITUACAO_ETAPA[e.situacao]}</Selo>}
                 <Selo>{e.progresso.texto}</Selo>
@@ -84,7 +103,7 @@ export function JornadaAluna({ m }: { m: Reg }) {
             <div className="flex flex-wrap gap-2">
               {pode('jornada:editar') && (
                 <button type="button" className="btn-ghost btn-sm" onClick={() => setDialogo({ tipo: 'prazo', etapa: e })}>
-                  Prazo e validador
+                  Adaptar para esta aluna
                 </button>
               )}
               {e.situacao === 'bloqueada' && pode('jornada:validar') && (
@@ -129,7 +148,9 @@ export function JornadaAluna({ m }: { m: Reg }) {
             {e.situacao !== 'bloqueada' && (
               <ul className="space-y-2">
                 {(e.atividades as Reg[]).map((a) => (
-                  <li key={a.id} className="rounded-[var(--radius-control)] border border-line p-3">
+                  <li key={a.id} className={`rounded-[var(--radius-control)] border border-line p-3 ${a.arquivada ? 'opacity-60' : ''}`}>
+                    {a.arquivada ? <p className="mb-1 text-xs font-medium text-ink-muted">Retirada desta matrícula (não aparece no portal; evidências guardadas)</p> : null}
+                    {a.personalizada_em && !a.arquivada ? <p className="mb-1 text-xs text-ink-muted">Adaptada para esta aluna em {formatarCarimbo(a.personalizada_em)}</p> : null}
                     <div className="flex flex-wrap items-start justify-between gap-2">
                       <div>
                         <p className="font-medium">{a.titulo}</p>
@@ -179,9 +200,14 @@ export function JornadaAluna({ m }: { m: Reg }) {
                           Reabrir para revisão
                         </button>
                       )}
-                      {pode('jornada:editar') && (
+                      {pode('jornada:editar') && !a.arquivada && (
                         <button type="button" className="btn-ghost btn-sm" onClick={() => setDialogo({ tipo: 'editar_atividade', atividade: a })}>
-                          Editar
+                          Adaptar
+                        </button>
+                      )}
+                      {pode('jornada:editar') && a.situacao !== 'validada' && (
+                        <button type="button" className="btn-ghost btn-sm" onClick={() => void arquivar(a)}>
+                          {a.arquivada ? 'Devolver à jornada' : 'Retirar desta matrícula'}
                         </button>
                       )}
                     </div>
@@ -381,26 +407,44 @@ function DialogDecisaoEtapa({ etapa, tipo, onFechar, onConcluir }: { etapa: Reg;
 function DialogPrazo({ etapa, onFechar, onConcluir }: { etapa: Reg; onFechar: () => void; onConcluir: () => void }) {
   const cat = useCatalogos()
   const fb = useFeedback()
-  const { valores, campo } = useValores({ prazo_individual: etapa.prazo_individual ?? '', validador_id: etapa.validador_id ?? '' })
+  const { valores, campo } = useValores({
+    prazo_individual: etapa.prazo_individual ?? '',
+    validador_id: etapa.validador_id ?? '',
+    titulo_personalizado: etapa.titulo_personalizado ?? '',
+    objetivo_personalizado: etapa.objetivo_personalizado ?? '',
+  })
   return (
     <FormDialog
       aberto
-      titulo="Prazo individual e responsável pela validação"
-      descricao="Sem prazo individual, a etapa aparece como 'Sem prazo definido' e nunca como atrasada."
+      titulo="Adaptar a etapa para esta aluna"
+      descricao="Vale só para esta matrícula: o modelo da trilha e as outras alunas não mudam. A ordem, os pré-requisitos e a validação continuam os mesmos. Quem alterou e quando fica registrado."
       onFechar={onFechar}
       onEnviar={async () => {
-        await put(`/jornada-etapas/${etapa.id}`, { prazo_individual: valores.prazo_individual || null, validador_id: valores.validador_id || null })
-        fb.sucesso('Etapa atualizada.')
+        await put(`/jornada-etapas/${etapa.id}`, {
+          prazo_individual: valores.prazo_individual || null,
+          validador_id: valores.validador_id || null,
+          titulo_personalizado: valores.titulo_personalizado || null,
+          objetivo_personalizado: valores.objetivo_personalizado || null,
+        })
+        fb.sucesso('Etapa atualizada para esta matrícula.')
         onConcluir()
       }}
     >
-      <Campo rotulo="Prazo individual (opcional)">{(p) => <input {...p} type="date" className="field-control" value={valores.prazo_individual} onChange={campo('prazo_individual')} />}</Campo>
+      <Campo rotulo="Prazo individual (opcional)" dica="Sem prazo, a etapa aparece como “Sem prazo definido” e nunca como atrasada. O término do contrato não vira prazo de etapa.">
+        {(p) => <input {...p} type="date" className="field-control" value={valores.prazo_individual} onChange={campo('prazo_individual')} />}
+      </Campo>
       <Campo rotulo="Responsável pela validação">
         {(p) => (
           <select {...p} className="field-control" value={valores.validador_id} onChange={campo('validador_id')}>
             <Opcoes itens={equipe(cat)} vazio="Coordenação pedagógica (padrão)" />
           </select>
         )}
+      </Campo>
+      <Campo rotulo="Título para esta aluna (opcional)" dica={`Modelo: “${etapa.titulo_modelo ?? etapa.titulo}”. Deixe vazio para usar o do modelo.`}>
+        {(p) => <input {...p} className="field-control" maxLength={300} value={valores.titulo_personalizado} onChange={campo('titulo_personalizado')} />}
+      </Campo>
+      <Campo rotulo="Objetivo para esta aluna (opcional)" dica="Deixe vazio para usar o objetivo do modelo.">
+        {(p) => <textarea {...p} rows={3} className="field-control" maxLength={2000} value={valores.objetivo_personalizado} onChange={campo('objetivo_personalizado')} />}
       </Campo>
     </FormDialog>
   )
@@ -412,7 +456,8 @@ function DialogAtividade({ etapa, atividade, onFechar, onConcluir }: { etapa?: R
   return (
     <FormDialog
       aberto
-      titulo={atividade ? 'Editar atividade' : 'Nova atividade individual'}
+      titulo={atividade ? 'Adaptar atividade (só desta matrícula)' : 'Nova atividade individual'}
+      descricao={atividade ? 'A mudança vale só para esta aluna. Evidências já enviadas são mantidas.' : undefined}
       onFechar={onFechar}
       onEnviar={async () => {
         const corpo = { ...valores, prazo: valores.prazo || null }

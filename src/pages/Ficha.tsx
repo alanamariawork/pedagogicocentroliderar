@@ -14,6 +14,8 @@ import { useSessao } from '../state/Sessao'
 import { formatarCarimbo, formatarData, hojeSP } from '../../shared/datas'
 import { Entregaveis, Encontros } from './ficha/Entregaveis'
 import { JornadaAluna } from './ficha/Jornada'
+import { PlanoAcaoAluna } from './ficha/PlanoAcao'
+import { ContratoDocumento } from './ficha/Contrato'
 import { DiagnosticoAluna } from './ficha/Diagnostico'
 import { Continuidade } from './ficha/Continuidade'
 import { Anotacoes, Conquistas, Contatos, Historico } from './ficha/Registros'
@@ -26,6 +28,7 @@ const ABAS = [
   { id: 'entregaveis', nome: 'Entregáveis' },
   { id: 'encontros', nome: 'Encontros' },
   { id: 'jornada', nome: 'Jornada' },
+  { id: 'plano', nome: 'Plano de Ação' },
   { id: 'diagnostico', nome: 'Diagnóstico' },
   { id: 'contatos', nome: 'Contatos' },
   { id: 'conquistas', nome: 'Conquistas' },
@@ -44,7 +47,7 @@ export function Ficha({ pessoaId, aba = 'perfil' }: { pessoaId: string; aba?: st
   if (!dados) return <Carregando />
   const { pessoa, matriculas } = dados as { pessoa: Reg; matriculas: Reg[] }
   const m = matriculas.find((x) => x.id === matriculaId) ?? matriculas[0]
-  const abas = ABAS.filter((a) => (a.id === 'historico' ? !!dados.auditoria : a.id === 'jornada' || a.id === 'diagnostico' ? pode('jornada:ver') : a.id === 'anotacoes' ? pode('notas:internas') || pode('notas:pedagogicas') : true))
+  const abas = ABAS.filter((a) => (a.id === 'historico' ? !!dados.auditoria : a.id === 'jornada' || a.id === 'diagnostico' || a.id === 'plano' ? pode('jornada:ver') : a.id === 'anotacoes' ? pode('notas:internas') || pode('notas:pedagogicas') : true))
   const abaAtual = aba === 'programa' ? 'resumo' : abas.some((a) => a.id === aba) ? aba : 'perfil'
 
   return (
@@ -157,6 +160,8 @@ function ConteudoAba({ aba, m, matriculas, pessoa, auditoria, recarregar }: { ab
       return <Encontros m={m} pessoa={pessoa} recarregar={recarregar} />
     case 'jornada':
       return <JornadaAluna m={m} />
+    case 'plano':
+      return <PlanoAcaoAluna key={m.id} m={m} />
     case 'diagnostico':
       return <DiagnosticoAluna m={m} />
     case 'contatos':
@@ -296,6 +301,8 @@ function Resumo({ m, matriculas, pessoa, recarregar }: { m: Reg; matriculas: Reg
           </Linha>
         </dl>
       </Secao>
+
+      {pode('contratos:ver') && <ContratoDocumento m={m} onAplicado={recarregar} />}
 
       <Secao
         titulo="Onboarding"

@@ -239,7 +239,13 @@ export function TabelaEntregas({ linhas, onAcao, pode, ocultarAluna }: { linhas:
                 <td>{o.data_agendada ? formatarData(o.data_agendada) : o.data_realizada ? <span className="text-success">Realizada {formatarData(o.data_realizada)}</span> : '—'}</td>
                 <td>{o.duracao_efetiva ? formatarHoras(o.duracao_efetiva) : <Selo tom="alerta">Sem duração</Selo>}</td>
                 <td>
-                  <Selo tom={TOM_OCORRENCIA[o.situacao]}>{SITUACAO_OCORRENCIA[o.situacao]}</Selo>
+                  {o.situacao === 'agendada' && o.confirmacoes_pendentes > 0 ? (
+                    <span title={o.confirmacoes_detalhe ?? 'WhatsApp ou Google Agenda ainda não confirmados'}>
+                      <Selo tom="alerta">Agendado — confirmação pendente</Selo>
+                    </span>
+                  ) : (
+                    <Selo tom={TOM_OCORRENCIA[o.situacao]}>{SITUACAO_OCORRENCIA[o.situacao]}</Selo>
+                  )}
                 </td>
                 <td className="max-w-56">
                   {o.impedimento_motivo ? (

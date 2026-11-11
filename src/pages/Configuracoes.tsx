@@ -63,9 +63,10 @@ const CADASTROS: Cadastro[] = [
     campos: [
       { chave: 'nome', rotulo: 'Nome', obrigatorio: true },
       { chave: 'especialidade', rotulo: 'Especialidade' },
+      { chave: 'email', rotulo: 'E-mail da agenda', tipo: 'texto', dica: 'E-mail da agenda Google em que os encontros entram. Vazio: usa o e-mail da conta da equipe vinculada.' },
       { chave: 'contato', rotulo: 'Contato interno', dica: 'Opcional. Sem dados pessoais desnecessários.' },
     ],
-    detalhe: (r) => r.especialidade ?? '',
+    detalhe: (r) => [r.especialidade, r.email].filter(Boolean).join(' · '),
   },
   {
     nome: 'tipos-entregavel',
@@ -282,12 +283,20 @@ function Parametros() {
   const fb = useFeedback()
   const [janela, setJanela] = useState('')
   const [ajuda, setAjuda] = useState('')
+  const [antecedencia, setAntecedencia] = useState('')
+  const [diasFrente, setDiasFrente] = useState('')
+  const [muralPub, setMuralPub] = useState('moderada')
+  const [muralVis, setMuralVis] = useState('ativas')
   const [salvando, setSalvando] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
   useEffect(() => {
     if (cat) {
       setJanela(cat.configuracoes.janela_termino_dias ?? '45')
       setAjuda(cat.configuracoes.texto_ajuda_aluna ?? '')
+      setAntecedencia(cat.configuracoes.agenda_antecedencia_horas ?? '24')
+      setDiasFrente(cat.configuracoes.agenda_dias_a_frente ?? '30')
+      setMuralPub(cat.configuracoes.mural_publicacao ?? 'moderada')
+      setMuralVis(cat.configuracoes.mural_visibilidade ?? 'ativas')
     }
   }, [cat])
   if (!cat) return <Carregando />
@@ -300,7 +309,14 @@ function Parametros() {
           setSalvando(true)
           setErro(null)
           try {
-            await put('/configuracoes', { janela_termino_dias: janela, texto_ajuda_aluna: ajuda })
+            await put('/configuracoes', {
+              janela_termino_dias: janela,
+              texto_ajuda_aluna: ajuda,
+              agenda_antecedencia_horas: antecedencia,
+              agenda_dias_a_frente: diasFrente,
+              mural_publicacao: muralPub,
+              mural_visibilidade: muralVis,
+            })
             invalidarCatalogos()
             fb.sucesso('Parâmetros salvos.')
           } catch (err) {
@@ -316,6 +332,31 @@ function Parametros() {
         </Campo>
         <Campo rotulo="Texto de ajuda no portal da aluna" dica="Diga como a aluna pede ajuda. Não há envio automático de mensagens.">
           {(p) => <textarea rows={3} maxLength={2000} className="field-control" {...p} value={ajuda} onChange={(e) => setAjuda(e.target.value)} />}
+        </Campo>
+        <h3 className="pt-2 text-sm font-semibold">Agenda do portal</h3>
+        <Campo rotulo="Antecedência mínima para marcar, reagendar ou desmarcar (horas)" dica="Depois desse limite, a aluna fala com a equipe.">
+          {(p) => <input type="number" min={0} max={720} className="field-control max-w-32" {...p} value={antecedencia} onChange={(e) => setAntecedencia(e.target.value)} />}
+        </Campo>
+        <Campo rotulo="Quantos dias à frente a aluna vê horários" dica="Horários vêm da disponibilidade cadastrada em Capacidade e agenda.">
+          {(p) => <input type="number" min={1} max={180} className="field-control max-w-32" {...p} value={diasFrente} onChange={(e) => setDiasFrente(e.target.value)} />}
+        </Campo>
+        <h3 className="pt-2 text-sm font-semibold">Mural de oportunidades</h3>
+        <Campo rotulo="Publicação pelas alunas">
+          {(p) => (
+            <select className="field-control" {...p} value={muralPub} onChange={(e) => setMuralPub(e.target.value)}>
+              <option value="moderada">Passa pela equipe antes de aparecer</option>
+              <option value="direta">Aparece na hora (a equipe pode arquivar depois)</option>
+              <option value="somente_equipe">Só a equipe publica</option>
+            </select>
+          )}
+        </Campo>
+        <Campo rotulo="Quem vê o mural">
+          {(p) => (
+            <select className="field-control" {...p} value={muralVis} onChange={(e) => setMuralVis(e.target.value)}>
+              <option value="ativas">Só alunas com matrícula ativa</option>
+              <option value="todas">Todas as alunas com acesso ao portal</option>
+            </select>
+          )}
         </Campo>
         <button type="submit" className="btn-primary" disabled={salvando}>
           {salvando ? 'Salvando…' : 'Salvar parâmetros'}

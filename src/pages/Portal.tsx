@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { CalendarDays, CheckCircle2, LifeBuoy, Link as LinkIcon, Sparkles } from 'lucide-react'
 import { Carregando, EstadoErro } from '../components/Estados'
 import { Campo, FormDialog, useValores } from '../components/Form'
-import { Selo, SeloCadeado, SeloNaoIncluido, TOM_ATIVIDADE } from '../components/Selos'
+import { Selo, SeloCadeado, SeloNaoIncluido, SeloPilar, TOM_ATIVIDADE } from '../components/Selos'
 import { useFeedback } from '../components/Feedback'
 import { enviarArquivo, post, useDados, type Reg } from '../lib/api'
 import { EscolherArquivos, ListaAnexos } from '../components/Anexos'
@@ -77,8 +77,10 @@ function Conteudo({ dados, recarregar, secao, tipoId, etapaId }: { dados: Reg; r
         <h3 className="font-medium text-ink">{e.titulo}</h3>
         {e.situacao === 'bloqueada' ? <SeloCadeado /> : e.situacao === 'concluida' ? <Selo tom="sucesso">Concluída</Selo> : <Selo tom="vinho">Em andamento</Selo>}
       </div>
+      {e.pilar_nome && <SeloPilar pilar={{ nome: e.pilar_nome, cor: e.pilar_cor, ordem: e.pilar_ordem }} className="mt-1" />}
       <p className="text-xs text-ink-muted">
-        {[e.trilha_nome, e.pilar_nome].filter(Boolean).join(' · ')} · {e.prazo_individual ? `Prazo: ${formatarData(e.prazo_individual)}` : 'Sem prazo definido'}
+        {e.trilha_nome ? `${e.trilha_nome} · ` : ''}
+        {e.prazo_individual ? `Prazo da etapa: ${formatarData(e.prazo_individual)}` : 'Sem prazo definido'}
       </p>
       {e.objetivo && <p className="mt-1 text-sm text-ink-soft">{e.objetivo}</p>}
       {e.situacao !== 'bloqueada' && <p className="mt-1 text-xs text-ink-muted">{e.progresso.texto}</p>}
@@ -160,7 +162,8 @@ function Conteudo({ dados, recarregar, secao, tipoId, etapaId }: { dados: Reg; r
       {secao === 'jornada' && (
         <>
           <p className="text-sm text-ink-soft">
-            {jornada ? `${jornada.trilha_nome ?? 'Trilha a definir'} · pilar atual: ${jornada.pilar_nome ?? 'a definir'}` : 'Sua jornada ainda está sendo preparada pela equipe pedagógica.'}
+            {jornada ? `${jornada.trilha_nome ?? 'Trilha a definir'} · ` : 'Sua jornada ainda está sendo preparada pela equipe pedagógica.'}
+            {jornada && (jornada.pilar_nome ? <SeloPilar pilar={{ nome: jornada.pilar_nome, cor: jornada.pilar_cor, ordem: jornada.pilar_ordem }} prefixo="Pilar atual:" /> : 'pilar atual: a definir')}
           </p>
       <Progresso etapas={etapas} />
 

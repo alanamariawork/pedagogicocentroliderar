@@ -410,6 +410,9 @@ export async function popularDemonstracao(amb: Ambiente) {
       ['[Demo] Área de membros', 'Aulas', false, 1],
     ] as const)
       await api.post('/catalogos/links', { titulo, url: `https://example.com/${ordem}-${categoria.toLowerCase()}`, categoria, destaque_inicio: destaque, ordem, descricao: 'Link de demonstração: troque em Configurações.' })
+    // Mural: publicações fictícias (uma da equipe, já publicada; uma da aluna, conforme a regra de moderação).
+    await api.post('/mural', { categoria: 'oportunidade', titulo: '[Demo] Encontro de networking entre alunas', descricao: 'Publicação de demonstração: troque ou arquive em Conteúdos e mural.', contato_canal: 'email', contato_valor: 'contato@example.com', autora_nome: 'Equipe (demo)' })
+    await aluna1.post('/portal/mural', { categoria: 'produto', titulo: '[Demo] Consultoria de vitrine', descricao: 'Publicação fictícia de demonstração de uma aluna.', contato_canal: 'instagram', contato_valor: '@demo.vitrine' })
     await aluna1.put('/portal/diagnostico/inicio/situacao', {
       respostas: { negocio: 'Loja de roupas com 2 funcionárias (demonstração).', numeros: 'Faturamento médio de R$ 30 mil por mês (demonstração).', funciona: 'Clientes fiéis e boa vitrine.' },
     })

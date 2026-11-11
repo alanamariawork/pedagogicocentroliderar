@@ -3,14 +3,14 @@
 ## O que não foi feito nesta versão
 
 - **Importação de planilha (P5):** não foi implementada. A planilha de acompanhamento atual contém dados reais e não foi importada. O cadastro é feito pela tela.
-- **Integrações:** a única integração é com o backoffice do Centro Liderar (login, Clientes e convite do Portal), pela ligação direta entre os dois Workers. Não há integração com WhatsApp, Google Agenda, Hotmart ou Notion, e nada foi simulado. O único e-mail que sai é o convite do Portal, enviado pelo backoffice quando a administração clica em “Convidar para o portal”.
+- **Integrações:** além do backoffice (login, Clientes e convite do Portal), há confirmação de encontros por WhatsApp e Google Agenda, que só funcionam depois de configuradas (ver [reuniao-1111.md](reuniao-1111.md)). Sem configuração, nada é enviado e a tela diz o que falta. Não há integração com Hotmart ou Notion, e nada foi simulado. O único e-mail que sai é o convite do Portal, enviado pelo backoffice quando a administração clica em “Convidar para o portal”.
 - **Alertas:** são calculados no momento em que alguém abre a tela. Não há notificação ativa nem histórico de "alerta lido".
 - **Login e senha:** são os do backoffice. A equipe troca a senha em “Alterar senha” no backoffice; a aluna usa “Esqueci minha senha” na entrada do Portal.
 - **Anexos:** a aluna pode anexar arquivos ao "Enviar o que fiz" (até 5 por envio, 10 MB cada, só tipos da lista). Os arquivos ficam no R2 (bucket `pedagogico-anexos`) e sempre são baixados, nunca abertos no sistema. Não há antivírus nem prévia do arquivo na tela. A equipe ainda não anexa arquivos ao registrar uma evidência, e contratos continuam como texto ou link.
 - **Encontro realizado:** a reserva do horário continua ocupando a agenda, o que é o comportamento esperado para o histórico. A agenda não tem visão de mês nem arrastar e soltar.
 - **Banco:** o mesmo D1 do backoffice, com tabelas próprias de prefixo `ped_`. Pessoas, contas e sessões são as do backoffice e não são duplicadas.
 - **Publicação:** nada foi publicado. O roteiro está em [producao.md](producao.md).
-- **Portal da Aluna em fases:** o menu novo já mostra todas as seções. As que ainda não foram construídas (Trilhas, Biblioteca, Plano de Ação, Tarefas, Rotina, Meu Nível, Plano 90 dias, Balanço, Mural, Ranking, Casos e Agenda) abrem uma tela explicando o que virá, com um botão para uma tela que já funciona. Pontos e níveis entram na fase 3; até lá, o card "Meu nível" do Início é só um aviso.
+- **Portal da Aluna em fases:** Tarefas e Plano 90 dias saíram do portal (reunião de 11/11). Trilhas, Biblioteca, Livros, Plano de Ação, Rotina, Mural, Vitórias e Agenda já funcionam. As que ainda não foram construídas (Meu Nível, Balanço, Ranking e Casos) abrem uma tela explicando o que virá.
 - **Administrativo, fase 1:** saúde, engajamento e "em risco" são marcados pela equipe, sem cálculo automático. Presença e frequência no grupo aparecem como "sem registro" até a fase de agenda e encontros. O banco não tem RLS: o bloqueio por perfil e carteira é feito em cada rota do servidor e coberto por testes. Todos os entregáveis são tratados como mentorias.
 - **Avisos (sino):** automáticos ou escritos pela equipe, ficam só dentro do sistema. Não há e-mail, push nem WhatsApp. Avisos programados são conferidos a cada minuto por um agendamento da Cloudflare.
 

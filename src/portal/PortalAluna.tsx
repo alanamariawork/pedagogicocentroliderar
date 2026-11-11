@@ -14,6 +14,13 @@ import { LinksImportantes } from './paginas/Links'
 import { MinhaConta } from './paginas/MinhaConta'
 import { EmBreve } from './paginas/EmBreve'
 import { SecaoPortal } from '../pages/Portal'
+import { SaldoMentorias } from './paginas/Mentorias'
+import { Agenda } from './paginas/Agenda'
+import { PlanoAcao } from './paginas/PlanoAcao'
+import { Trilhas } from './paginas/Trilhas'
+import { Vitorias } from './paginas/Vitorias'
+import { Conteudos } from './paginas/Conteudos'
+import { Mural } from './paginas/Mural'
 
 const CHAVE_RECOLHIDO = 'portal-menu-recolhido'
 
@@ -243,14 +250,29 @@ function PaginaAluna({ rota, tipos }: { rota: RotaAluna; tipos: Reg[] }) {
     case 'mentorias': {
       const tipo = tipos.find((t) => t.id === rota.id)
       return (
-        <div className="space-y-3">
+        <div className="space-y-4">
           {tipo && <p className="text-sm text-ink-soft">Encontros de {tipo.nome}.</p>}
+          <SaldoMentorias key={`saldo-${rota.id ?? ''}`} tipoId={rota.id} />
           <SecaoPortal key={rota.id ?? ''} secao="mentorias" tipoId={rota.id} />
         </div>
       )
     }
     case 'vitorias':
-      return <SecaoPortal secao="vitorias" />
+      return <Vitorias />
+    case 'trilhas':
+      return <Trilhas />
+    case 'acoes':
+      return <PlanoAcao />
+    case 'agenda':
+      return <Agenda />
+    case 'rotina':
+      return <Conteudos key="rotina" secao="rotina" />
+    case 'biblioteca':
+      return <Conteudos key="biblioteca" secao="biblioteca" />
+    case 'livros':
+      return <Conteudos key="livros" secao="livros" />
+    case 'mural':
+      return <Mural />
     case 'links':
       return <LinksImportantes />
     case 'conta':

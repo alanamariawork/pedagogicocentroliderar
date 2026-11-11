@@ -21,6 +21,8 @@ npx wrangler d1 migrations apply DB --remote
 npx wrangler d1 migrations apply DB --remote
 ```
 
+As migrations deste repositório já incluem a `0002_ped_ajustes_reuniao_1111.sql` (ajustes da reunião de 11/11).
+
 ## 3. Publicar os dois Workers (nesta ordem)
 
 ```bash
@@ -37,6 +39,10 @@ Depois disso, a aba “Produtos & Entrega” já abre o sistema. Para dar acesso
 Se a Cloudflare recusar o primeiro `deploy`, inverta a ordem dos dois Workers.
 
 Para desfazer, rode `npx wrangler rollback` no backoffice. A aba volta a ser como era antes.
+
+## 4. Confirmações por WhatsApp e Google Agenda (opcional)
+
+Só depois de ter as credenciais da Meta e da conta de serviço do Google. Os nomes dos segredos estão em [reuniao-1111.md](reuniao-1111.md). Cadastre cada um com `npx wrangler secret put NOME` neste repositório. Sem eles o sistema funciona normalmente e mostra “confirmação pendente”, sem enviar nada.
 
 ## Teste rápido, um usuário de cada perfil
 

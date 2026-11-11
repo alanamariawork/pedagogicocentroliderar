@@ -4,7 +4,7 @@ import {
   Bell,
   CalendarCheck2,
   CalendarClock,
-  ClipboardList, Megaphone,
+  ClipboardList, Megaphone, LibraryBig,
   Gem,
   LayoutDashboard,
   LogOut,
@@ -28,6 +28,7 @@ import { VisaoGeral } from './pages/VisaoGeral'
 import { EntregasMes } from './pages/EntregasMes'
 import { Alunas } from './pages/Alunas'
 import { Ficha } from './pages/Ficha'
+import { ConteudosPortal } from './pages/ConteudosPortal'
 import { Agenda } from './pages/Agenda'
 import { AlunasDaAgenda } from './pages/AlunasDaAgenda'
 import { Validacoes } from './pages/Validacoes'
@@ -59,6 +60,7 @@ const MENU: ItemMenu[] = [
   { id: 'jornada', nome: 'Trilhas e etapas', icone: Route, permissoes: ['jornada:ver'] },
   { id: 'pacotes', nome: 'Pacotes', icone: Package, permissoes: ['comercial:ver', 'config:editar'] },
   { id: 'avisos', nome: 'Avisos às alunas', icone: Megaphone, permissoes: ['avisos:enviar'] },
+  { id: 'conteudos-portal', nome: 'Conteúdos e mural', icone: LibraryBig, permissoes: ['conteudos:editar', 'mural:moderar'] },
   { id: 'decisoes', nome: 'Decisões pendentes', icone: ClipboardList },
   { id: 'configuracoes', nome: 'Configurações', icone: Settings, permissoes: ['config:editar', 'usuarios:admin', 'pedagogico:configurar'] },
 ]
@@ -81,6 +83,7 @@ const NOME_PAGINA: Record<PaginaId, string> = {
   jornada: 'Trilhas e etapas',
   pacotes: 'Pacotes e entregáveis',
   avisos: 'Avisos às alunas',
+  'conteudos-portal': 'Conteúdos do portal e mural',
   decisoes: 'Decisões pendentes',
   configuracoes: 'Configurações',
   conta: 'Minha conta',
@@ -285,6 +288,8 @@ function Pagina({ rota }: { rota: Rota }) {
       return <Decisoes />
     case 'avisos':
       return <Avisos />
+    case 'conteudos-portal':
+      return <ConteudosPortal />
     case 'conta':
     default:
       return <Conta />

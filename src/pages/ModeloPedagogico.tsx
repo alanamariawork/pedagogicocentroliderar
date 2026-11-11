@@ -2,11 +2,12 @@ import { useState } from 'react'
 import { Plus, Route, Trash2 } from 'lucide-react'
 import { Carregando, EstadoErro, EstadoVazio, Secao } from '../components/Estados'
 import { Campo, FormDialog, Opcoes, useValores } from '../components/Form'
-import { Selo } from '../components/Selos'
+import { Selo, SeloPilar } from '../components/Selos'
 import { useFeedback } from '../components/Feedback'
 import { post, put, useDados, type Reg } from '../lib/api'
 import { invalidarCatalogos } from '../state/Catalogos'
 import { useSessao } from '../state/Sessao'
+import { CORES_PILAR, NOME_COR_PILAR } from '../../shared/pilares'
 
 interface Modelo {
   trilhas: Reg[]
@@ -48,7 +49,7 @@ export function ModeloPedagogico() {
               {dados[tipo].map((t) => (
                 <li key={t.id} className="flex items-center justify-between gap-2 py-1.5">
                   <span>
-                    <span className="font-medium">{t.nome}</span> {!t.ativo && <Selo>Inativo</Selo>}
+                    {tipo === 'pilares' ? <SeloPilar pilar={t} prefixo="" /> : <span className="font-medium">{t.nome}</span>} {!t.ativo && <Selo>Inativo</Selo>}
                     {t.descricao && <span className="block text-xs text-ink-muted">{t.descricao}</span>}
                   </span>
                   {config && (
@@ -91,7 +92,9 @@ export function ModeloPedagogico() {
                           <p className="font-medium text-ink">
                             {e.titulo} {!e.ativo && <Selo>Inativa</Selo>}
                           </p>
-                          <p className="text-xs text-ink-muted">Pilar: {dados.pilares.find((p) => p.id === e.pilar_id)?.nome ?? '—'} · ordem {e.ordem}</p>
+                          <p className="flex flex-wrap items-center gap-1.5 text-xs text-ink-muted">
+                            {dados.pilares.find((p) => p.id === e.pilar_id) ? <SeloPilar pilar={dados.pilares.find((p) => p.id === e.pilar_id)} /> : 'Sem pilar'} · ordem {e.ordem}
+                          </p>
                         </div>
                         {config && (
                           <button type="button" className="btn-ghost btn-sm" onClick={() => setEtapa(e)}>
@@ -129,7 +132,7 @@ export function ModeloPedagogico() {
 
 function DialogCadastro({ tipo, reg, onFechar, onConcluir }: { tipo: 'trilhas' | 'pilares'; reg: Reg | null; onFechar: () => void; onConcluir: () => void }) {
   const fb = useFeedback()
-  const { valores, campo } = useValores({ nome: reg?.nome ?? '', descricao: reg?.descricao ?? '', ordem: String(reg?.ordem ?? 0), ativo: reg ? !!reg.ativo : true })
+  const { valores, campo } = useValores({ nome: reg?.nome ?? '', descricao: reg?.descricao ?? '', cor: reg?.cor ?? '', ordem: String(reg?.ordem ?? 0), ativo: reg ? !!reg.ativo : true })
   const nome = tipo === 'trilhas' ? 'trilha' : 'pilar'
   return (
     <FormDialog
@@ -137,7 +140,8 @@ function DialogCadastro({ tipo, reg, onFechar, onConcluir }: { tipo: 'trilhas' |
       titulo={reg ? `Editar ${nome}` : `Nova ${tipo === 'trilhas' ? 'trilha' : 'pilar'}`.replace('Nova pilar', 'Novo pilar')}
       onFechar={onFechar}
       onEnviar={async () => {
-        const corpo = { ...valores, descricao: valores.descricao || null, ordem: Number(valores.ordem) || 0 }
+        const { cor, ...resto } = valores
+        const corpo = { ...resto, descricao: valores.descricao || null, ordem: Number(valores.ordem) || 0, ...(tipo === 'pilares' && cor ? { cor } : {}) }
         if (reg) await put(`/catalogos/${tipo}/${reg.id}`, corpo)
         else await post(`/catalogos/${tipo}`, corpo)
         fb.sucesso('Salvo.')
@@ -150,6 +154,18 @@ function DialogCadastro({ tipo, reg, onFechar, onConcluir }: { tipo: 'trilhas' |
       <Campo rotulo="Descrição">
         {(p) => <input className="field-control" {...p} value={valores.descricao} onChange={campo('descricao')} />}
       </Campo>
+      {tipo === 'pilares' && (
+        <Campo rotulo="Cor do pilar" dica="Sem escolha, Ação fica vinho, Gestão dourado e Escala verde.">
+          {(p) => (
+            <select className="field-control" {...p} value={valores.cor} onChange={campo('cor')}>
+              <option value="">Automática</option>
+              {CORES_PILAR.map((c) => (
+                <option key={c} value={c}>{NOME_COR_PILAR[c]}</option>
+              ))}
+            </select>
+          )}
+        </Campo>
+      )}
       <div className="grid gap-3 sm:grid-cols-2">
         <Campo rotulo="Ordem">
           {(p) => <input type="number" min={0} className="field-control" {...p} value={valores.ordem} onChange={campo('ordem')} />}

@@ -1,4 +1,5 @@
 import {
+  BookOpen,
   CalendarDays,
   ChartNoAxesColumn,
   ClipboardCheck,
@@ -14,9 +15,7 @@ import {
   Repeat,
   Route,
   Settings,
-  SquareCheckBig,
   Star,
-  Target,
   Trophy,
   UserRound,
   type LucideIcon,
@@ -51,13 +50,13 @@ export const SECOES_ALUNA: SecaoMenuAluna[] = [
       { id: 'jornada', nome: 'Jornada', icone: Route },
       { id: 'trilhas', nome: 'Trilhas', icone: GraduationCap },
       { id: 'biblioteca', nome: 'Biblioteca', icone: Library },
+      { id: 'livros', nome: 'Livros', icone: BookOpen },
     ],
   },
   {
     titulo: 'Execução',
     itens: [
       { id: 'acoes', nome: 'Plano de Ação', icone: ListChecks },
-      { id: 'tarefas', nome: 'Tarefas', icone: SquareCheckBig },
       { id: 'rotina', nome: 'Minha Rotina', icone: Repeat },
     ],
   },
@@ -67,7 +66,6 @@ export const SECOES_ALUNA: SecaoMenuAluna[] = [
       { id: 'mentorias', nome: 'Mentorias', icone: MessagesSquare, submenu: true },
       { id: 'nivel', nome: 'Meu Nível', icone: Trophy },
       { id: 'vitorias', nome: 'Minhas Vitórias', icone: Medal },
-      { id: 'plano-90', nome: 'Plano 90 dias', icone: Target },
       { id: 'balanco', nome: 'Balanço', icone: ChartNoAxesColumn },
     ],
   },
@@ -79,7 +77,7 @@ export const SECOES_ALUNA: SecaoMenuAluna[] = [
       { id: 'casos', nome: 'Casos de Sucesso', icone: Star },
     ],
   },
-  { titulo: 'Agenda', itens: [{ id: 'agenda', nome: 'Encontros ao Vivo', icone: CalendarDays }] },
+  { titulo: 'Agenda', itens: [{ id: 'agenda', nome: 'Minha Agenda', icone: CalendarDays }] },
   { titulo: 'Ferramentas', itens: [{ id: 'links', nome: 'Links Importantes', icone: Link }] },
   { titulo: 'Configurações', itens: [{ id: 'conta', nome: 'Minha Conta', icone: Settings }] },
 ]

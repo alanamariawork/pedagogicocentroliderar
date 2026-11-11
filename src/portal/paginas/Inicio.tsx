@@ -1,7 +1,7 @@
 import { useState } from 'react'
-import { ArrowRight, CalendarDays, ExternalLink, MessagesSquare, Quote, RefreshCw, Target, Trophy } from 'lucide-react'
+import { ArrowRight, Bell, CalendarDays, ExternalLink, MessagesSquare, Quote, RefreshCw, Target, Trophy } from 'lucide-react'
 import { Carregando, EstadoErro } from '../../components/Estados'
-import { Selo } from '../../components/Selos'
+import { Selo, SeloPilar } from '../../components/Selos'
 import { useDados, type Reg } from '../../lib/api'
 import { cx } from '../../lib/format'
 import { formatarData } from '../../../shared/datas'
@@ -39,15 +39,17 @@ export function Inicio() {
         {m && <ProximoPasso dados={dados} />}
       </section>
 
+      {m && dados.resumo && <ResumoExecutivo resumo={dados.resumo} />}
+
       {m && (
         <div className="grid gap-4 lg:grid-cols-3">
           <div className="space-y-4 lg:col-span-2">
             <ProximosEncontros encontros={dados.proximos_encontros} />
-            <MentoriasRealizadas mentorias={dados.mentorias} />
+            <MentoriasRealizadas mentorias={dados.mentorias} contratadas={dados.resumo?.mentorias?.contratadas ?? null} />
             <Indicadores metas={dados.metas} />
           </div>
           <div className="space-y-4">
-            <CartaoNivel />
+            <Avisos avisos={dados.avisos ?? []} />
             <Atalhos atalhos={dados.atalhos} />
             <FraseDoDia frases={dados.frases} />
           </div>
@@ -55,6 +57,7 @@ export function Inicio() {
       )}
       {!m && (
         <div className="grid gap-4 md:grid-cols-2">
+          <Avisos avisos={dados.avisos ?? []} />
           <Atalhos atalhos={dados.atalhos} />
           <FraseDoDia frases={dados.frases} />
         </div>
@@ -127,9 +130,9 @@ function Vazio({ texto, acao }: { texto: string; acao?: { href: string; rotulo: 
 
 function ProximosEncontros({ encontros }: { encontros: Reg[] }) {
   return (
-    <Cartao titulo="Próximos encontros" icone={CalendarDays} acao={{ href: hrefAluna('agenda'), rotulo: 'Ver calendário' }}>
+    <Cartao titulo="Próximos encontros" icone={CalendarDays} acao={{ href: hrefAluna('agenda'), rotulo: 'Minha agenda' }}>
       {encontros.length === 0 ? (
-        <Vazio texto="Nenhum encontro agendado. Quando a equipe agendar, ele aparece aqui." acao={{ href: hrefAluna('mentorias'), rotulo: 'Ver minhas mentorias' }} />
+        <Vazio texto="Nenhum encontro agendado. Você pode marcar um horário em Mentorias." acao={{ href: hrefAluna('mentorias'), rotulo: 'Marcar um encontro' }} />
       ) : (
         <ul className="divide-y divide-line">
           {encontros.map((o) => (
@@ -148,7 +151,7 @@ function ProximosEncontros({ encontros }: { encontros: Reg[] }) {
   )
 }
 
-function MentoriasRealizadas({ mentorias }: { mentorias: Reg }) {
+function MentoriasRealizadas({ mentorias, contratadas }: { mentorias: Reg; contratadas: number | null }) {
   return (
     <Cartao titulo="Mentorias realizadas" icone={MessagesSquare} acao={{ href: hrefAluna('mentorias'), rotulo: 'Ver todas' }}>
       {mentorias.total === 0 ? (
@@ -157,7 +160,7 @@ function MentoriasRealizadas({ mentorias }: { mentorias: Reg }) {
         <div className="grid gap-4 sm:grid-cols-[10rem_1fr]">
           <div>
             <p className="font-display text-4xl font-semibold text-brand-700 tabular-nums">{mentorias.total}</p>
-            <p className="text-xs text-ink-muted">encontro(s) realizado(s)</p>
+            <p className="text-xs text-ink-muted">{contratadas ? `de ${contratadas} encontro(s) contratado(s)` : 'encontro(s) realizado(s)'}</p>
             <ul className="mt-2 space-y-0.5 text-xs text-ink-soft">
               {(mentorias.por_tipo as Reg[]).map((t) => (
                 <li key={t.tipo} className="flex justify-between gap-2">
@@ -215,10 +218,103 @@ function Indicadores({ metas }: { metas: Reg[] }) {
   )
 }
 
-function CartaoNivel() {
+/**
+ * Resumo executivo da aluna (o mesmo da ficha, só com o que a aluna pode ver): programa, etapa atual,
+ * próximo encontro e vigência. Nos últimos dias da vigência (janela configurada, 45 dias), o término
+ * fica em destaque.
+ */
+function ResumoExecutivo({ resumo }: { resumo: Reg }) {
+  const v = resumo.vigencia as Reg
+  const etapa = resumo.etapa_atual as Reg | null
+  const enc = resumo.proximo_encontro as Reg | null
+  const Item = ({ rotulo, children, destaque }: { rotulo: string; children: React.ReactNode; destaque?: boolean }) => (
+    <div className={cx('min-w-0 rounded-[var(--radius-control)] border px-3 py-2.5', destaque ? 'border-gold-line bg-gold-soft' : 'border-line bg-surface')}>
+      <dt className="text-xs font-medium text-ink-muted">{rotulo}</dt>
+      <dd className="mt-0.5 text-sm text-ink">{children}</dd>
+    </div>
+  )
   return (
-    <Cartao titulo="Meu nível" icone={Trophy}>
-      <Vazio texto="Em breve, cada coisa que você registra aqui vai somar pontos e mostrar o seu nível." acao={{ href: hrefAluna('nivel'), rotulo: 'Como vai funcionar' }} />
+    <section className="card p-4" aria-labelledby="resumo-titulo">
+      <h2 id="resumo-titulo" className="font-display text-base font-semibold">
+        Resumo da minha jornada
+      </h2>
+      <dl className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+        <Item rotulo="Programa">{resumo.programa ?? 'A definir pela equipe'}</Item>
+        <Item rotulo="Etapa atual">
+          {etapa ? (
+            <>
+              <a href={hrefAluna('trilhas')} className="font-medium text-brand-700 hover:underline">
+                {etapa.titulo}
+              </a>
+              {etapa.pilar_nome && (
+                <span className="mt-1 block">
+                  <SeloPilar pilar={{ nome: etapa.pilar_nome, cor: etapa.pilar_cor, ordem: etapa.pilar_ordem }} />
+                </span>
+              )}
+              <span className="mt-0.5 block text-xs text-ink-muted">{etapa.prazo_individual ? `Prazo da etapa: ${formatarData(etapa.prazo_individual)}` : 'Sem prazo definido para a etapa'}</span>
+            </>
+          ) : (
+            'Sua jornada ainda está sendo preparada'
+          )}
+        </Item>
+        <Item rotulo="Próximo encontro">
+          {enc ? (
+            <>
+              <span className="font-medium">{enc.tipo}</span>
+              <span className="block text-xs text-ink-muted">
+                {dataHora(enc.data)}
+                {enc.profissional_nome && ` · ${enc.profissional_nome}`}
+              </span>
+            </>
+          ) : (
+            <a href={hrefAluna('mentorias')} className="text-brand-700 hover:underline">
+              Nenhum agendado. Marcar um encontro
+            </a>
+          )}
+        </Item>
+        <Item rotulo="Vigência do contrato" destaque={v.destacar}>
+          {v.data_fim ? (
+            <>
+              <span className="font-medium">Até {formatarData(v.data_fim)}</span>
+              <span className={cx('block text-xs', v.destacar ? 'font-medium text-brand-700' : 'text-ink-muted')}>
+                {v.texto}
+                {v.destacar && ' · converse com a equipe sobre a continuidade'}
+              </span>
+            </>
+          ) : (
+            <span className="font-medium">Sem prazo definido</span>
+          )}
+        </Item>
+      </dl>
+    </section>
+  )
+}
+
+/** Avisos da equipe: os mesmos do sino. Um aviso programado só aparece quando chega a data. */
+function Avisos({ avisos }: { avisos: Reg[] }) {
+  return (
+    <Cartao titulo="Avisos" icone={Bell}>
+      {avisos.length === 0 ? (
+        <Vazio texto="Nenhum aviso da equipe por enquanto." />
+      ) : (
+        <ul className="divide-y divide-line">
+          {avisos.map((a) => (
+            <li key={a.id} className="py-2 text-sm">
+              <p className={cx(!a.lida_em && 'font-medium')}>
+                {a.link ? (
+                  <a href={a.link} className="hover:underline">
+                    {a.titulo}
+                  </a>
+                ) : (
+                  a.titulo
+                )}
+              </p>
+              {a.detalhe && <p className="text-ink-soft">{a.detalhe}</p>}
+              <p className="text-xs text-ink-muted">{formatarData(String(a.criado_em).slice(0, 10))}</p>
+            </li>
+          ))}
+        </ul>
+      )}
     </Cartao>
   )
 }
