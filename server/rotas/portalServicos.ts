@@ -16,6 +16,7 @@ import { SITUACOES_A_AGENDAR, comConflitoDeHorario, horariosDoItem, liberarReser
 import { enfileirar, processarIntegracoes } from '../confirmacoes'
 import { matriculaDaAluna } from './portal'
 import { agoraSP, somarDias, somarMinutos } from '../../shared/datas'
+import { PERCENTUAL_ASSISTIDA } from '../../shared/linhaTempo'
 import { entregarAnexo } from '../anexos'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -314,20 +315,48 @@ export function rotasPortalServicos(db: BD, ctx: ContextoApp) {
 
   /* ---------------- Rotina, Biblioteca e Livros (só o que a equipe publicou) ---------------- */
 
+  // Biblioteca: material fora de estante, ou dentro de estante publicada. Estante retirada esconde tudo o que tem nela.
+  const VISIVEL = '(c.estante_id IS NULL OR EXISTS (SELECT 1 FROM ped_estantes e WHERE e.id = c.estante_id AND e.publicada = 1))'
+
   r.get('/portal/conteudos/:secao', async (req, res) => {
     const secao = req.params.secao
     if (!['rotina', 'biblioteca', 'livros'].includes(secao as string)) throw new ErroHttp(404, 'Seção não encontrada.')
     // Vídeos e arquivos são para alunas com matrícula; sem matrícula a lista vem vazia.
-    const m = await matriculaDaAluna(db, req.usuario!.pessoa_id!)
-    if (!m) return res.json({ itens: [] })
-    const itens = await db.all(`SELECT id, secao, categoria, titulo, descricao, link, video_url, compra_url, arquivo_nome, arquivo_tipo, arquivo_tamanho, ordem
-         FROM ped_conteudos WHERE secao = ? AND publicado = 1 ORDER BY COALESCE(categoria, ''), ordem, titulo`, secao)
-    res.json({ itens })
+    const pessoaId = req.usuario!.pessoa_id!
+    const m = await matriculaDaAluna(db, pessoaId)
+    if (!m) return res.json({ itens: [], estantes: [] })
+    const itens = await db.all(`SELECT c.id, c.secao, c.estante_id, c.categoria, c.titulo, c.descricao, c.link, c.video_url, c.compra_url, c.arquivo_nome, c.arquivo_tipo, c.arquivo_tamanho, c.ordem,
+           COALESCE(p.percentual, 0) AS percentual
+         FROM ped_conteudos c LEFT JOIN ped_conteudos_progresso p ON p.conteudo_id = c.id AND p.pessoa_id = ?
+         WHERE c.secao = ? AND c.publicado = 1 AND ${VISIVEL} ORDER BY COALESCE(c.categoria, ''), c.ordem, c.titulo`, pessoaId, secao)
+    const estantes = secao === 'biblioteca' ? await db.all('SELECT id, titulo, descricao, ordem FROM ped_estantes WHERE publicada = 1 ORDER BY ordem, titulo') : []
+    res.json({ itens, estantes, percentual_assistida: PERCENTUAL_ASSISTIDA })
+  })
+
+  // O player do Vimeo informa o ponto alcançado; o servidor guarda o maior valor (voltar o vídeo não tira progresso).
+  r.post('/portal/conteudos/:id/progresso', async (req, res) => {
+    const pessoaId = req.usuario!.pessoa_id!
+    const d = validar(z.object({ percentual: z.coerce.number().min(0).max(100) }), req.body)
+    const m = await matriculaDaAluna(db, pessoaId)
+    if (!m) throw new ErroHttp(404, 'Você ainda não tem uma matrícula ativa.')
+    const c = (await db.get(`SELECT c.id FROM ped_conteudos c WHERE c.id = ? AND c.publicado = 1 AND c.video_url IS NOT NULL AND ${VISIVEL}`, req.params.id)) as Linha | undefined
+    if (!c) throw new ErroHttp(404, 'Vídeo não encontrado.')
+    const pct = Math.floor(d.percentual)
+    await db.run(
+      `INSERT INTO ped_conteudos_progresso (conteudo_id, pessoa_id, percentual, concluida_em, atualizado_em) VALUES (?,?,?,?,?)
+       ON CONFLICT(conteudo_id, pessoa_id) DO UPDATE SET
+         percentual = MAX(percentual, excluded.percentual),
+         concluida_em = COALESCE(concluida_em, excluded.concluida_em),
+         atualizado_em = excluded.atualizado_em`,
+      c.id, pessoaId, pct, pct >= PERCENTUAL_ASSISTIDA ? agoraIso() : null, agoraIso(),
+    )
+    const atual = (await db.get('SELECT percentual FROM ped_conteudos_progresso WHERE conteudo_id = ? AND pessoa_id = ?', c.id, pessoaId)) as Linha
+    res.json({ percentual: atual.percentual, assistida: atual.percentual >= PERCENTUAL_ASSISTIDA })
   })
 
   r.get('/portal/conteudos/arquivo/:id', async (req, res) => {
     const m = await matriculaDaAluna(db, req.usuario!.pessoa_id!)
-    const c = (await db.get('SELECT arquivo_chave AS chave, arquivo_nome AS nome, arquivo_tipo AS tipo FROM ped_conteudos WHERE id = ? AND publicado = 1 AND arquivo_chave IS NOT NULL', req.params.id)) as Linha | undefined
+    const c = (await db.get(`SELECT arquivo_chave AS chave, arquivo_nome AS nome, arquivo_tipo AS tipo FROM ped_conteudos c WHERE c.id = ? AND c.publicado = 1 AND c.arquivo_chave IS NOT NULL AND ${VISIVEL}`, req.params.id)) as Linha | undefined
     if (!m || !c) throw new ErroHttp(404, 'Arquivo não encontrado.')
     await entregarAnexo(ctx.arquivos, res, c)
   })

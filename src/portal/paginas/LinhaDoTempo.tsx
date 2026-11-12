@@ -1,7 +1,8 @@
 import { useEffect, useRef } from 'react'
 import { ArrowLeft, CalendarRange, CheckCircle2, ChevronLeft, ChevronRight, Clock, Gem, GraduationCap, PlayCircle, Sparkles } from 'lucide-react'
 import { Carregando, EstadoErro } from '../../components/Estados'
-import { post, useDados, type Reg } from '../../lib/api'
+import { useDados, type Reg } from '../../lib/api'
+import { PlayerVimeo } from '../PlayerVimeo'
 import { cx } from '../../lib/format'
 import { formatarData } from '../../../shared/datas'
 import { hrefAluna } from '../rotas'
@@ -153,51 +154,12 @@ export function MesDoPlano({ numero }: { numero: string | undefined }) {
   )
 }
 
-/**
- * Player do Vimeo com a API de mensagens do próprio player (sem script externo): a cada avanço de 5%,
- * o ponto alcançado é enviado ao servidor, que guarda o maior valor.
- */
+/** Aula gravada do mês: o progresso é gravado pelo próprio player (PlayerVimeo). */
 function Aula({ aula, limite, onProgresso }: { aula: Reg; limite: number; onProgresso: () => void }) {
-  const quadro = useRef<HTMLIFrameElement>(null)
-  const enviado = useRef<number>(aula.percentual ?? 0)
   const assistida = (aula.percentual ?? 0) >= limite
-  useEffect(() => {
-    const origem = 'https://player.vimeo.com'
-    const registrar = () => {
-      for (const ev of ['timeupdate', 'ended']) quadro.current?.contentWindow?.postMessage(JSON.stringify({ method: 'addEventListener', value: ev }), origem)
-    }
-    const aoReceber = (e: MessageEvent) => {
-      if (e.origin !== origem || e.source !== quadro.current?.contentWindow) return
-      let msg: Reg
-      try {
-        msg = typeof e.data === 'string' ? JSON.parse(e.data) : e.data
-      } catch {
-        return
-      }
-      if (msg.event === 'ready') return registrar()
-      const pct = msg.event === 'ended' ? 100 : msg.event === 'timeupdate' ? Math.floor(Number(msg.data?.percent ?? 0) * 100) : null
-      if (pct === null) return
-      const cruzouLimite = enviado.current < limite && pct >= limite
-      if (pct < enviado.current + 5 && !cruzouLimite) return
-      const anterior = enviado.current
-      enviado.current = pct
-      post(`/portal/aulas/${aula.id}/progresso`, { percentual: pct })
-        .then(() => {
-          if (anterior < limite && pct >= limite) onProgresso()
-        })
-        .catch(() => {
-          enviado.current = anterior
-        })
-    }
-    window.addEventListener('message', aoReceber)
-    return () => window.removeEventListener('message', aoReceber)
-  }, [aula.id, limite, onProgresso])
-  const src = `${aula.video_url}${aula.video_url.includes('?') ? '&' : '?'}api=1&player_id=aula-${aula.id}`
   return (
     <section className="card overflow-hidden">
-      <div className="aspect-video bg-black">
-        <iframe ref={quadro} id={`aula-${aula.id}`} src={src} title={aula.titulo} className="size-full" allow="fullscreen; picture-in-picture" referrerPolicy="strict-origin-when-cross-origin" />
-      </div>
+      <PlayerVimeo id={aula.id} videoUrl={aula.video_url} titulo={aula.titulo} percentual={aula.percentual ?? 0} limite={limite} endpoint={`/portal/aulas/${aula.id}/progresso`} onAssistido={onProgresso} />
       <div className="space-y-2 p-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h3 className="font-semibold">{aula.titulo}</h3>

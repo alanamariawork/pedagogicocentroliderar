@@ -425,6 +425,17 @@ export async function popularDemonstracao(amb: Ambiente) {
       await api.post(`/aulas/${aula}/publicar`, { publicado: true })
       if (visto) await aluna1.post(`/portal/aulas/${aula}/progresso`, { percentual: visto })
     }
+    // Biblioteca: uma estante de demonstração com vídeo (parte assistida pela aluna 1) e um link.
+    const estanteDemo = (await api.post('/estantes', { titulo: '[Demo] Vendas', descricao: 'Estante de demonstração: troque pelos materiais oficiais.' })).id
+    await api.post(`/estantes/${estanteDemo}/publicar`, { publicada: true })
+    for (const [titulo, extra, visto] of [
+      ['[Demo] Como conduzir uma conversa de venda', { video_url: VIDEO_DEMO }, 45],
+      ['[Demo] Roteiro de abordagem', { link: 'https://example.com/roteiro-demo' }, 0],
+    ] as const) {
+      const id = (await api.post('/conteudos', { secao: 'biblioteca', estante_id: estanteDemo, titulo, descricao: 'Material de demonstração.', ...extra })).id
+      await api.post(`/conteudos/${id}/publicar`, { publicado: true })
+      if (visto) await aluna1.post(`/portal/conteudos/${id}/progresso`, { percentual: visto })
+    }
     // Mural: publicações fictícias (uma da equipe, já publicada; uma da aluna, conforme a regra de moderação).
     await api.post('/mural', { categoria: 'oportunidade', titulo: '[Demo] Encontro de networking entre alunas', descricao: 'Publicação de demonstração: troque ou arquive em Conteúdos e mural.', contato_canal: 'email', contato_valor: 'contato@example.com', autora_nome: 'Equipe (demo)' })
     await aluna1.post('/portal/mural', { categoria: 'produto', titulo: '[Demo] Consultoria de vitrine', descricao: 'Publicação fictícia de demonstração de uma aluna.', contato_canal: 'instagram', contato_valor: '@demo.vitrine' })

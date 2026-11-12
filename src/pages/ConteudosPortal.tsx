@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import { Lock, Paperclip, Plus } from 'lucide-react'
+import { LibraryBig, Lock, Paperclip, Plus } from 'lucide-react'
 import { Carregando, EstadoErro, EstadoVazio, Secao } from '../components/Estados'
 import { Campo, FormDialog, useValores } from '../components/Form'
 import { Selo, type Tom } from '../components/Selos'
@@ -12,14 +12,14 @@ import { CANAL_MURAL, CATEGORIA_MURAL } from '../portal/paginas/Mural'
 
 const SECOES: { id: 'rotina' | 'biblioteca' | 'livros'; nome: string; dica: string }[] = [
   { id: 'rotina', nome: 'Rotina', dica: 'Ex.: o “Dia Extraordinário da Mulher que Age”, quando a coordenação publicar o material oficial.' },
-  { id: 'biblioteca', nome: 'Biblioteca', dica: 'Use a categoria “Ferramentas” para planilhas, modelos e checklists.' },
+  { id: 'biblioteca', nome: 'Biblioteca', dica: 'Crie estantes e coloque nelas os arquivos, links e vídeos. Vídeos do Vimeo tocam no próprio portal e o sistema grava quanto cada aluna assistiu.' },
   { id: 'livros', nome: 'Livros', dica: 'Só link de compra. O portal nunca oferece o PDF de um livro.' },
 ]
 
 /** Página da equipe: o que aparece em Rotina, Biblioteca e Livros do portal, e a moderação do Mural. */
 export function ConteudosPortal() {
   const { pode } = useSessao()
-  const abas = [pode('conteudos:editar') && { id: 'aulas', nome: 'Aulas do plano' }, pode('conteudos:editar') && { id: 'conteudos', nome: 'Rotina, Biblioteca e Livros' }, pode('mural:moderar') && { id: 'mural', nome: 'Mural' }].filter(Boolean) as { id: string; nome: string }[]
+  const abas = [pode('conteudos:editar') && { id: 'aulas', nome: 'Aulas do plano' }, (pode('conteudos:editar') || pode('biblioteca:editar')) && { id: 'conteudos', nome: pode('conteudos:editar') ? 'Rotina, Biblioteca e Livros' : 'Biblioteca' }, pode('mural:moderar') && { id: 'mural', nome: 'Mural' }].filter(Boolean) as { id: string; nome: string }[]
   const [aba, setAba] = useState(abas[0]?.id ?? '')
   if (!abas.length) return <EstadoVazio icone={Lock} titulo="Seu perfil não edita conteúdos do portal." />
   return (
@@ -36,10 +36,13 @@ export function ConteudosPortal() {
   )
 }
 
+type Edicao = { secao: string; reg: Reg | null; estanteId?: string | null }
+
 function Conteudos() {
   const fb = useFeedback()
-  const { dados, erro, recarregar } = useDados<{ conteudos: Reg[] }>('/conteudos')
-  const [editando, setEditando] = useState<{ secao: string; reg: Reg | null } | null>(null)
+  const { dados, erro, recarregar } = useDados<{ conteudos: Reg[]; estantes: Reg[]; secoes: string[] }>('/conteudos')
+  const [editando, setEditando] = useState<Edicao | null>(null)
+  const [estanteEditando, setEstanteEditando] = useState<Reg | 'nova' | null>(null)
   const arquivoRef = useRef<HTMLInputElement>(null)
   const [alvoArquivo, setAlvoArquivo] = useState<Reg | null>(null)
   if (erro) return <EstadoErro mensagem={erro} onTentar={recarregar} />
@@ -54,6 +57,44 @@ function Conteudos() {
       fb.erro(mensagemDeErro(e))
     }
   }
+
+  async function publicarEstante(e: Reg, publicada: boolean) {
+    try {
+      await post(`/estantes/${e.id}/publicar`, { publicada })
+      fb.sucesso(publicada ? 'Estante publicada no portal.' : 'Estante retirada do portal. Os materiais dela ficam guardados.')
+      recarregar()
+    } catch (err) {
+      fb.erro(mensagemDeErro(err))
+    }
+  }
+
+  const acoes = {
+    editar: (c: Reg) => setEditando({ secao: c.secao, reg: c }),
+    anexar: (c: Reg) => {
+      setAlvoArquivo(c)
+      arquivoRef.current?.click()
+    },
+    removerArquivo: async (c: Reg) => {
+      try {
+        await apagar(`/conteudos/${c.id}/arquivo`)
+        recarregar()
+      } catch (e) {
+        fb.erro(mensagemDeErro(e))
+      }
+    },
+    publicar,
+  }
+
+  const lista = (itens: Reg[], vazio: string) =>
+    !itens.length ? (
+      <p className="text-sm text-ink-muted">{vazio}</p>
+    ) : (
+      <ul className="divide-y divide-line text-sm">
+        {itens.map((c) => (
+          <LinhaConteudo key={c.id} c={c} acoes={acoes} />
+        ))}
+      </ul>
+    )
 
   return (
     <>
@@ -77,85 +118,159 @@ function Conteudos() {
           }
         }}
       />
-      {SECOES.map((s) => {
+      {SECOES.filter((s) => dados.secoes.includes(s.id)).map((s) => {
         const itens = dados.conteudos.filter((c) => c.secao === s.id)
+        if (s.id !== 'biblioteca')
+          return (
+            <Secao
+              key={s.id}
+              titulo={s.nome}
+              descricao={s.dica}
+              acao={
+                <button type="button" className="btn-secondary btn-sm" onClick={() => setEditando({ secao: s.id, reg: null })}>
+                  <Plus className="size-4" aria-hidden /> Adicionar
+                </button>
+              }
+            >
+              {lista(itens, 'Nada cadastrado. No portal aparece a mensagem de “em breve”.')}
+            </Secao>
+          )
+        const soltos = itens.filter((c) => !c.estante_id)
         return (
           <Secao
             key={s.id}
             titulo={s.nome}
             descricao={s.dica}
             acao={
-              <button type="button" className="btn-secondary btn-sm" onClick={() => setEditando({ secao: s.id, reg: null })}>
-                <Plus className="size-4" aria-hidden /> Adicionar
-              </button>
+              <div className="flex flex-wrap gap-2">
+                <button type="button" className="btn-primary btn-sm" onClick={() => setEstanteEditando('nova')}>
+                  <LibraryBig className="size-4" aria-hidden /> Nova estante
+                </button>
+                <button type="button" className="btn-secondary btn-sm" onClick={() => setEditando({ secao: s.id, reg: null, estanteId: null })}>
+                  <Plus className="size-4" aria-hidden /> Material avulso
+                </button>
+              </div>
             }
           >
-            {!itens.length ? (
-              <p className="text-sm text-ink-muted">Nada cadastrado. No portal aparece a mensagem de “em breve”.</p>
-            ) : (
-              <ul className="divide-y divide-line text-sm">
-                {itens.map((c) => (
-                  <li key={c.id} className="flex flex-wrap items-start justify-between gap-2 py-2">
-                    <div className="min-w-0">
-                      <p className="font-medium">
-                        {c.titulo} {c.publicado ? <Selo tom="sucesso">Publicado</Selo> : <Selo>Rascunho</Selo>}
-                      </p>
-                      <p className="text-xs text-ink-muted">
-                        {[c.categoria, c.video_url && 'vídeo Vimeo', c.compra_url && 'link de compra', c.link && 'link', c.tem_arquivo && `arquivo: ${c.arquivo_nome}`].filter(Boolean).join(' · ') || 'sem anexo'}
-                      </p>
-                    </div>
-                    <div className="flex flex-wrap gap-1">
-                      <button type="button" className="btn-ghost btn-sm" onClick={() => setEditando({ secao: s.id, reg: c })}>
-                        Editar
-                      </button>
-                      {s.id !== 'livros' && (
-                        <button
-                          type="button"
-                          className="btn-ghost btn-sm"
-                          onClick={() => {
-                            setAlvoArquivo(c)
-                            arquivoRef.current?.click()
-                          }}
-                        >
-                          <Paperclip className="size-4" aria-hidden /> {c.tem_arquivo ? 'Trocar arquivo' : 'Anexar arquivo'}
+            <div className="space-y-4">
+              {!dados.estantes.length && <p className="text-sm text-ink-muted">Nenhuma estante ainda. Crie uma estante (ex.: “Vendas”, “Finanças”) e adicione os materiais dentro dela.</p>}
+              {dados.estantes.map((e) => {
+                const daEstante = itens.filter((c) => c.estante_id === e.id)
+                return (
+                  <div key={e.id} className="rounded-[var(--radius-control)] border border-line bg-surface-muted/40 p-3">
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="flex flex-wrap items-center gap-2 font-medium">
+                          <LibraryBig className="size-4 text-gold" aria-hidden /> Estante: {e.titulo} {e.publicada ? <Selo tom="sucesso">Publicada</Selo> : <Selo>Rascunho</Selo>}
+                        </p>
+                        <p className="text-xs text-ink-muted">
+                          {daEstante.length} {daEstante.length === 1 ? 'material' : 'materiais'}
+                          {e.descricao ? ` · ${e.descricao}` : ''}
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap gap-1">
+                        <button type="button" className="btn-secondary btn-sm" onClick={() => setEditando({ secao: 'biblioteca', reg: null, estanteId: e.id })}>
+                          <Plus className="size-4" aria-hidden /> Adicionar material
                         </button>
-                      )}
-                      {c.tem_arquivo && (
-                        <button
-                          type="button"
-                          className="btn-ghost btn-sm"
-                          onClick={async () => {
-                            try {
-                              await apagar(`/conteudos/${c.id}/arquivo`)
-                              recarregar()
-                            } catch (e) {
-                              fb.erro(mensagemDeErro(e))
-                            }
-                          }}
-                        >
-                          Remover arquivo
+                        <button type="button" className="btn-ghost btn-sm" onClick={() => setEstanteEditando(e)}>
+                          Editar estante
                         </button>
-                      )}
-                      <button type="button" className={c.publicado ? 'btn-secondary btn-sm' : 'btn-primary btn-sm'} onClick={() => publicar(c, !c.publicado)}>
-                        {c.publicado ? 'Retirar do portal' : 'Publicar'}
-                      </button>
+                        <button type="button" className={e.publicada ? 'btn-secondary btn-sm' : 'btn-primary btn-sm'} onClick={() => publicarEstante(e, !e.publicada)}>
+                          {e.publicada ? 'Retirar do portal' : 'Publicar estante'}
+                        </button>
+                      </div>
                     </div>
-                  </li>
-                ))}
-              </ul>
-            )}
+                    <div className="mt-2 border-t border-line pt-1">{lista(daEstante, 'Estante vazia. Use “Adicionar material” para colocar arquivos, links ou vídeos.')}</div>
+                  </div>
+                )
+              })}
+              {soltos.length > 0 && (
+                <div>
+                  <p className="text-xs font-medium tracking-wide text-ink-muted uppercase">Fora de estante</p>
+                  {lista(soltos, '')}
+                </div>
+              )}
+            </div>
           </Secao>
         )
       })}
-      {editando && <DialogConteudo secao={editando.secao} reg={editando.reg} onFechar={() => setEditando(null)} onConcluir={recarregar} />}
+      {editando && <DialogConteudo secao={editando.secao} reg={editando.reg} estanteId={editando.estanteId} estantes={dados.estantes} onFechar={() => setEditando(null)} onConcluir={recarregar} />}
+      {estanteEditando && <DialogEstante reg={estanteEditando === 'nova' ? null : estanteEditando} onFechar={() => setEstanteEditando(null)} onConcluir={recarregar} />}
     </>
   )
 }
 
-function DialogConteudo({ secao, reg, onFechar, onConcluir }: { secao: string; reg: Reg | null; onFechar: () => void; onConcluir: () => void }) {
+type AcoesConteudo = { editar: (c: Reg) => void; anexar: (c: Reg) => void; removerArquivo: (c: Reg) => void; publicar: (c: Reg, publicado: boolean) => void }
+
+function LinhaConteudo({ c, acoes }: { c: Reg; acoes: AcoesConteudo }) {
+  const assistiram = c.video_url ? `${c.alunas_iniciaram ?? 0} ${c.alunas_iniciaram === 1 ? 'aluna começou' : 'alunas começaram'}, ${c.alunas_assistiram ?? 0} ${c.alunas_assistiram === 1 ? 'assistiu' : 'assistiram'} até o fim` : null
+  return (
+    <li className="flex flex-wrap items-start justify-between gap-2 py-2">
+      <div className="min-w-0">
+        <p className="font-medium">
+          {c.titulo} {c.publicado ? <Selo tom="sucesso">Publicado</Selo> : <Selo>Rascunho</Selo>}
+        </p>
+        <p className="text-xs text-ink-muted">
+          {[c.categoria, c.video_url && 'vídeo Vimeo', c.compra_url && 'link de compra', c.link && 'link', c.tem_arquivo && `arquivo: ${c.arquivo_nome}`].filter(Boolean).join(' · ') || 'sem anexo'}
+        </p>
+        {assistiram && <p className="text-xs text-ink-soft">{assistiram}</p>}
+      </div>
+      <div className="flex flex-wrap gap-1">
+        <button type="button" className="btn-ghost btn-sm" onClick={() => acoes.editar(c)}>
+          Editar
+        </button>
+        {c.secao !== 'livros' && (
+          <button type="button" className="btn-ghost btn-sm" onClick={() => acoes.anexar(c)}>
+            <Paperclip className="size-4" aria-hidden /> {c.tem_arquivo ? 'Trocar arquivo' : 'Anexar arquivo'}
+          </button>
+        )}
+        {c.tem_arquivo && (
+          <button type="button" className="btn-ghost btn-sm" onClick={() => acoes.removerArquivo(c)}>
+            Remover arquivo
+          </button>
+        )}
+        <button type="button" className={c.publicado ? 'btn-secondary btn-sm' : 'btn-primary btn-sm'} onClick={() => acoes.publicar(c, !c.publicado)}>
+          {c.publicado ? 'Retirar do portal' : 'Publicar'}
+        </button>
+      </div>
+    </li>
+  )
+}
+
+function DialogEstante({ reg, onFechar, onConcluir }: { reg: Reg | null; onFechar: () => void; onConcluir: () => void }) {
+  const fb = useFeedback()
+  const { valores, campo } = useValores({ titulo: reg?.titulo ?? '', descricao: reg?.descricao ?? '', ordem: String(reg?.ordem ?? 0) })
+  return (
+    <FormDialog
+      aberto
+      titulo={reg ? 'Editar estante' : 'Nova estante'}
+      onFechar={onFechar}
+      onEnviar={async () => {
+        const corpo = { titulo: valores.titulo, descricao: valores.descricao || null, ordem: Number(valores.ordem) || 0 }
+        if (reg) await put(`/estantes/${reg.id}`, corpo)
+        else await post('/estantes', corpo)
+        fb.sucesso(reg ? 'Estante salva.' : 'Estante criada. Adicione os materiais e publique quando estiver pronta.')
+        onConcluir()
+      }}
+    >
+      <Campo rotulo="Nome da estante" obrigatorio dica="Ex.: Vendas, Finanças, Instagram.">
+        {(p) => <input className="field-control" maxLength={120} {...p} value={valores.titulo} onChange={campo('titulo')} />}
+      </Campo>
+      <Campo rotulo="Descrição" dica="Opcional. Aparece para a aluna embaixo do nome.">
+        {(p) => <textarea rows={2} maxLength={1000} className="field-control" {...p} value={valores.descricao} onChange={campo('descricao')} />}
+      </Campo>
+      <Campo rotulo="Ordem">
+        {(p) => <input type="number" min={0} max={999} className="field-control max-w-32" {...p} value={valores.ordem} onChange={campo('ordem')} />}
+      </Campo>
+    </FormDialog>
+  )
+}
+
+function DialogConteudo({ secao, reg, estanteId, estantes, onFechar, onConcluir }: { secao: string; reg: Reg | null; estanteId?: string | null; estantes: Reg[]; onFechar: () => void; onConcluir: () => void }) {
   const fb = useFeedback()
   const { valores, campo } = useValores({
-    categoria: reg?.categoria ?? (secao === 'biblioteca' ? 'Ferramentas' : ''),
+    estante_id: reg?.estante_id ?? estanteId ?? '',
+    categoria: reg?.categoria ?? (secao === 'biblioteca' && !(reg?.estante_id ?? estanteId) ? 'Ferramentas' : ''),
     titulo: reg?.titulo ?? '',
     descricao: reg?.descricao ?? '',
     link: reg?.link ?? '',
@@ -172,6 +287,7 @@ function DialogConteudo({ secao, reg, onFechar, onConcluir }: { secao: string; r
       onEnviar={async () => {
         const corpo = {
           secao,
+          estante_id: secao === 'biblioteca' ? valores.estante_id || null : null,
           categoria: valores.categoria || null,
           titulo: valores.titulo,
           descricao: valores.descricao || null,
@@ -189,6 +305,20 @@ function DialogConteudo({ secao, reg, onFechar, onConcluir }: { secao: string; r
       <Campo rotulo="Título" obrigatorio>
         {(p) => <input className="field-control" maxLength={200} {...p} value={valores.titulo} onChange={campo('titulo')} />}
       </Campo>
+      {secao === 'biblioteca' && (
+        <Campo rotulo="Estante" dica="Sem estante, o material aparece solto na Biblioteca, pela categoria.">
+          {(p) => (
+            <select className="field-control" {...p} value={valores.estante_id} onChange={campo('estante_id')}>
+              <option value="">Sem estante</option>
+              {estantes.map((e) => (
+                <option key={e.id} value={e.id}>
+                  {e.titulo}
+                </option>
+              ))}
+            </select>
+          )}
+        </Campo>
+      )}
       <Campo rotulo="Categoria" dica={secao === 'biblioteca' ? 'Ex.: Ferramentas, Leituras, Modelos.' : 'Opcional.'}>
         {(p) => <input className="field-control" maxLength={80} list="categorias-conteudo" {...p} value={valores.categoria} onChange={campo('categoria')} />}
       </Campo>
@@ -204,7 +334,7 @@ function DialogConteudo({ secao, reg, onFechar, onConcluir }: { secao: string; r
         </Campo>
       ) : (
         <>
-          <Campo rotulo="Vídeo do Vimeo" dica="Cole o endereço do vídeo (https://vimeo.com/…). Ele aparece embutido no portal.">
+          <Campo rotulo="Vídeo do Vimeo" dica="Cole o endereço do vídeo (https://vimeo.com/…). A aluna assiste no próprio portal e o sistema grava quanto ela já viu.">
             {(p) => <input className="field-control" placeholder="https://vimeo.com/…" {...p} value={valores.video_url} onChange={campo('video_url')} />}
           </Campo>
           <Campo rotulo="Link externo" dica="Opcional (ex.: pasta de materiais).">

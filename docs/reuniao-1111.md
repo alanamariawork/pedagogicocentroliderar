@@ -65,3 +65,12 @@ Seis questões novas estão em “Decisões pendentes”: qual presença acompan
 - **Botão de WhatsApp:** na ficha da aluna (abre a conversa) e em cada linha de "Envios por e-mail e WhatsApp", na página Avisos às alunas (abre o WhatsApp da equipe com a mensagem pronta). A mesma página mostra a situação de cada canal (enviado, na fila, falhou com o motivo, não configurado dizendo o que falta, desligado) e tem "Tentar novamente" e "Enviar pendentes agora".
 - **Liga/desliga:** Configurações › Parâmetros › Avisos às alunas (e-mail e WhatsApp separados).
 - Avisos com mais de 48 horas não são enviados automaticamente (evita mandar aviso velho quando um canal for configurado depois).
+
+## Atualização de 12/11: estantes na Biblioteca
+
+- Em **Aulas, conteúdos e mural → Biblioteca**, Administração, Coordenação e Suporte criam **estantes** (nome, descrição e ordem) e colocam dentro delas arquivos, links e vídeos. A permissão nova é `biblioteca:editar`; o Suporte edita só a Biblioteca (Rotina, Livros e Aulas continuam com `conteudos:editar`). A Administração pode mudar isso em Regras de acesso.
+- Nada aparece para a aluna até a estante **e** o material serem publicados. Retirar a estante do portal esconde tudo o que está nela, sem apagar nada.
+- Vídeo do Vimeo toca dentro do portal. O próprio player informa o ponto alcançado e o servidor guarda o maior valor por aluna (a partir de 90% conta como assistido). A aluna vê "45% assistido" ou "Assistido" em cada vídeo e "X de Y vídeos assistidos" em cada estante; a equipe vê quantas alunas começaram e quantas assistiram até o fim.
+- Materiais da Biblioteca que já existiam continuam aparecendo soltos, pela categoria (ex.: Ferramentas).
+- Banco: migration `0005_ped_biblioteca_estantes.sql` (tabelas novas `ped_estantes` e `ped_conteudos_progresso`, coluna nova `estante_id` em `ped_conteudos`). Nada existente é apagado.
+- Limite: só vídeos do Vimeo são aceitos (é o que permite ler o quanto foi assistido sem script de terceiros). Link de YouTube é recusado com mensagem.

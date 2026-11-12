@@ -14,6 +14,7 @@ import { auditar, data, escopoMatriculas, exigirAcessoMatricula, hoje, link, not
 import { arquivoEnviado, corpoDoArquivo, entregarAnexo, hashArquivo } from '../anexos'
 import { extrairContrato, normalizar, type DadosContrato } from '../../shared/contrato'
 import { CANAIS_CONTATO, CATEGORIAS_MURAL } from './portalServicos'
+import { PERCENTUAL_ASSISTIDA } from '../../shared/linhaTempo'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Linha = Record<string, any>
@@ -353,10 +354,19 @@ export function rotasAcompanhamento(db: BD, ctx: ContextoApp) {
     res.json({ ok: true, criados, ignorados })
   })
 
-  /* ---------------- Conteúdos do portal: Rotina, Biblioteca (com Ferramentas) e Livros ---------------- */
+  /* ---------------- Conteúdos do portal: Rotina, Biblioteca (com estantes) e Livros ---------------- */
+
+  type SecaoConteudo = 'rotina' | 'biblioteca' | 'livros'
+  // A Biblioteca também é editada por quem tem biblioteca:editar (Suporte, por padrão); Rotina e Livros, só conteudos:editar.
+  const podeSecao = (req: Request, secao: SecaoConteudo) => tem(req, 'conteudos:editar') || (secao === 'biblioteca' && tem(req, 'biblioteca:editar'))
+  const exigirSecao = (req: Request, secao: SecaoConteudo) => {
+    if (!podeSecao(req, secao)) throw new ErroHttp(403, 'Você não tem permissão para esta operação.')
+  }
+  const exigirBiblioteca = (req: Request) => exigirSecao(req, 'biblioteca')
 
   const esquemaConteudo = z.object({
     secao: z.enum(['rotina', 'biblioteca', 'livros']),
+    estante_id: z.string().trim().max(64).nullish().transform((v) => v || null),
     categoria: texto(80),
     titulo: textoObrig('o título', 200),
     descricao: texto(4000),
@@ -366,25 +376,39 @@ export function rotasAcompanhamento(db: BD, ctx: ContextoApp) {
     ordem: z.coerce.number().int().min(0).max(999).default(0),
   })
 
-  function conferirConteudo(d: z.infer<typeof esquemaConteudo>) {
+  async function conferirConteudo(d: z.infer<typeof esquemaConteudo>) {
     if (d.video_url && !embedVimeo(d.video_url)) throw new ErroHttp(400, 'Use o endereço de um vídeo do Vimeo (https://vimeo.com/…).')
     if (d.secao === 'livros' && d.video_url) throw new ErroHttp(400, 'Livros não têm vídeo. Use o link de compra.')
     if (d.secao !== 'livros' && d.compra_url) throw new ErroHttp(400, 'O link de compra é só para livros.')
+    if (d.estante_id) {
+      if (d.secao !== 'biblioteca') throw new ErroHttp(400, 'Estantes são só da Biblioteca.')
+      if (!(await db.get('SELECT id FROM ped_estantes WHERE id = ?', d.estante_id))) throw new ErroHttp(400, 'Estante não encontrada.')
+    }
   }
 
   r.get('/conteudos', async (req, res) => {
-    exigir(req, 'conteudos:editar')
-    const lista = (await db.all("SELECT c.*, u.nome AS autor_nome FROM ped_conteudos c LEFT JOIN ped_usuarios u ON u.id = c.autor_id ORDER BY c.secao, COALESCE(c.categoria, ''), c.ordem, c.titulo")) as Linha[]
-    res.json({ conteudos: lista.map((c) => ({ ...c, arquivo_chave: undefined, tem_arquivo: !!c.arquivo_chave })) })
+    if (!tem(req, 'conteudos:editar')) exigirBiblioteca(req)
+    const so = tem(req, 'conteudos:editar') ? '' : "WHERE c.secao = 'biblioteca'"
+    // Quantas alunas começaram e quantas terminaram cada vídeo (sem expor quem, aqui).
+    const lista = (await db.all(`SELECT c.*, u.nome AS autor_nome,
+        (SELECT COUNT(*) FROM ped_conteudos_progresso p WHERE p.conteudo_id = c.id AND p.percentual > 0) AS alunas_iniciaram,
+        (SELECT COUNT(*) FROM ped_conteudos_progresso p WHERE p.conteudo_id = c.id AND p.percentual >= ${PERCENTUAL_ASSISTIDA}) AS alunas_assistiram
+      FROM ped_conteudos c LEFT JOIN ped_usuarios u ON u.id = c.autor_id ${so}
+      ORDER BY c.secao, COALESCE(c.categoria, ''), c.ordem, c.titulo`)) as Linha[]
+    res.json({
+      conteudos: lista.map((c) => ({ ...c, arquivo_chave: undefined, tem_arquivo: !!c.arquivo_chave })),
+      estantes: await db.all('SELECT * FROM ped_estantes ORDER BY ordem, titulo'),
+      secoes: (['rotina', 'biblioteca', 'livros'] as const).filter((x) => podeSecao(req, x)),
+    })
   })
 
   r.post('/conteudos', async (req, res) => {
-    exigir(req, 'conteudos:editar')
     const d = validar(esquemaConteudo, req.body)
-    conferirConteudo(d)
+    exigirSecao(req, d.secao)
+    await conferirConteudo(d)
     const id = novoId()
-    await db.run('INSERT INTO ped_conteudos (id, secao, categoria, titulo, descricao, link, video_url, compra_url, publicado, ordem, criado_em, atualizado_em, autor_id) VALUES (?,?,?,?,?,?,?,?,0,?,?,?,?)', id, d.secao, d.categoria ?? null, d.titulo, d.descricao ?? null, d.link ?? null, embedVimeo(d.video_url), d.compra_url ?? null, d.ordem, agoraIso(), agoraIso(), req.usuario!.id)
-    await auditar(db, req, { entidade: 'conteudo', entidade_id: id, acao: 'criado', dados: { secao: d.secao, titulo: d.titulo } })
+    await db.run('INSERT INTO ped_conteudos (id, secao, estante_id, categoria, titulo, descricao, link, video_url, compra_url, publicado, ordem, criado_em, atualizado_em, autor_id) VALUES (?,?,?,?,?,?,?,?,?,0,?,?,?,?)', id, d.secao, d.estante_id, d.categoria ?? null, d.titulo, d.descricao ?? null, d.link ?? null, embedVimeo(d.video_url), d.compra_url ?? null, d.ordem, agoraIso(), agoraIso(), req.usuario!.id)
+    await auditar(db, req, { entidade: 'conteudo', entidade_id: id, acao: 'criado', dados: { secao: d.secao, titulo: d.titulo, estante_id: d.estante_id } })
     res.status(201).json({ id })
   })
 
@@ -395,19 +419,20 @@ export function rotasAcompanhamento(db: BD, ctx: ContextoApp) {
   }
 
   r.put('/conteudos/:id', async (req, res) => {
-    exigir(req, 'conteudos:editar')
     const c = await conteudo(req.params.id as string)
+    exigirSecao(req, c.secao)
     const d = validar(esquemaConteudo, req.body)
-    conferirConteudo(d)
+    exigirSecao(req, d.secao)
+    await conferirConteudo(d)
     if (d.secao === 'livros' && c.arquivo_chave) throw new ErroHttp(400, 'Livros não podem ter arquivo anexado. Remova o arquivo antes.')
-    await db.run('UPDATE ped_conteudos SET secao=?, categoria=?, titulo=?, descricao=?, link=?, video_url=?, compra_url=?, ordem=?, atualizado_em=?, autor_id=? WHERE id=?', d.secao, d.categoria ?? null, d.titulo, d.descricao ?? null, d.link ?? null, embedVimeo(d.video_url), d.compra_url ?? null, d.ordem, agoraIso(), req.usuario!.id, c.id)
-    await auditar(db, req, { entidade: 'conteudo', entidade_id: c.id, acao: 'atualizado', dados: { titulo: d.titulo } })
+    await db.run('UPDATE ped_conteudos SET secao=?, estante_id=?, categoria=?, titulo=?, descricao=?, link=?, video_url=?, compra_url=?, ordem=?, atualizado_em=?, autor_id=? WHERE id=?', d.secao, d.estante_id, d.categoria ?? null, d.titulo, d.descricao ?? null, d.link ?? null, embedVimeo(d.video_url), d.compra_url ?? null, d.ordem, agoraIso(), req.usuario!.id, c.id)
+    await auditar(db, req, { entidade: 'conteudo', entidade_id: c.id, acao: 'atualizado', dados: { titulo: d.titulo, estante_id: d.estante_id } })
     res.json({ ok: true })
   })
 
   r.post('/conteudos/:id/publicar', async (req, res) => {
-    exigir(req, 'conteudos:editar')
     const c = await conteudo(req.params.id as string)
+    exigirSecao(req, c.secao)
     const d = validar(z.object({ publicado: z.boolean() }), req.body)
     await db.run('UPDATE ped_conteudos SET publicado = ?, atualizado_em = ? WHERE id = ?', d.publicado ? 1 : 0, agoraIso(), c.id)
     await auditar(db, req, { entidade: 'conteudo', entidade_id: c.id, acao: d.publicado ? 'publicado' : 'despublicado' })
@@ -416,8 +441,8 @@ export function rotasAcompanhamento(db: BD, ctx: ContextoApp) {
 
   // Arquivo de Rotina ou Biblioteca (ex.: ferramenta em planilha). Livro nunca recebe arquivo (sem PDF de livro).
   r.post('/conteudos/:id/arquivo', corpoDoArquivo, async (req, res) => {
-    exigir(req, 'conteudos:editar')
     const c = await conteudo(req.params.id as string)
+    exigirSecao(req, c.secao)
     if (c.secao === 'livros') throw new ErroHttp(400, 'Livros não recebem arquivo: use o link de compra.')
     const f = arquivoEnviado(req, ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'jpg', 'jpeg', 'png', 'webp', 'txt', 'csv', 'mp3', 'm4a'], 'Tipo de arquivo não aceito. Envie PDF, Word, Excel, PowerPoint, imagem, texto ou áudio. Para vídeo, use o Vimeo.')
     const chave = `conteudos/${c.id}/${novoId()}`
@@ -429,13 +454,60 @@ export function rotasAcompanhamento(db: BD, ctx: ContextoApp) {
   })
 
   r.delete('/conteudos/:id/arquivo', async (req, res) => {
-    exigir(req, 'conteudos:editar')
     const c = await conteudo(req.params.id as string)
+    exigirSecao(req, c.secao)
     if (c.arquivo_chave) {
       await db.run('UPDATE ped_conteudos SET arquivo_chave=NULL, arquivo_nome=NULL, arquivo_tipo=NULL, arquivo_tamanho=NULL, atualizado_em=? WHERE id=?', agoraIso(), c.id)
       await ctx.arquivos.apagar([c.arquivo_chave])
       await auditar(db, req, { entidade: 'conteudo', entidade_id: c.id, acao: 'arquivo_removido' })
     }
+    res.json({ ok: true })
+  })
+
+  /* ---------------- Estantes da Biblioteca ---------------- */
+
+  const esquemaEstante = z.object({
+    titulo: textoObrig('o nome da estante', 120),
+    descricao: texto(1000),
+    ordem: z.coerce.number().int().min(0).max(999).default(0),
+  })
+
+  async function estante(id: string) {
+    const e = (await db.get('SELECT * FROM ped_estantes WHERE id = ?', id)) as Linha | undefined
+    if (!e) throw new ErroHttp(404, 'Estante não encontrada.')
+    return e
+  }
+
+  r.get('/estantes', async (req, res) => {
+    exigirBiblioteca(req)
+    res.json({ estantes: await db.all('SELECT * FROM ped_estantes ORDER BY ordem, titulo') })
+  })
+
+  r.post('/estantes', async (req, res) => {
+    exigirBiblioteca(req)
+    const d = validar(esquemaEstante, req.body)
+    const id = novoId()
+    await db.run('INSERT INTO ped_estantes (id, titulo, descricao, ordem, publicada, criado_em, atualizado_em, autor_id) VALUES (?,?,?,?,0,?,?,?)', id, d.titulo, d.descricao ?? null, d.ordem, agoraIso(), agoraIso(), req.usuario!.id)
+    await auditar(db, req, { entidade: 'estante', entidade_id: id, acao: 'criada', dados: { titulo: d.titulo } })
+    res.status(201).json({ id })
+  })
+
+  r.put('/estantes/:id', async (req, res) => {
+    exigirBiblioteca(req)
+    const e = await estante(req.params.id as string)
+    const d = validar(esquemaEstante, req.body)
+    await db.run('UPDATE ped_estantes SET titulo=?, descricao=?, ordem=?, atualizado_em=?, autor_id=? WHERE id=?', d.titulo, d.descricao ?? null, d.ordem, agoraIso(), req.usuario!.id, e.id)
+    await auditar(db, req, { entidade: 'estante', entidade_id: e.id, acao: 'atualizada', dados: { titulo: d.titulo } })
+    res.json({ ok: true })
+  })
+
+  // Retirar do portal esconde a estante e tudo o que está nela; nada é apagado.
+  r.post('/estantes/:id/publicar', async (req, res) => {
+    exigirBiblioteca(req)
+    const e = await estante(req.params.id as string)
+    const d = validar(z.object({ publicada: z.boolean() }), req.body)
+    await db.run('UPDATE ped_estantes SET publicada = ?, atualizado_em = ? WHERE id = ?', d.publicada ? 1 : 0, agoraIso(), e.id)
+    await auditar(db, req, { entidade: 'estante', entidade_id: e.id, acao: d.publicada ? 'publicada' : 'despublicada' })
     res.json({ ok: true })
   })
 

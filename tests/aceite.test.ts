@@ -382,7 +382,7 @@ describe('Permissões e segurança', () => {
   describe('Portal da aluna, fase 1', () => {
     it('as migrations do pedagógico ficam registradas à parte e a turma vira cadastro', async () => {
       const versoes = (await db().all<J>('SELECT name FROM ped_migracoes ORDER BY id')).map((v) => v.name)
-      expect(versoes).toEqual(['0001_ped_esquema.sql', '0002_ped_ajustes_reuniao_1111.sql', '0003_ped_planos_linha_do_tempo.sql', '0004_ped_avisos_email_whatsapp.sql'])
+      expect(versoes).toEqual(['0001_ped_esquema.sql', '0002_ped_ajustes_reuniao_1111.sql', '0003_ped_planos_linha_do_tempo.sql', '0004_ped_avisos_email_whatsapp.sql', '0005_ped_biblioteca_estantes.sql'])
       // As matrículas da demonstração receberam uma das duas turmas cadastradas
       const turmas = (await db().get('SELECT COUNT(DISTINCT turma_id) AS n FROM ped_matriculas WHERE turma_id IS NOT NULL')) as J
       expect(turmas.n).toBe(2)

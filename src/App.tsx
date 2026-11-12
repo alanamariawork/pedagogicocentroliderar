@@ -60,7 +60,7 @@ const MENU: ItemMenu[] = [
   { id: 'jornada', nome: 'Trilhas e etapas', icone: Route, permissoes: ['jornada:ver'] },
   { id: 'pacotes', nome: 'Pacotes', icone: Package, permissoes: ['comercial:ver', 'config:editar'] },
   { id: 'avisos', nome: 'Avisos às alunas', icone: Megaphone, permissoes: ['avisos:enviar'] },
-  { id: 'conteudos-portal', nome: 'Aulas, conteúdos e mural', icone: LibraryBig, permissoes: ['conteudos:editar', 'mural:moderar'] },
+  { id: 'conteudos-portal', nome: 'Aulas, conteúdos e mural', icone: LibraryBig, permissoes: ['conteudos:editar', 'biblioteca:editar', 'mural:moderar'] },
   { id: 'decisoes', nome: 'Decisões pendentes', icone: ClipboardList },
   { id: 'configuracoes', nome: 'Configurações', icone: Settings, permissoes: ['config:editar', 'usuarios:admin', 'pedagogico:configurar'] },
 ]
