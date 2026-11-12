@@ -44,6 +44,8 @@ Para desfazer, rode `npx wrangler rollback` no backoffice. A aba volta a ser com
 
 Só depois de ter as credenciais da Meta e da conta de serviço do Google. Os nomes dos segredos estão em [reuniao-1111.md](reuniao-1111.md). Cadastre cada um com `npx wrangler secret put NOME` neste repositório. Sem eles o sistema funciona normalmente e mostra “confirmação pendente”, sem enviar nada.
 
+**Google Meet:** para o evento sair com link do Meet, o caminho garantido é Google Workspace com delegação em todo o domínio: no Admin Console, autorize o Client ID da conta de serviço com o escopo `https://www.googleapis.com/auth/calendar.events` e cadastre `GOOGLE_AGIR_COMO_MENTORA=1`. Assim o evento é criado na agenda da própria mentora, que é a dona da sala do Meet. Sem delegação, o evento ainda é criado (se a agenda da mentora estiver compartilhada com a conta de serviço), mas o Google pode recusar o Meet; nesse caso o sistema grava o evento sem link e mostra o motivo na confirmação do agendamento. As opções “Criar link do Google Meet” e “Convidar a aluna” ficam em Configurações › Parâmetros.
+
 ## Teste rápido, um usuário de cada perfil
 
 | Perfil | O que conferir |

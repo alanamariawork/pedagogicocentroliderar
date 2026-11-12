@@ -52,7 +52,7 @@ export function rotasPortal(db: BD, ctx: ContextoApp) {
     if (!m) return { nome: pessoa.nome, matricula: null, ajuda }
 
     const jornada = await montarJornada(db, m.id as string, { paraAluna: true })
-    const encontros = ((await db.all(`SELECT o.id, o.numero, o.situacao, o.data_prevista, o.data_agendada, o.data_realizada, o.resumo_compartilhavel,
+    const encontros = ((await db.all(`SELECT o.id, o.numero, o.situacao, o.data_prevista, o.data_agendada, o.data_realizada, o.resumo_compartilhavel, CASE WHEN o.situacao = 'agendada' THEN o.link_reuniao END AS link_reuniao,
                 i.descricao AS item_descricao, i.origem, i.tipo_id, t.nome AS tipo_nome, pr.nome AS profissional_nome
          FROM ped_ocorrencias o JOIN ped_itens_contratados i ON i.id = o.item_id LEFT JOIN ped_tipos_entregavel t ON t.id = i.tipo_id
          LEFT JOIN ped_profissionais pr ON pr.id = COALESCE(o.profissional_id, i.profissional_id)

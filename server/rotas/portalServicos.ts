@@ -53,7 +53,7 @@ export function rotasPortalServicos(db: BD, ctx: ContextoApp) {
   r.get('/portal/mentorias', async (req, res) => {
     const m = await matricula(req)
     const itens = await saldoItens(db, m.id as string)
-    const encontros = (await db.all(`SELECT o.id, o.item_id, o.numero, o.situacao, o.data_agendada, o.data_realizada, pr.nome AS profissional_nome
+    const encontros = (await db.all(`SELECT o.id, o.item_id, o.numero, o.situacao, o.data_agendada, o.data_realizada, CASE WHEN o.situacao = 'agendada' THEN o.link_reuniao END AS link_reuniao, pr.nome AS profissional_nome
          FROM ped_ocorrencias o JOIN ped_itens_contratados i ON i.id = o.item_id LEFT JOIN ped_profissionais pr ON pr.id = COALESCE(o.profissional_id, i.profissional_id)
          WHERE o.matricula_id = ? AND o.situacao IN ('agendada','realizada') ORDER BY COALESCE(o.data_agendada, o.data_realizada)`, m.id)) as Linha[]
     const ativa = m.situacao === 'ativa'
@@ -212,7 +212,7 @@ export function rotasPortalServicos(db: BD, ctx: ContextoApp) {
   r.get('/portal/agenda', async (req, res) => {
     const m = await matricula(req)
     const j = await janelaAgenda()
-    const encontros = ((await db.all(`SELECT o.id, o.item_id, o.situacao, o.data_agendada, o.data_realizada, r.inicio, r.fim, COALESCE(t.nome, i.descricao) AS tipo, pr.nome AS profissional_nome
+    const encontros = ((await db.all(`SELECT o.id, o.item_id, o.situacao, o.data_agendada, o.data_realizada, CASE WHEN o.situacao = 'agendada' THEN o.link_reuniao END AS link_reuniao, r.inicio, r.fim, COALESCE(t.nome, i.descricao) AS tipo, pr.nome AS profissional_nome
          FROM ped_ocorrencias o JOIN ped_itens_contratados i ON i.id = o.item_id LEFT JOIN ped_tipos_entregavel t ON t.id = i.tipo_id
          LEFT JOIN ped_reservas r ON r.ocorrencia_id = o.id AND r.ativa = 1
          LEFT JOIN ped_profissionais pr ON pr.id = COALESCE(r.profissional_id, o.profissional_id, i.profissional_id)

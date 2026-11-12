@@ -13,6 +13,9 @@
  * Mensagem e evento só saem com credenciais configuradas no Worker (segredos da Cloudflare); sem
  * elas nada é enviado nem simulado. O Google Agenda é sincronizado com o estado atual do encontro,
  * com um id de evento fixo por encontro: reagendar atualiza o mesmo evento, desmarcar o remove.
+ * Com `agenda_google_meet` ligado, o evento já sai com um link do Google Meet, guardado no encontro
+ * (`ped_ocorrencias.link_reuniao`) para a aluna e a equipe entrarem pela plataforma. Reagendar mantém o
+ * mesmo link. Com `agenda_convidar_aluna`, a aluna é convidada para o evento pelo próprio Google.
  */
 import { agoraIso, novoId, type BD, type TX } from './db'
 import { FUSO, formatarData } from '../shared/datas'
@@ -70,14 +73,38 @@ export function enfileirar(tx: TX, ocorrenciaId: string, acao: AcaoIntegracao, r
 
 /* ---------------- Envio ---------------- */
 
-type Resultado = { situacao: 'enviado' | 'falhou' | 'nao_configurado' | 'descartado'; detalhe: string; id_externo?: string | null }
+type Resultado = {
+  situacao: 'enviado' | 'falhou' | 'nao_configurado' | 'descartado'
+  detalhe: string
+  id_externo?: string | null
+  /** Link do Google Meet do encontro: texto = novo link, null = encontro sem link, ausente = não mexe. */
+  link_reuniao?: string | null
+}
+
+/** Opções da agenda (Configurações › Parâmetros). */
+export interface OpcoesAgenda {
+  meet: boolean
+  convidarAluna: boolean
+}
+
+async function opcoesAgenda(db: BD): Promise<OpcoesAgenda> {
+  const linhas = (await db.all("SELECT chave, valor FROM ped_configuracoes WHERE chave IN ('agenda_google_meet','agenda_convidar_aluna')")) as Linha[]
+  const v = (k: string, padrao: string) => (linhas.find((l) => l.chave === k)?.valor ?? padrao) === '1'
+  return { meet: v('agenda_google_meet', '1'), convidarAluna: v('agenda_convidar_aluna', '0') }
+}
+
+/** Link da videochamada que o Google devolve no evento (Meet). */
+export function linkDoMeet(evento: Linha | null | undefined): string | null {
+  const uri = evento?.hangoutLink ?? (evento?.conferenceData?.entryPoints as Linha[] | undefined)?.find((p) => p.entryPointType === 'video')?.uri
+  return typeof uri === 'string' && /^https:\/\/meet\.google\.com\//.test(uri) ? uri : null
+}
 
 async function dadosDoEncontro(db: BD, ocorrenciaId: string) {
   return (await db.get(
     `SELECT o.id, o.situacao, o.data_agendada, o.duracao_min, o.matricula_id,
             (SELECT r.id FROM ped_reservas r WHERE r.ocorrencia_id = o.id AND r.ativa = 1) AS reserva_ativa,
             (SELECT r.fim FROM ped_reservas r WHERE r.ocorrencia_id = o.id AND r.ativa = 1) AS fim,
-            COALESCE(t.nome, i.descricao) AS encontro, pe.nome AS aluna_nome, pe.telefone AS aluna_telefone,
+            COALESCE(t.nome, i.descricao) AS encontro, pe.nome AS aluna_nome, pe.telefone AS aluna_telefone, pe.email AS aluna_email, o.link_reuniao,
             pr.nome AS profissional_nome, COALESCE(NULLIF(TRIM(pr.email), ''), u.email) AS profissional_email
        FROM ped_ocorrencias o JOIN ped_itens_contratados i ON i.id = o.item_id LEFT JOIN ped_tipos_entregavel t ON t.id = i.tipo_id
        JOIN ped_matriculas m ON m.id = o.matricula_id JOIN ped_pessoas pe ON pe.id = m.pessoa_id
@@ -157,7 +184,7 @@ async function tokenGoogle(int: Integracoes, agirComo: string | null): Promise<s
 /** Id fixo do evento de um encontro (o Google aceita letras a–v e dígitos). */
 export const idEventoGoogle = (ocorrenciaId: string) => `cl${ocorrenciaId.replace(/-/g, '').toLowerCase()}`
 
-async function sincronizarGoogle(int: Integracoes, e: Linha): Promise<Resultado> {
+async function sincronizarGoogle(int: Integracoes, e: Linha, op: OpcoesAgenda): Promise<Resultado> {
   const c = int.config
   const faltando: string[] = []
   if (!c.googleEmailConta) faltando.push('GOOGLE_CLIENT_EMAIL')
@@ -172,28 +199,62 @@ async function sincronizarGoogle(int: Integracoes, e: Linha): Promise<Resultado>
     const base = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(agenda)}/events`
     const idEvento = idEventoGoogle(e.id)
     const auth = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }
+    // Convite para a aluna só com a opção ligada e e-mail válido em Clientes; aí o Google avisa as mudanças.
+    const convidada = op.convidarAluna && typeof e.aluna_email === 'string' && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e.aluna_email) ? e.aluna_email : null
+    const avisos = convidada ? 'all' : 'none'
 
     if (e.situacao !== 'agendada' || !e.data_agendada) {
-      const r = await int.fetch(`${base}/${idEvento}?sendUpdates=none`, { method: 'DELETE', headers: auth })
-      if (r.ok || r.status === 404 || r.status === 410) return { situacao: 'enviado', detalhe: 'Evento removido do Google Agenda da mentora.', id_externo: idEvento }
+      const r = await int.fetch(`${base}/${idEvento}?sendUpdates=${avisos}`, { method: 'DELETE', headers: auth })
+      if (r.ok || r.status === 404 || r.status === 410) return { situacao: 'enviado', detalhe: 'Evento removido do Google Agenda da mentora.', id_externo: idEvento, link_reuniao: null }
       return { situacao: 'falhou', detalhe: `O Google Agenda recusou a remoção (${r.status}).` }
     }
-    // Só o essencial: o evento fica na agenda da mentora, sem dados pessoais além do nome da aluna.
-    const evento = {
-      id: idEvento,
+    // Só o essencial: o evento fica na agenda da mentora, sem dados pessoais além do nome (e do e-mail, se a aluna for convidada).
+    const evento: Linha = {
       status: 'confirmed',
       summary: `${e.encontro} · ${e.aluna_nome}`,
-      description: 'Encontro agendado pelo sistema pedagógico Diamante Business.',
+      description: `Encontro agendado pelo sistema pedagógico Diamante Business.${op.meet ? ' A videochamada é pelo link do Google Meet deste evento.' : ''}`,
       start: { dateTime: `${e.data_agendada}:00`, timeZone: FUSO },
       end: { dateTime: `${e.fim ?? e.data_agendada}:00`, timeZone: FUSO },
+      attendees: convidada ? [{ email: convidada, displayName: e.aluna_nome }] : [],
     }
-    let r = await int.fetch(`${base}?sendUpdates=none`, { method: 'POST', headers: auth, body: JSON.stringify(evento) })
-    if (r.status === 409) r = await int.fetch(`${base}/${idEvento}?sendUpdates=none`, { method: 'PUT', headers: auth, body: JSON.stringify(evento) })
-    if (!r.ok) {
-      const corpo = (await r.json().catch(() => ({}))) as Linha
-      return { situacao: 'falhou', detalhe: `O Google Agenda recusou o evento (${r.status}): ${corpo?.error?.message ?? 'sem detalhe'}` }
+    // Pedido de Meet com id fixo por versão do agendamento: repetir o envio não cria outra sala.
+    const pedidoMeet = { createRequest: { requestId: `${idEvento}-${e.reserva_ativa ?? 'x'}`.slice(0, 60), conferenceSolutionKey: { type: 'hangoutsMeet' } } }
+    const q = `conferenceDataVersion=1&sendUpdates=${avisos}`
+
+    const gravar = async (comMeet: boolean) => {
+      const corpo = { ...evento, ...(comMeet ? { conferenceData: pedidoMeet } : {}) }
+      let r = await int.fetch(`${base}?${q}`, { method: 'POST', headers: auth, body: JSON.stringify({ id: idEvento, ...corpo }) })
+      // Evento já existe (reagendamento ou nova tentativa): PATCH muda horário e título e mantém o Meet que já existe.
+      if (r.status === 409) {
+        r = await int.fetch(`${base}/${idEvento}?${q}`, { method: 'PATCH', headers: auth, body: JSON.stringify(evento) })
+        if (r.ok && comMeet) {
+          const atual = (await r.clone().json().catch(() => ({}))) as Linha
+          if (!linkDoMeet(atual)) r = await int.fetch(`${base}/${idEvento}?${q}`, { method: 'PATCH', headers: auth, body: JSON.stringify({ conferenceData: pedidoMeet }) })
+        }
+      }
+      return r
     }
-    return { situacao: 'enviado', detalhe: 'Evento no Google Agenda da mentora atualizado.', id_externo: idEvento }
+
+    let r = await gravar(op.meet)
+    let corpo = (await r.json().catch(() => ({}))) as Linha
+    let semMeet = ''
+    if (!r.ok && op.meet && r.status === 400) {
+      // Agenda que não aceita Meet (ex.: conta de serviço sem agir em nome da mentora): o evento sai sem link.
+      semMeet = ` O Google não criou o Meet (${corpo?.error?.message ?? 'sem detalhe'}). Para ter o link, use uma conta Google Workspace com GOOGLE_AGIR_COMO_MENTORA=1.`
+      r = await gravar(false)
+      corpo = (await r.json().catch(() => ({}))) as Linha
+    }
+    if (!r.ok) return { situacao: 'falhou', detalhe: `O Google Agenda recusou o evento (${r.status}): ${corpo?.error?.message ?? 'sem detalhe'}` }
+
+    let link = linkDoMeet(corpo)
+    if (op.meet && !link && !semMeet && corpo?.conferenceData?.createRequest?.status?.statusCode === 'pending') {
+      // O Meet às vezes fica "pendente" por um instante: uma nova leitura costuma trazer o link.
+      const g = await int.fetch(`${base}/${idEvento}`, { headers: auth })
+      if (g.ok) link = linkDoMeet((await g.json().catch(() => ({}))) as Linha)
+      if (!link) return { situacao: 'falhou', detalhe: 'Evento gravado, mas o Google ainda não devolveu o link do Meet. Tente novamente em instantes.', id_externo: idEvento }
+    }
+    const partes = ['Evento no Google Agenda da mentora atualizado.', link ? 'Link do Google Meet criado.' : '', convidada ? 'Aluna convidada pelo Google.' : '']
+    return { situacao: 'enviado', detalhe: partes.filter(Boolean).join(' ') + semMeet, id_externo: idEvento, link_reuniao: op.meet ? link : null }
   } catch (err) {
     return { situacao: 'falhou', detalhe: (err as Error)?.message ?? 'Falha ao falar com o Google Agenda.' }
   }
@@ -210,6 +271,7 @@ export async function processarIntegracoes(db: BD, int: Integracoes | undefined,
   const e = await dadosDoEncontro(db, ocorrenciaId)
   if (!e) return
   const ultimaGoogle = (await db.get("SELECT id FROM ped_integracoes WHERE ocorrencia_id = ? AND canal = 'google_agenda' ORDER BY criado_em DESC, rowid DESC LIMIT 1", ocorrenciaId)) as Linha | undefined
+  const op = await opcoesAgenda(db)
 
   for (const l of linhas) {
     let res: Resultado
@@ -229,11 +291,12 @@ export async function processarIntegracoes(db: BD, int: Integracoes | undefined,
     // Sem configuração nenhuma, cada canal informa exatamente quais segredos faltam (nada é chamado).
     const efetivo: Integracoes = int ?? { config: {}, fetch: () => Promise.reject(new Error('Integrações não configuradas.')) }
     try {
-      res = l.canal === 'whatsapp' ? await enviarWhatsapp(efetivo, l, e) : await sincronizarGoogle(efetivo, e)
+      res = l.canal === 'whatsapp' ? await enviarWhatsapp(efetivo, l, e) : await sincronizarGoogle(efetivo, e, op)
     } catch (err) {
       res = { situacao: 'falhou', detalhe: (err as Error)?.message ?? 'Falha inesperada no envio.' }
     }
     await db.run('UPDATE ped_integracoes SET situacao = ?, detalhe = ?, id_externo = COALESCE(?, id_externo), atualizado_em = ? WHERE id = ?', res.situacao, res.detalhe, res.id_externo ?? null, agoraIso(), l.id)
+    if (res.link_reuniao !== undefined) await db.run('UPDATE ped_ocorrencias SET link_reuniao = ? WHERE id = ?', res.link_reuniao, ocorrenciaId)
   }
 }
 
@@ -243,5 +306,6 @@ export async function situacaoIntegracoes(db: BD, ocorrenciaId: string) {
   const ultima = (canal: Canal) => linhas.find((l) => l.canal === canal && l.situacao !== 'descartado') ?? null
   const canais = { whatsapp: ultima('whatsapp'), google_agenda: ultima('google_agenda') }
   const pendente = Object.values(canais).some((l) => l && l.situacao !== 'enviado')
-  return { pendente, canais, historico: linhas }
+  const o = (await db.get('SELECT link_reuniao FROM ped_ocorrencias WHERE id = ?', ocorrenciaId)) as Linha | undefined
+  return { pendente, canais, historico: linhas, link_reuniao: o?.link_reuniao ?? null }
 }

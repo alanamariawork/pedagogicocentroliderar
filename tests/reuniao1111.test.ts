@@ -25,6 +25,8 @@ const contar = async (sql: string, ...p: unknown[]) => (await amb.db.get<{ n: nu
 /* Envio falso: registra as chamadas e responde como os provedores. Nenhuma mensagem real é enviada. */
 const chamadas: { url: string; metodo: string; corpo: string }[] = []
 let falharWhatsapp = 0
+const eventosGoogle: Record<string, J> = {}
+let googleSemMeet = false
 const config: ConfigIntegracoes = { whatsappToken: 'token-ficticio', whatsappNumeroId: '000000', whatsappModelos: { confirmar: 'confirmacao_ficticia', atualizar: 'remarcacao_ficticia', cancelar: 'cancelamento_ficticio' }, whatsappIdioma: 'pt_BR', googleEmailConta: 'conta@ficticia.iam.gserviceaccount.com' }
 const fetchFalso: typeof fetch = async (entrada, init) => {
   const url = String(entrada)
@@ -38,7 +40,29 @@ const fetchFalso: typeof fetch = async (entrada, init) => {
     return json({ messages: [{ id: `wamid.${chamadas.length}` }] })
   }
   if (url === 'https://oauth2.googleapis.com/token') return json({ access_token: 'token-google-ficticio' })
-  if (url.startsWith('https://www.googleapis.com/calendar/')) return init?.method === 'DELETE' ? new Response(null, { status: 204 }) : json({ id: 'evento' })
+  if (url.startsWith('https://www.googleapis.com/calendar/')) {
+    // Agenda falsa: guarda os eventos por id e cria um Meet quando pedido (ou recusa, como uma agenda sem Meet).
+    const id = new URL(url).pathname.split('/events/')[1]
+    const corpo = init?.body ? JSON.parse(String(init.body)) : {}
+    const comMeet = (ev: J) => {
+      if (!corpo.conferenceData?.createRequest || ev.hangoutLink) return ev
+      return { ...ev, hangoutLink: `https://meet.google.com/fic-${Object.keys(eventosGoogle).length}-xyz`, conferenceData: { entryPoints: [{ entryPointType: 'video', uri: 'x' }] } }
+    }
+    if (corpo.conferenceData && googleSemMeet) return json({ error: { message: 'Invalid conference type value.' } }, 400)
+    const metodo = init?.method ?? 'GET'
+    if (metodo === 'DELETE') {
+      delete eventosGoogle[id!]
+      return new Response(null, { status: 204 })
+    }
+    if (metodo === 'POST') {
+      if (eventosGoogle[corpo.id]) return json({ error: { message: 'duplicate' } }, 409)
+      eventosGoogle[corpo.id] = comMeet({ ...corpo, conferenceData: undefined })
+      return json(eventosGoogle[corpo.id])
+    }
+    if (!eventosGoogle[id!]) return json({}, 404)
+    if (metodo === 'PATCH') eventosGoogle[id!] = comMeet({ ...eventosGoogle[id!], ...corpo, conferenceData: eventosGoogle[id!].conferenceData })
+    return json(eventosGoogle[id!])
+  }
   return json({}, 404)
 }
 
@@ -305,11 +329,48 @@ describe('Confirmação por WhatsApp e Google Agenda (envio falso)', () => {
     await c.coord.post(`/ocorrencias/${o.id}/desmarcar`, { motivo: 'teste' })
     const idEvento = `cl${o.id.replace(/-/g, '')}`
     const google = chamadas.filter((x) => x.url.includes('/calendar/'))
-    expect(google.map((x) => x.metodo)).toEqual(['POST', 'DELETE'])
+    expect(google.map((x) => x.metodo)).toEqual(['POST', 'PATCH', 'DELETE']) // o evento já existia: PATCH mantém o mesmo Meet
     expect(JSON.parse(google[0].corpo).id).toBe(idEvento)
-    expect(google[1].url).toContain(idEvento)
+    expect(google[2].url).toContain(idEvento)
     const modelos = chamadas.filter((x) => x.url.includes('graph.facebook.com')).map((x) => JSON.parse(x.corpo).template.name)
     expect(modelos).toEqual(['remarcacao_ficticia', 'cancelamento_ficticio'])
+  })
+
+  it('o evento sai com link do Google Meet; reagendar mantém o link; desmarcar tira; aluna e equipe veem o link', async () => {
+    const o = (await c.coord.get(`/pessoas/${bia.pessoa}`)).matriculas[0].ocorrencias.find((x: J) => !['realizada', 'cancelada', 'agendada'].includes(x.situacao))
+    chamadas.length = 0
+    const r = await c.coord.post(`/ocorrencias/${o.id}/agendar`, { inicio: `${D2}T17:00`, fora_disponibilidade: true, motivo: 'teste do Meet' })
+    const post = chamadas.find((x) => x.url.includes('/calendar/') && x.metodo === 'POST')!
+    expect(post.url).toContain('conferenceDataVersion=1')
+    expect(JSON.parse(post.corpo).conferenceData.createRequest.conferenceSolutionKey.type).toBe('hangoutsMeet')
+    expect(JSON.parse(post.corpo).attendees).toEqual([]) // convite à aluna vem desligado
+    const link = r.confirmacao.link_reuniao as string
+    expect(link).toMatch(/^https:\/\/meet\.google\.com\//)
+    expect(r.confirmacao.canais.google_agenda.detalhe).toContain('Google Meet')
+    expect((await bia.cliente.get('/portal/agenda')).encontros.find((x: J) => x.id === o.id).link_reuniao).toBe(link)
+    expect((await c.coord.get(`/ocorrencias/${o.id}/confirmacoes`)).link_reuniao).toBe(link)
+
+    await c.coord.post(`/ocorrencias/${o.id}/reagendar`, { inicio: `${D2}T18:00`, fora_disponibilidade: true, motivo: 'teste' })
+    expect((await c.coord.get(`/ocorrencias/${o.id}/confirmacoes`)).link_reuniao).toBe(link)
+    await c.coord.post(`/ocorrencias/${o.id}/desmarcar`, { motivo: 'teste' })
+    expect((await c.coord.get(`/ocorrencias/${o.id}/confirmacoes`)).link_reuniao).toBeNull()
+  })
+
+  it('agenda sem Meet: o evento sai sem link e o motivo fica dito; com convite ligado, a aluna é convidada pelo Google', async () => {
+    const o = (await c.coord.get(`/pessoas/${bia.pessoa}`)).matriculas[0].ocorrencias.find((x: J) => !['realizada', 'cancelada', 'agendada'].includes(x.situacao))
+    await c.coord.put('/configuracoes', { agenda_convidar_aluna: '1' })
+    googleSemMeet = true
+    chamadas.length = 0
+    const r = await c.coord.post(`/ocorrencias/${o.id}/agendar`, { inicio: `${D2}T17:00`, fora_disponibilidade: true, motivo: 'teste sem Meet' })
+    googleSemMeet = false
+    await c.coord.put('/configuracoes', { agenda_convidar_aluna: '0' })
+    expect(r.confirmacao.canais.google_agenda.situacao).toBe('enviado')
+    expect(r.confirmacao.canais.google_agenda.detalhe).toContain('GOOGLE_AGIR_COMO_MENTORA')
+    expect(r.confirmacao.link_reuniao).toBeNull()
+    const ultimo = chamadas.filter((x) => x.url.includes('/calendar/') && x.metodo === 'POST').at(-1)!
+    expect(ultimo.url).toContain('sendUpdates=all')
+    expect(JSON.parse(ultimo.corpo).attendees).toEqual([{ email: 'bia@ficticio.local', displayName: 'Bia Fictícia' }])
+    await c.coord.post(`/ocorrencias/${o.id}/desmarcar`, { motivo: 'teste' })
   })
 
   it('sem credenciais, o agendamento segue e fica dito exatamente o que falta', async () => {

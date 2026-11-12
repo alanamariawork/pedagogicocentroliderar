@@ -289,6 +289,8 @@ function Parametros() {
   const [muralVis, setMuralVis] = useState('ativas')
   const [avisoEmail, setAvisoEmail] = useState(true)
   const [avisoWhats, setAvisoWhats] = useState(true)
+  const [meet, setMeet] = useState(true)
+  const [convidar, setConvidar] = useState(false)
   const [salvando, setSalvando] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
   useEffect(() => {
@@ -301,6 +303,8 @@ function Parametros() {
       setMuralVis(cat.configuracoes.mural_visibilidade ?? 'ativas')
       setAvisoEmail((cat.configuracoes.avisos_email ?? '1') === '1')
       setAvisoWhats((cat.configuracoes.avisos_whatsapp ?? '1') === '1')
+      setMeet((cat.configuracoes.agenda_google_meet ?? '1') === '1')
+      setConvidar((cat.configuracoes.agenda_convidar_aluna ?? '0') === '1')
     }
   }, [cat])
   if (!cat) return <Carregando />
@@ -322,6 +326,8 @@ function Parametros() {
               mural_visibilidade: muralVis,
               avisos_email: avisoEmail ? '1' : '0',
               avisos_whatsapp: avisoWhats ? '1' : '0',
+              agenda_google_meet: meet ? '1' : '0',
+              agenda_convidar_aluna: convidar ? '1' : '0',
             })
             invalidarCatalogos()
             fb.sucesso('Parâmetros salvos.')
@@ -346,6 +352,14 @@ function Parametros() {
         <Campo rotulo="Quantos dias à frente a aluna vê horários" dica="Horários vêm da disponibilidade cadastrada em Capacidade e agenda.">
           {(p) => <input type="number" min={1} max={180} className="field-control max-w-32" {...p} value={diasFrente} onChange={(e) => setDiasFrente(e.target.value)} />}
         </Campo>
+        <h3 className="pt-2 text-sm font-semibold">Google Agenda</h3>
+        <p className="text-xs text-ink-muted">Cada encontro agendado vira um evento no Google Agenda da mentora (precisa das credenciais do Google no servidor). Reagendar move o evento; desmarcar remove.</p>
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={meet} onChange={(e) => setMeet(e.target.checked)} /> Criar link do Google Meet em cada encontro
+        </label>
+        <label className="flex items-start gap-2 text-sm">
+          <input type="checkbox" className="mt-1" checked={convidar} onChange={(e) => setConvidar(e.target.checked)} /> Convidar a aluna para o evento (o Google manda o convite e as mudanças para o e-mail dela em Clientes)
+        </label>
         <h3 className="pt-2 text-sm font-semibold">Avisos às alunas</h3>
         <p className="text-xs text-ink-muted">Todo aviso do sino também sai pelos canais ligados aqui, para o e-mail e o telefone cadastrados em Clientes.</p>
         <label className="flex items-center gap-2 text-sm">

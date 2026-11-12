@@ -6,6 +6,7 @@ import { useDados, type Reg } from '../../lib/api'
 import { formatarData } from '../../../shared/datas'
 import { hrefAluna } from '../rotas'
 import { DialogDesmarcar, EscolherHorario, dataHora } from './Mentorias'
+import { BotaoMeet } from '../../components/BotaoMeet'
 
 /** Agenda da aluna: os encontros marcados (os mesmos que a equipe vê na agenda) e os já realizados. */
 export function Agenda() {
@@ -44,6 +45,7 @@ export function Agenda() {
                 </span>
                 <span className="flex flex-wrap items-center gap-2">
                   <Selo tom="vinho">Agendado</Selo>
+                  <BotaoMeet link={e.link_reuniao} />
                   {e.pode_alterar ? (
                     <>
                       <button type="button" className="btn-secondary btn-sm" onClick={() => setRemarcar(e)}>

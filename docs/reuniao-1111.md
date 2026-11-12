@@ -74,3 +74,11 @@ Seis questões novas estão em “Decisões pendentes”: qual presença acompan
 - Materiais da Biblioteca que já existiam continuam aparecendo soltos, pela categoria (ex.: Ferramentas).
 - Banco: migration `0005_ped_biblioteca_estantes.sql` (tabelas novas `ped_estantes` e `ped_conteudos_progresso`, coluna nova `estante_id` em `ped_conteudos`). Nada existente é apagado.
 - Limite: só vídeos do Vimeo são aceitos (é o que permite ler o quanto foi assistido sem script de terceiros). Link de YouTube é recusado com mensagem.
+
+## Atualização de 12/11: Google Agenda com link do Google Meet
+
+- Cada encontro agendado (pela equipe ou pela aluna no portal) vira um evento no Google Agenda da mentora, como já era; agora o evento **sai com um link do Google Meet**. Reagendar move o mesmo evento e mantém o mesmo link; desmarcar remove o evento e o link.
+- O link fica gravado no encontro (`ped_ocorrencias.link_reuniao`, migration `0006_ped_google_meet.sql`). A aluna vê o botão **Entrar no Meet** em Início, Minha agenda e Mentorias; a equipe vê o link na confirmação do agendamento.
+- Em **Configurações › Parâmetros › Google Agenda**: “Criar link do Google Meet” (ligado) e “Convidar a aluna para o evento” (desligado; ligado, o Google manda o convite e as mudanças para o e-mail da aluna em Clientes).
+- Requisito: credenciais do Google no servidor (`GOOGLE_CLIENT_EMAIL`, `GOOGLE_PRIVATE_KEY`) e, para o Meet, Google Workspace com delegação (`GOOGLE_AGIR_COMO_MENTORA=1`). Passo a passo em [producao.md](producao.md). Se o Google recusar o Meet, o evento é gravado sem link e o motivo aparece na confirmação.
+- Sem credenciais, nada é enviado nem simulado: o agendamento funciona e a confirmação fica “não configurado”.

@@ -7,6 +7,7 @@ import { cx } from '../../lib/format'
 import { formatarData } from '../../../shared/datas'
 import { hrefAluna } from '../rotas'
 import { progressoMeta } from '../metas'
+import { BotaoMeet } from '../../components/BotaoMeet'
 import { LinhaDoTempo } from './LinhaDoTempo'
 
 const dataHora = (h: string) => `${formatarData(h.slice(0, 10))} às ${h.slice(11, 16)}`
@@ -145,7 +146,10 @@ function ProximosEncontros({ encontros }: { encontros: Reg[] }) {
                 {o.profissional_nome && <span className="text-ink-muted"> · {o.profissional_nome}</span>}
                 <span className="block text-xs text-ink-muted">{dataHora(o.data_agendada)}</span>
               </span>
-              <Selo tom="vinho">Agendado</Selo>
+              <span className="flex flex-wrap items-center gap-2">
+                <Selo tom="vinho">Agendado</Selo>
+                <BotaoMeet link={o.link_reuniao} />
+              </span>
             </li>
           ))}
         </ul>

@@ -7,6 +7,7 @@ import { ativos, equipe, useCatalogos } from '../state/Catalogos'
 import { useSessao } from '../state/Sessao'
 import { useFeedback } from '../components/Feedback'
 import { diaDaSemana, formatarData, formatarHoras, hojeSP, somarDias, somarMinutos } from '../../shared/datas'
+import { BotaoMeet } from '../components/BotaoMeet'
 import { mesclarIntervalos, type Intervalo } from '../../shared/calculos'
 
 export type AcaoOcorrencia = 'agendar' | 'reagendar' | 'desmarcar' | 'contato' | 'impedimento' | 'realizar' | 'situacao' | 'cancelar' | 'conferir' | 'confirmacao'
@@ -57,7 +58,7 @@ function DialogConfirmacao({ ocorrencia, onFechar, onConcluir }: P) {
     <FormDialog
       aberto
       titulo="Confirmação do agendamento"
-      descricao="O agendamento já está gravado. Aqui fica o resultado do envio por WhatsApp e do evento no Google Agenda."
+      descricao="O agendamento já está gravado. Aqui fica o resultado do envio por WhatsApp e do evento no Google Agenda, com o link do Google Meet."
       rotulo="Tentar novamente"
       onFechar={onFechar}
       onEnviar={async () => {
@@ -69,6 +70,14 @@ function DialogConfirmacao({ ocorrencia, onFechar, onConcluir }: P) {
     >
       {erro && <p className="text-sm text-danger">{erro}</p>}
       {!dados && !erro && <p className="text-sm text-ink-muted">Carregando…</p>}
+      {dados?.link_reuniao && (
+        <div className="flex flex-wrap items-center gap-2 rounded border border-line px-3 py-2 text-sm">
+          <span className="min-w-0 flex-1 truncate">
+            Google Meet: <span className="text-ink-soft">{dados.link_reuniao}</span>
+          </span>
+          <BotaoMeet link={dados.link_reuniao} rotulo="Abrir" className="btn-secondary btn-sm" />
+        </div>
+      )}
       {dados && (
         <ul className="space-y-2">
           {Object.entries(CANAL_CONFIRMACAO).map(([k, nome]) => {

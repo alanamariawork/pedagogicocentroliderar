@@ -7,6 +7,7 @@ import { Selo } from '../../components/Selos'
 import { useFeedback } from '../../components/Feedback'
 import { mensagemDeErro, post, put, useDados, type Reg } from '../../lib/api'
 import { cx } from '../../lib/format'
+import { BotaoMeet } from '../../components/BotaoMeet'
 import { agoraSP, formatarData, somarMinutos } from '../../../shared/datas'
 
 export const dataHora = (h: string) => `${formatarData(h.slice(0, 10))} às ${h.slice(11, 16)}`
@@ -228,6 +229,7 @@ export function SaldoMentorias({ tipoId }: { tipoId?: string }) {
                           </span>
                           <span className="flex flex-wrap items-center gap-2">
                             <Selo tom={o.situacao === 'agendada' ? 'vinho' : 'sucesso'}>{o.situacao === 'agendada' ? 'Agendado' : 'Realizado'}</Selo>
+                            <BotaoMeet link={o.link_reuniao} />
                             {o.situacao === 'agendada' && podeAlterar(o.data_agendada, antecedencia) && (
                               <>
                                 <button type="button" className="btn-secondary btn-sm" onClick={() => setRemarcar({ ...o, item_id: i.id, tipo: t.nome })}>

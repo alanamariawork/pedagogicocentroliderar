@@ -425,6 +425,8 @@ export async function popularDemonstracao(amb: Ambiente) {
       await api.post(`/aulas/${aula}/publicar`, { publicado: true })
       if (visto) await aluna1.post(`/portal/aulas/${aula}/progresso`, { percentual: visto })
     }
+    // Prévia sem Google configurado: link do Meet fictício nos encontros agendados (no ar, quem cria é o Google).
+    await db.run("UPDATE ped_ocorrencias SET link_reuniao = 'https://meet.google.com/demo-abcd-efg' WHERE situacao = 'agendada'")
     // Biblioteca: uma estante de demonstração com vídeo (parte assistida pela aluna 1) e um link.
     const estanteDemo = (await api.post('/estantes', { titulo: '[Demo] Vendas', descricao: 'Estante de demonstração: troque pelos materiais oficiais.' })).id
     await api.post(`/estantes/${estanteDemo}/publicar`, { publicada: true })

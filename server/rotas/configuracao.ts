@@ -109,6 +109,8 @@ const CHAVES_CONFIG = {
   mural_visibilidade: z.enum(['ativas', 'todas']),
   avisos_email: z.enum(['0', '1']),
   avisos_whatsapp: z.enum(['0', '1']),
+  agenda_google_meet: z.enum(['0', '1']),
+  agenda_convidar_aluna: z.enum(['0', '1']),
 } as const
 
 export function rotasConfiguracao(db: BD, ctx: ContextoApp) {
