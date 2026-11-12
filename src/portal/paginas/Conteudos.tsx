@@ -87,7 +87,7 @@ function Item({ c, limite, onAssistido }: { c: Reg; limite: number; onAssistido:
             ))}
         </div>
         {c.descricao && <p className="mt-1 text-sm whitespace-pre-line text-ink-soft">{c.descricao}</p>}
-        {(c.link || c.arquivo_nome || c.compra_url) && (
+        {(c.link || c.arquivo_nome || c.compra_url || c.editora?.length) && (
           <div className="mt-3 flex flex-wrap gap-2">
             {c.link && (
               <a href={c.link} target="_blank" rel="noopener noreferrer" className="btn-secondary btn-sm">
@@ -99,7 +99,9 @@ function Item({ c, limite, onAssistido }: { c: Reg; limite: number; onAssistido:
                 <Download className="size-4" aria-hidden /> {c.arquivo_nome} {c.arquivo_tamanho ? `(${tamanhoArquivo(c.arquivo_tamanho)})` : ''}
               </a>
             )}
-            {c.compra_url && (
+            {/* Produto da Editora Prosperar ligado ao material: substitui o link de compra avulso. */}
+            {(c.editora as ProdutoEditora[] | undefined)?.map((p) => <BotaoEditora key={p.url} p={p} />)}
+            {c.compra_url && !c.editora?.length && (
               <a href={c.compra_url} target="_blank" rel="noopener noreferrer" className="btn-primary btn-sm">
                 <ShoppingBag className="size-4" aria-hidden /> Comprar
               </a>
@@ -108,5 +110,37 @@ function Item({ c, limite, onAssistido }: { c: Reg; limite: number; onAssistido:
         )}
       </div>
     </li>
+  )
+}
+
+interface ProdutoEditora {
+  rotulo: string
+  titulo: string
+  tipo: 'produto' | 'colecao'
+  url: string
+  preco_a_partir_centavos: number | null
+  situacao: 'disponivel' | 'pre_venda' | 'esgotado'
+}
+
+const SITUACAO: Record<ProdutoEditora['situacao'], string> = { disponivel: 'Disponível', pre_venda: 'Pré-venda', esgotado: 'Esgotado no momento' }
+const reais = (c: number) => (c / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+
+/** "COMPRAR NA EDITORA PROSPERAR": abre a loja com origem=biblioteca e o id do material (atribuição da venda). */
+function BotaoEditora({ p }: { p: ProdutoEditora }) {
+  const esgotado = p.situacao === 'esgotado'
+  return (
+    <a
+      href={p.url}
+      target="_blank"
+      rel="noopener"
+      className={esgotado ? 'btn-secondary btn-sm' : 'btn-primary btn-sm'}
+      aria-label={`${p.rotulo}: ${p.titulo}. ${SITUACAO[p.situacao]}${p.preco_a_partir_centavos ? `, a partir de ${reais(p.preco_a_partir_centavos)}` : ''}`}
+    >
+      <ShoppingBag className="size-4" aria-hidden /> {p.rotulo}
+      <span className="text-xs font-normal opacity-90">
+        · {SITUACAO[p.situacao]}
+        {p.preco_a_partir_centavos ? ` · ${p.tipo === 'colecao' ? 'a partir de ' : ''}${reais(p.preco_a_partir_centavos)}` : ''}
+      </span>
+    </a>
   )
 }

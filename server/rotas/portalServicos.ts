@@ -318,6 +318,42 @@ export function rotasPortalServicos(db: BD, ctx: ContextoApp) {
   // Biblioteca: material fora de estante, ou dentro de estante publicada. Estante retirada esconde tudo o que tem nela.
   const VISIVEL = '(c.estante_id IS NULL OR EXISTS (SELECT 1 FROM ped_estantes e WHERE e.id = c.estante_id AND e.publicada = 1))'
 
+  // Editora Prosperar (loja online do backoffice, mesmo banco D1): produtos ligados a cada material
+  // na aba Loja online › Biblioteca. A visão loja_vitrine_material é o contrato entre os dois
+  // sistemas: só produto publicado, com preço e disponibilidade calculados pelo estoque da Loja.
+  // Se a visão não existir (backoffice sem a migração 0018), a Biblioteca segue igual, sem botão.
+  async function comProdutosEditora(bd: BD, itens: Linha[]): Promise<Linha[]> {
+    if (!itens.length) return itens
+    let vinculos: Linha[] = []
+    try {
+      const ids = itens.map((c) => c.id)
+      vinculos = (await bd.all(
+        `SELECT conteudo_id, ordem, rotulo, tipo, titulo, url_base, preco_a_partir_centavos, disponivel, pre_venda
+           FROM loja_vitrine_material WHERE conteudo_id IN (${ids.map(() => '?').join(',')}) ORDER BY conteudo_id, ordem`, ...ids)) as Linha[]
+    } catch {
+      return itens
+    }
+    return itens.map((c) => {
+      const editora = vinculos
+        .filter((v) => v.conteudo_id === c.id && typeof v.url_base === 'string' && /^https?:\/\//.test(v.url_base))
+        .map((v) => {
+          const url = new URL(v.url_base)
+          url.searchParams.set('origem', 'biblioteca')
+          url.searchParams.set('material_id', String(c.id))
+          return {
+            rotulo: v.rotulo || 'COMPRAR NA EDITORA PROSPERAR',
+            titulo: v.titulo,
+            tipo: v.tipo,
+            url: url.toString(),
+            preco_a_partir_centavos: v.preco_a_partir_centavos ?? null,
+            // Coleção não tem estoque próprio (null); produto: disponível = saldo - reservas.
+            situacao: v.tipo === 'colecao' ? 'disponivel' : Number(v.disponivel) > 0 ? 'disponivel' : v.pre_venda ? 'pre_venda' : 'esgotado',
+          }
+        })
+      return editora.length ? { ...c, editora } : c
+    })
+  }
+
   r.get('/portal/conteudos/:secao', async (req, res) => {
     const secao = req.params.secao
     if (!['rotina', 'biblioteca', 'livros'].includes(secao as string)) throw new ErroHttp(404, 'Seção não encontrada.')
@@ -330,7 +366,7 @@ export function rotasPortalServicos(db: BD, ctx: ContextoApp) {
          FROM ped_conteudos c LEFT JOIN ped_conteudos_progresso p ON p.conteudo_id = c.id AND p.pessoa_id = ?
          WHERE c.secao = ? AND c.publicado = 1 AND ${VISIVEL} ORDER BY COALESCE(c.categoria, ''), c.ordem, c.titulo`, pessoaId, secao)
     const estantes = secao === 'biblioteca' ? await db.all('SELECT id, titulo, descricao, ordem FROM ped_estantes WHERE publicada = 1 ORDER BY ordem, titulo') : []
-    res.json({ itens, estantes, percentual_assistida: PERCENTUAL_ASSISTIDA })
+    res.json({ itens: await comProdutosEditora(db, itens as Linha[]), estantes, percentual_assistida: PERCENTUAL_ASSISTIDA })
   })
 
   // O player do Vimeo informa o ponto alcançado; o servidor guarda o maior valor (voltar o vídeo não tira progresso).
