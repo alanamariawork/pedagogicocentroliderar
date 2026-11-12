@@ -1,17 +1,13 @@
-import type { AddressInfo } from 'node:net'
-import { agoraIso, novoId, type BD } from './db'
-import { criarApp } from './app'
-import { gerarHashSenha } from './auth'
-import { hoje } from './servicos'
-import { inicioDaSemana, mesDe, somarDias, somarMeses } from '../shared/datas'
+import type { Ambiente, Cliente } from './ambiente'
+import { hoje } from '../../server/servicos'
+import { inicioDaSemana, mesDe, somarDias, somarMeses } from '../../shared/datas'
 
 /**
- * Dados de DEMONSTRAÇÃO. Tudo aqui é fictício: alunas, quantidades, datas e
- * atividades. Nenhum número representa condição oficial de pacote. Os cadastros são
- * feitos pela própria API, passando pelas mesmas regras que a equipe usa na tela.
+ * Dados de DEMONSTRAÇÃO, SÓ PARA TESTES. Tudo aqui é fictício: alunas, quantidades, datas e
+ * atividades. Nenhum número representa condição oficial de pacote. Os cadastros são feitos pela
+ * própria API, passando pelas mesmas regras que a equipe usa na tela. Os e-mails @demo.local
+ * nunca vão para o banco de produção (não há seed nas migrations).
  */
-export const SENHA_DEMO = process.env.SENHA_DEMO ?? 'diamante2026'
-
 export const USUARIOS_DEMO = [
   { email: 'admin@demo.local', nome: 'Admin (demo)', perfil: 'admin' },
   { email: 'coordenacao@demo.local', nome: 'Coordenação (demo)', perfil: 'coordenacao' },
@@ -19,39 +15,16 @@ export const USUARIOS_DEMO = [
   { email: 'mentora@demo.local', nome: 'Mentora Tutoria (demo)', perfil: 'mentora', profissional: 'Mentora de Tutoria (demo)' },
 ] as const
 
-class Cliente {
-  cookie = ''
-  constructor(private base: string) {}
-  async req<T = Record<string, unknown>>(metodo: string, caminho: string, corpo?: unknown): Promise<T> {
-    const r = await fetch(this.base + caminho, {
-      method: metodo,
-      headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'diamante-business', Cookie: this.cookie },
-      body: corpo === undefined ? undefined : JSON.stringify(corpo),
-    })
-    const set = r.headers.get('set-cookie')
-    if (set) this.cookie = set.split(';')[0]
-    const json = (await r.json().catch(() => ({}))) as T & { erro?: string }
-    if (!r.ok) throw new Error(`${metodo} ${caminho} → ${r.status}: ${json.erro}`)
-    return json
-  }
-  get = <T = Record<string, unknown>>(c: string) => this.req<T>('GET', c)
-  post = <T = Record<string, unknown>>(c: string, b: unknown) => this.req<T>('POST', c, b)
-  put = <T = Record<string, unknown>>(c: string, b: unknown) => this.req<T>('PUT', c, b)
-}
+/** Contas criadas pela demonstração (e-mail → id de usuário). */
+export const CONTAS: Record<string, string> = {}
 
 type Ficha = { matriculas: { id: string; itens: { id: string; descricao: string }[]; ocorrencias: { id: string; item_id: string; numero: number }[] }[] }
 
-export async function popularDemonstracao(db: BD) {
-  const agora = agoraIso()
-  db.prepare("INSERT INTO usuarios (id, nome, email, senha_hash, perfil, ativo, criado_em, atualizado_em) VALUES (?,?,?,?, 'admin', 1, ?, ?)").run(
-    novoId(), USUARIOS_DEMO[0].nome, USUARIOS_DEMO[0].email, gerarHashSenha(SENHA_DEMO), agora, agora)
-
-  const servidor = criarApp(db).listen(0, '127.0.0.1')
-  await new Promise((ok) => servidor.once('listening', ok))
-  const base = `http://127.0.0.1:${(servidor.address() as AddressInfo).port}/api`
-  const api = new Cliente(base)
-  try {
-    await api.post('/auth/login', { email: USUARIOS_DEMO[0].email, senha: SENHA_DEMO })
+export async function popularDemonstracao(amb: Ambiente) {
+  const db = amb.db
+  CONTAS[USUARIOS_DEMO[0].email] = await amb.criarEquipe(USUARIOS_DEMO[0].email, USUARIOS_DEMO[0].nome, { perfil: 'admin' })
+  const api: Cliente = await amb.entrar(CONTAS[USUARIOS_DEMO[0].email])
+  {
     const h = hoje()
     const mes = mesDe(h)
     // Data daqui a N dias, ou hoje se isso cair no mês seguinte (para a demonstração ter itens no mês corrente).
@@ -62,7 +35,9 @@ export async function popularDemonstracao(db: BD) {
       janela_termino_dias: 45,
       texto_ajuda_aluna: 'Precisa de ajuda? Fale com o time de Sucesso do Cliente pelo seu grupo individual de acompanhamento no WhatsApp, de segunda a sexta, das 9h às 18h. (Texto de demonstração: ajuste em Configurações.)',
     })
-    const programa = (await api.post<{ id: string }>('/catalogos/programas', { nome: 'Diamante Business', descricao: 'Programa de mentoria do Centro Liderar — Grupo Mendes' })).id
+    // O programa e as profissionais dos planos oficiais já vêm da migration 0003: reaproveita pelo nome.
+    const jaExiste = async (tabela: string, nome: string) => ((await db.get(`SELECT id FROM ${tabela} WHERE lower(nome) = lower(?)`, nome)) as { id: string } | undefined)?.id
+    const programa = (await jaExiste('ped_programas', 'Diamante Business')) ?? (await api.post('/catalogos/programas', { nome: 'Diamante Business', descricao: 'Programa de mentoria do Centro Liderar — Grupo Mendes' })).id
 
     // Profissionais citadas no material de onboarding. Especialidades conforme o material; ajuste em Configurações.
     const prof: Record<string, string> = {}
@@ -75,7 +50,7 @@ export async function popularDemonstracao(db: BD) {
       ['cs', 'Time de Sucesso do Cliente', 'Rota inicial e acompanhamento'],
       ['tutoria', 'Mentora de Tutoria (demo)', 'Tutorias (demonstração)'],
     ] as const)
-      prof[chave] = (await api.post<{ id: string }>('/catalogos/profissionais', { nome, especialidade: esp })).id
+      prof[chave] = (await jaExiste('ped_profissionais', nome)) ?? (await api.post('/catalogos/profissionais', { nome, especialidade: esp })).id
 
     // Tipos de entregável observados na planilha de acompanhamento. Durações são FICTÍCIAS (demonstração).
     const tipo: Record<string, string> = {}
@@ -88,7 +63,7 @@ export async function popularDemonstracao(db: BD) {
       ['juridico', 'Diagnóstico jurídico', 45, true],
       ['destrave', 'Destrave em grupo', 60, false],
     ] as const)
-      tipo[chave] = (await api.post<{ id: string }>('/catalogos/tipos-entregavel', { nome, duracao_padrao_min: dur, individual })).id
+      tipo[chave] = (await api.post('/catalogos/tipos-entregavel', { nome, duracao_padrao_min: dur, individual })).id
 
     const motivos: Record<string, string> = {}
     for (const [chave, nome, exige] of [
@@ -99,21 +74,15 @@ export async function popularDemonstracao(db: BD) {
       ['reagendamento', 'Reagendamento solicitado', false],
       ['outro', 'Outro', true],
     ] as const)
-      motivos[chave] = (await api.post<{ id: string }>('/catalogos/motivos-impedimento', { nome, exige_descricao: exige })).id
+      motivos[chave] = (await api.post('/catalogos/motivos-impedimento', { nome, exige_descricao: exige })).id
 
     /* ---------- Usuárias da equipe ---------- */
+    // As contas nascem no backoffice; o perfil pedagógico é escolhido na tela de Usuários do pedagógico.
     for (const u of USUARIOS_DEMO.slice(1)) {
-      await api.post('/usuarios', {
-        nome: u.nome,
-        email: u.email,
-        perfil: u.perfil,
-        senha_inicial: SENHA_DEMO,
-        profissional_id: 'profissional' in u ? prof.tutoria : null,
-      })
+      CONTAS[u.email] = await amb.criarEquipe(u.email, u.nome)
+      await api.put(`/usuarios/${CONTAS[u.email]}`, { perfil: u.perfil, profissional_id: 'profissional' in u ? prof.tutoria : null })
     }
-    db.prepare('UPDATE usuarios SET trocar_senha = 0').run()
-    const usuarios = await api.get<{ id: string; email?: string }[]>('/usuarios')
-    const uid = (email: string) => usuarios.find((u) => u.email === email)!.id
+    const uid = (email: string) => CONTAS[email]
     const suporte = uid('suporte@demo.local')
     const coord = uid('coordenacao@demo.local')
 
@@ -121,7 +90,7 @@ export async function popularDemonstracao(db: BD) {
     // Nomes relatados na reunião (RN05). A ordem e a numeração oficiais estão em "Decisões pendentes".
     const trilhas: string[] = []
     for (const [n, nome] of ['Diamantes em Ação', 'Diamante no Jogo', 'Diamante que Age'].entries())
-      trilhas.push((await api.post<{ id: string }>('/catalogos/trilhas', { nome, ordem: n + 1 })).id)
+      trilhas.push((await api.post('/catalogos/trilhas', { nome, ordem: n + 1 })).id)
     const pilares: string[] = []
     const focos = [
       'Mentalidade, identidade, hábitos, postura, decisões',
@@ -129,7 +98,7 @@ export async function popularDemonstracao(db: BD) {
       'Marketing, vendas, funil, tráfego, branding, WhatsApp',
     ]
     for (const [n, nome] of ['Ação', 'Gestão', 'Escala'].entries())
-      pilares.push((await api.post<{ id: string }>('/catalogos/pilares', { nome, ordem: n + 1, descricao: focos[n] })).id)
+      pilares.push((await api.post('/catalogos/pilares', { nome, ordem: n + 1, descricao: focos[n] })).id)
 
     // Uma etapa por pilar em cada trilha. Conteúdo oficial das aulas NÃO é inventado:
     // as atividades abaixo são exemplos marcados como demonstração.
@@ -138,7 +107,7 @@ export async function popularDemonstracao(db: BD) {
       let anterior: string | null = null
       for (const [pi, pilar] of pilares.entries()) {
         const nomeP = ['Ação', 'Gestão', 'Escala'][pi]
-        const e: { id: string } = await api.post<{ id: string }>('/etapas', {
+        const e: { id: string } = await api.post('/etapas', {
           trilha_id: trilha,
           pilar_id: pilar,
           titulo: `Pilar ${nomeP}`,
@@ -161,7 +130,7 @@ export async function popularDemonstracao(db: BD) {
     }
 
     /* ---------- Modelos de pacote (FICTÍCIOS) ---------- */
-    const pacote4 = (await api.post<{ id: string }>('/pacotes', {
+    const pacote4 = (await api.post('/pacotes', {
       programa_id: programa,
       nome: 'Modelo demonstrativo · 4 meses',
       descricao: 'Quantidades fictícias apenas para demonstração. Não representam condição oficial.',
@@ -172,7 +141,7 @@ export async function popularDemonstracao(db: BD) {
         { tipo_id: tipo.tutoria, descricao: 'Tutoria', quantidade: 2, profissional_id: prof.tutoria, duracao_min: 45, origem: 'pacote' },
       ],
     })).id
-    const pacote6 = (await api.post<{ id: string }>('/pacotes', {
+    const pacote6 = (await api.post('/pacotes', {
       programa_id: programa,
       nome: 'Modelo demonstrativo · 6 meses',
       descricao: 'Quantidades fictícias apenas para demonstração.',
@@ -183,7 +152,7 @@ export async function popularDemonstracao(db: BD) {
         { tipo_id: tipo.tutoria, descricao: 'Tutoria', quantidade: 4, profissional_id: prof.tutoria, duracao_min: 45, origem: 'pacote' },
       ],
     })).id
-    const pacote12 = (await api.post<{ id: string }>('/pacotes', {
+    const pacote12 = (await api.post('/pacotes', {
       programa_id: programa,
       nome: 'Modelo demonstrativo · 12 meses',
       descricao: 'Quantidades fictícias. Note que tem a mesma quantidade de tutorias do modelo de 6 meses (RN02).',
@@ -214,14 +183,14 @@ export async function popularDemonstracao(db: BD) {
 
     /* ---------- Helpers ---------- */
     const novaAluna = async (nome: string, email: string, matricula: Record<string, unknown>) => {
-      const r = await api.post<{ id: string; matricula_id: string }>('/pessoas', { nome, email, telefone: '(00) 00000-0000', matricula: { programa_id: programa, ...matricula } })
-      db.prepare('UPDATE pessoas SET demonstracao = 1, fonte = ? WHERE id = ?').run('demonstração', r.id)
-      db.prepare('UPDATE matriculas SET demonstracao = 1 WHERE pessoa_id = ?').run(r.id)
-      await api.post('/usuarios', { nome, email, perfil: 'aluna', pessoa_id: r.id, senha_inicial: SENHA_DEMO })
-      db.prepare('UPDATE usuarios SET trocar_senha = 0 WHERE email = ?').run(email)
+      const r = await api.post('/pessoas', { nome, email, telefone: '(00) 00000-0000', matricula: { programa_id: programa, ...matricula } })
+      await db.run('UPDATE ped_alunas SET demonstracao = 1, fonte = ? WHERE id = ?', 'demonstração', r.id)
+      await db.run('UPDATE ped_matriculas SET demonstracao = 1 WHERE pessoa_id = ?', r.id)
+      // Acesso ao Portal: em produção vem do convite do backoffice; aqui a conta de cliente é criada direto.
+      CONTAS[email] = await amb.criarAcessoPortal(email, r.id)
       return r
     }
-    const ficha = (pid: string) => api.get<Ficha>(`/pessoas/${pid}`)
+    const ficha = (pid: string) => api.get(`/pessoas/${pid}`)
     const ocorr = (f: Ficha, mid: string, desc: string) => {
       const m = f.matriculas.find((x) => x.id === mid)!
       const item = m.itens.find((i) => i.descricao.startsWith(desc))!
@@ -247,7 +216,7 @@ export async function popularDemonstracao(db: BD) {
       })
     const jornada = async (mid: string, trilha: number, pilar: number) => {
       await api.post(`/matriculas/${mid}/jornada`, { trilha_id: trilhas[trilha], pilar_id: pilares[pilar], diagnostico_operacional: 'Diagnóstico operacional de demonstração.', liberar_etapas: [etapas[`${trilha}-0`]] })
-      return api.get<{ id: string; etapas: { id: string; etapa_id: string; atividades: { id: string }[] }[] }>(`/matriculas/${mid}/jornada`)
+      return api.get(`/matriculas/${mid}/jornada`)
     }
 
     /* ---------- 1. Contrato de 4 meses, com bônus e reagendamento ---------- */
@@ -279,13 +248,12 @@ export async function popularDemonstracao(db: BD) {
     const j1 = ocorr(f1, a1.matricula_id, 'Diagnóstico jurídico')
     await prever(j1.item, j1.ocorrencias, [somarDias(h, 30)])
     const jor1 = await jornada(a1.matricula_id, 0, 0)
-    const at1 = jor1.etapas.find((e) => e.etapa_id === etapas['0-0'])!.atividades
+    const at1 = jor1.etapas.find((e: { etapa_id: string }) => e.etapa_id === etapas['0-0'])!.atividades
     await api.post(`/atividades/${at1[0].id}/evidencias`, { texto: 'Aluna relatou os aprendizados no grupo individual (registrado pela equipe).', data_execucao: somarDias(h, -20) })
     await api.post(`/atividades/${at1[0].id}/validar`, { decisao: 'validada', comentario: 'Bom registro.' })
-    const aluna1 = new Cliente(base)
-    await aluna1.post('/auth/login', { email: 'beatriz@demo.local', senha: SENHA_DEMO })
+    const aluna1 = await amb.entrar(CONTAS['beatriz@demo.local'], 'portal')
     await aluna1.post(`/portal/atividades/${at1[1].id}/evidencias`, { texto: 'Decidi contratar uma assistente e já publiquei a vaga. (demonstração)' })
-    const c1 = await api.post<{ id: string }>(`/matriculas/${a1.matricula_id}/conquistas`, {
+    const c1 = await api.post(`/matriculas/${a1.matricula_id}/conquistas`, {
       titulo: 'Conduzi minha primeira reunião de equipe',
       situacao_anterior: 'Resolvia tudo sozinha e não fazia reuniões.',
       acao_aplicada: 'Preparou pauta curta e conduziu reunião de 30 minutos.',
@@ -366,7 +334,7 @@ export async function popularDemonstracao(db: BD) {
     for (const id of t4.ocorrencias) await realizar(id, somarDias(h, -120), 'Tutoria realizada.')
     await api.post(`/matriculas/${a4.matricula_id}/finalizar`, { tipo: 'encerrada', data: somarDias(h, -60), motivo: 'Fim da vigência; aluna renovou.' })
     await api.put(`/matriculas/${a4.matricula_id}/continuidade`, { interesse_renovacao: 'sim' })
-    const ren = await api.post<{ id: string }>('/matriculas', {
+    const ren = await api.post('/matriculas', {
       pessoa_id: a4.id,
       programa_id: programa,
       matricula_anterior_id: a4.matricula_id,
@@ -378,12 +346,12 @@ export async function popularDemonstracao(db: BD) {
       responsavel_id: suporte,
       mentora_id: prof.tutoria,
     })
-    db.prepare('UPDATE matriculas SET demonstracao = 1 WHERE id = ?').run(ren.id)
+    await db.run('UPDATE ped_matriculas SET demonstracao = 1 WHERE id = ?', ren.id)
     await api.post(`/matriculas/${ren.id}/conferencia`, { conferida: true })
     // Transferência explícita da pendência (1 plano individual) para o novo ciclo
-    const transf = await api.post<{ id: string }>(`/matriculas/${ren.id}/transferencias`, { item_origem_id: p4.item, quantidade: 1, motivo: 'Encontro 5 do 1º ciclo não realizado; transferido na renovação conforme decisão da coordenação (demonstração).' })
+    const transf = await api.post(`/matriculas/${ren.id}/transferencias`, { item_origem_id: p4.item, quantidade: 1, motivo: 'Encontro 5 do 1º ciclo não realizado; transferido na renovação conforme decisão da coordenação (demonstração).' })
     f4 = await ficha(a4.id)
-    const transfOc = f4.matriculas.find((m) => m.id === ren.id)!.ocorrencias.find((o) => o.item_id === transf.id)!.id
+    const transfOc = f4.matriculas.find((m: { id: string }) => m.id === ren.id)!.ocorrencias.find((o: { item_id: string }) => o.item_id === transf.id)!.id
     await api.put(`/itens/${transf.id}/previsoes`, { previsoes: [{ ocorrencia_id: transfOc, data_prevista: noMes(6) }] })
     const slotJ = jaciaraInt.find((i) => i.inicio.slice(0, 10) >= h && i.inicio !== slotA && i.inicio !== slotB)!.inicio
     await api.post(`/ocorrencias/${transfOc}/agendar`, { inicio: slotJ })
@@ -426,11 +394,11 @@ export async function popularDemonstracao(db: BD) {
     await api.post(`/ocorrencias/${r6.ocorrencias[0]}/agendar`, { inicio: proximaSlot(csInt, h) })
 
     /* ---------- Portal da aluna: turmas, frases, links, diagnóstico e metas (tudo de demonstração) ---------- */
-    const turmaA = (await api.post<{ id: string }>('/catalogos/turmas', { nome: 'Turma Demo A', descricao: 'Turma de demonstração.', data_inicio: somarDias(h, -100) })).id
-    const turmaB = (await api.post<{ id: string }>('/catalogos/turmas', { nome: 'Turma Demo B', descricao: 'Turma de demonstração.', data_inicio: somarDias(h, -12) })).id
-    db.prepare('UPDATE matriculas SET turma_id = CASE WHEN data_inicio < ? THEN ? ELSE ? END').run(somarDias(h, -30), turmaA, turmaB)
-    db.prepare("UPDATE matriculas SET data_boas_vindas = onboarding_data WHERE onboarding_situacao = 'realizado'").run()
-    db.prepare("UPDATE pessoas SET instagram = '@' || lower(substr(nome, 1, instr(nome, ' ') - 1)) || '.demo' WHERE demonstracao = 1").run()
+    const turmaA = (await api.post('/catalogos/turmas', { nome: 'Turma Demo A', descricao: 'Turma de demonstração.', data_inicio: somarDias(h, -100) })).id
+    const turmaB = (await api.post('/catalogos/turmas', { nome: 'Turma Demo B', descricao: 'Turma de demonstração.', data_inicio: somarDias(h, -12) })).id
+    await db.run('UPDATE ped_matriculas SET turma_id = CASE WHEN data_inicio < ? THEN ? ELSE ? END', somarDias(h, -30), turmaA, turmaB)
+    await db.run("UPDATE ped_matriculas SET data_boas_vindas = onboarding_data WHERE onboarding_situacao = 'realizado'")
+    await db.run("UPDATE ped_alunas SET instagram = (SELECT '@' || lower(substr(p.nome, 1, instr(p.nome, ' ') - 1)) || '.demo' FROM pessoa p WHERE p.id = ped_alunas.id) WHERE demonstracao = 1")
     for (const texto of [
       'Feito é melhor que perfeito. (frase de demonstração)',
       'Um passo por dia ainda é um passo. (frase de demonstração)',
@@ -444,6 +412,35 @@ export async function popularDemonstracao(db: BD) {
       ['[Demo] Área de membros', 'Aulas', false, 1],
     ] as const)
       await api.post('/catalogos/links', { titulo, url: `https://example.com/${ordem}-${categoria.toLowerCase()}`, categoria, destaque_inicio: destaque, ordem, descricao: 'Link de demonstração: troque em Configurações.' })
+    // Aulas gravadas fictícias por mês do plano, e o quanto a aluna de demonstração já assistiu
+    // (mês 1 completo, mês 2 com 1 de 4, mês 3 sem assistir, mês 4 sem aulas = "não contabiliza progresso").
+    const VIDEO_DEMO = 'https://vimeo.com/76979871' // vídeo público do próprio Vimeo, só para a demonstração
+    const aulasDemo: [number, string, number][] = [
+      [1, '[Demo] Boas-vindas ao programa', 100], [1, '[Demo] Como usar o portal', 100],
+      [2, '[Demo] Aula 1 do mês', 100], [2, '[Demo] Aula 2 do mês', 0], [2, '[Demo] Aula 3 do mês', 0], [2, '[Demo] Aula 4 do mês', 0],
+      [3, '[Demo] Aula 1 do mês', 0],
+    ]
+    for (const [i, [mesPlano, titulo, visto]] of aulasDemo.entries()) {
+      const aula = (await api.post('/aulas', { programa_id: programa, mes: mesPlano, titulo, video_url: VIDEO_DEMO, ordem: i, descricao: 'Aula de demonstração: o conteúdo oficial é cadastrado pela coordenação.' })).id
+      await api.post(`/aulas/${aula}/publicar`, { publicado: true })
+      if (visto) await aluna1.post(`/portal/aulas/${aula}/progresso`, { percentual: visto })
+    }
+    // Prévia sem Google configurado: link do Meet fictício nos encontros agendados (no ar, quem cria é o Google).
+    await db.run("UPDATE ped_ocorrencias SET link_reuniao = 'https://meet.google.com/demo-abcd-efg' WHERE situacao = 'agendada'")
+    // Biblioteca: uma estante de demonstração com vídeo (parte assistida pela aluna 1) e um link.
+    const estanteDemo = (await api.post('/estantes', { titulo: '[Demo] Vendas', descricao: 'Estante de demonstração: troque pelos materiais oficiais.' })).id
+    await api.post(`/estantes/${estanteDemo}/publicar`, { publicada: true })
+    for (const [titulo, extra, visto] of [
+      ['[Demo] Como conduzir uma conversa de venda', { video_url: VIDEO_DEMO }, 45],
+      ['[Demo] Roteiro de abordagem', { link: 'https://example.com/roteiro-demo' }, 0],
+    ] as const) {
+      const id = (await api.post('/conteudos', { secao: 'biblioteca', estante_id: estanteDemo, titulo, descricao: 'Material de demonstração.', ...extra })).id
+      await api.post(`/conteudos/${id}/publicar`, { publicado: true })
+      if (visto) await aluna1.post(`/portal/conteudos/${id}/progresso`, { percentual: visto })
+    }
+    // Mural: publicações fictícias (uma da equipe, já publicada; uma da aluna, conforme a regra de moderação).
+    await api.post('/mural', { categoria: 'oportunidade', titulo: '[Demo] Encontro de networking entre alunas', descricao: 'Publicação de demonstração: troque ou arquive em Conteúdos e mural.', contato_canal: 'email', contato_valor: 'contato@example.com', autora_nome: 'Equipe (demo)' })
+    await aluna1.post('/portal/mural', { categoria: 'produto', titulo: '[Demo] Consultoria de vitrine', descricao: 'Publicação fictícia de demonstração de uma aluna.', contato_canal: 'instagram', contato_valor: '@demo.vitrine' })
     await aluna1.put('/portal/diagnostico/inicio/situacao', {
       respostas: { negocio: 'Loja de roupas com 2 funcionárias (demonstração).', numeros: 'Faturamento médio de R$ 30 mil por mês (demonstração).', funciona: 'Clientes fiéis e boa vitrine.' },
     })
@@ -452,14 +449,14 @@ export async function popularDemonstracao(db: BD) {
     await aluna1.post('/portal/metas', { nome: '[Demo] Reuniões de equipe por mês', unidade: 'reuniões', valor_inicial: 0, valor_alvo: 4, valor_atual: 1 })
 
     /* ---------- Administrativo: estado das alunas, segmentos, canais e categorias (tudo de demonstração) ---------- */
-    const opcao = (lista: string, codigo: string) => (db.prepare('SELECT id FROM opcoes_lista WHERE lista = ? AND codigo = ?').get(lista, codigo) as { id: string }).id
+    const opcao = async (lista: string, codigo: string) => ((await db.get('SELECT id FROM ped_opcoes_lista WHERE lista = ? AND codigo = ?', lista, codigo)) as { id: string }).id
     const segmentos: string[] = []
     for (const nome of ['Moda e varejo (demo)', 'Saúde e estética (demo)', 'Serviços (demo)'])
-      segmentos.push((await api.post<{ id: string }>('/catalogos/segmentos', { nome })).id)
+      segmentos.push((await api.post('/catalogos/segmentos', { nome })).id)
     const canais: string[] = []
     for (const nome of ['Indicação (demo)', 'Instagram (demo)', 'Evento presencial (demo)'])
-      canais.push((await api.post<{ id: string }>('/catalogos/canais-venda', { nome })).id)
-    const demoPessoas = db.prepare('SELECT id, nome FROM pessoas WHERE demonstracao = 1 ORDER BY codigo').all() as { id: string; nome: string }[]
+      canais.push((await api.post('/catalogos/canais-venda', { nome })).id)
+    const demoPessoas = (await db.all('SELECT id, nome FROM ped_pessoas WHERE demonstracao = 1 ORDER BY codigo')) as { id: string; nome: string }[]
     const estados: [string, string, boolean, string | null][] = [
       ['saudavel', 'alto', false, suporte],
       ['atencao', 'medio', true, suporte],
@@ -468,12 +465,11 @@ export async function popularDemonstracao(db: BD) {
       ['atencao', 'baixo', false, suporte],
       ['saudavel', 'alto', false, null], // exemplo de aluna ainda sem responsável
     ]
-    demoPessoas.forEach((p, n) => {
+    for (const [n, p] of demoPessoas.entries()) {
       const [saude, eng, risco, resp] = estados[n % estados.length]
-      db.prepare('UPDATE pessoas SET empresa = ?, segmento_id = ?, subsegmento = ?, saude_id = ?, engajamento_id = ?, em_risco = ?, responsavel_id = ? WHERE id = ?').run(
-        `[Demo] Negócio de ${p.nome.split(' ')[0]}`, segmentos[n % 3], n % 2 ? 'Loja física' : 'Atendimento online', opcao('saude', saude), opcao('engajamento', eng), risco ? 1 : 0, resp, p.id)
-      db.prepare('UPDATE matriculas SET canal_venda_id = ? WHERE pessoa_id = ?').run(canais[n % 3], p.id)
-    })
+      await db.run('UPDATE ped_alunas SET empresa = ?, segmento_id = ?, subsegmento = ?, saude_id = ?, engajamento_id = ?, em_risco = ?, responsavel_id = ? WHERE id = ?', `[Demo] Negócio de ${p.nome.split(' ')[0]}`, segmentos[n % 3], n % 2 ? 'Loja física' : 'Atendimento online', await opcao('saude', saude), await opcao('engajamento', eng), risco ? 1 : 0, resp, p.id)
+      await db.run('UPDATE ped_matriculas SET canal_venda_id = ? WHERE pessoa_id = ?', canais[n % 3], p.id)
+    }
 
     /* ---------- Avisos escritos pela equipe (demonstração) ---------- */
     const beatrizId = demoPessoas[0].id
@@ -494,7 +490,5 @@ export async function popularDemonstracao(db: BD) {
       ['Por quanto tempo guardar dados de alunas encerradas e quem pode exportá-los?', 'Privacidade (LGPD) e política de retenção.', 'Administração'],
     ])
       await api.post('/decisoes', { questao, impacto, responsavel })
-  } finally {
-    servidor.close()
   }
 }

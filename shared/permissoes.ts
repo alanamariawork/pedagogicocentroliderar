@@ -40,6 +40,13 @@ export const PERMISSOES = {
   'config:editar': 'Editar programas, pacotes, tipos, profissionais e motivos',
   'avisos:enviar': 'Escrever e programar avisos para as alunas (aparecem no sino do portal)',
   'decisoes:editar': 'Registrar e decidir questões pendentes',
+  'transcricoes:ver': 'Ver e colar transcrições dos encontros (nunca aparecem para a aluna)',
+  'acoes:editar': 'Escrever e revisar ações do Plano de Ação (rascunho e revisão)',
+  'acoes:publicar': 'Publicar ações do Plano de Ação para a aluna',
+  'contratos:ver': 'Ver, anexar e conferir o contrato da matrícula',
+  'conteudos:editar': 'Cadastrar e publicar Rotina, Biblioteca e Livros do portal',
+  'biblioteca:editar': 'Criar estantes e cadastrar e publicar materiais da Biblioteca do portal',
+  'mural:moderar': 'Moderar e publicar o mural de oportunidades',
   'auditoria:ver': 'Ver histórico de alterações',
   'usuarios:admin': 'Administrar usuários e regras de acesso',
 } as const
@@ -69,6 +76,8 @@ export const PERMISSOES_PADRAO: Record<Perfil, Permissao[]> = {
     'conquistas:editar',
     'indicadores:ver',
     'auditoria:ver',
+    'mural:moderar',
+    'biblioteca:editar',
   ],
   // Mentora só enxerga as matrículas em que atende (restrição aplicada no servidor).
   mentora: [
@@ -82,6 +91,8 @@ export const PERMISSOES_PADRAO: Record<Perfil, Permissao[]> = {
     'jornada:ver',
     'jornada:editar',
     'conquistas:editar',
+    'transcricoes:ver',
+    'acoes:editar',
   ],
   // A aluna usa apenas o portal (/api/portal), sempre limitado aos próprios dados.
   aluna: [],

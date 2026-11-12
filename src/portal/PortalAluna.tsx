@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { MesDoPlano } from './paginas/LinhaDoTempo'
 import { ChevronDown, Gem, LogOut, Menu, PanelLeftClose, PanelLeftOpen, Search, X } from 'lucide-react'
 import { cx } from '../lib/format'
 import { useDados, type Reg } from '../lib/api'
@@ -14,6 +15,13 @@ import { LinksImportantes } from './paginas/Links'
 import { MinhaConta } from './paginas/MinhaConta'
 import { EmBreve } from './paginas/EmBreve'
 import { SecaoPortal } from '../pages/Portal'
+import { SaldoMentorias } from './paginas/Mentorias'
+import { Agenda } from './paginas/Agenda'
+import { PlanoAcao } from './paginas/PlanoAcao'
+import { Trilhas } from './paginas/Trilhas'
+import { Vitorias } from './paginas/Vitorias'
+import { Conteudos } from './paginas/Conteudos'
+import { Mural } from './paginas/Mural'
 
 const CHAVE_RECOLHIDO = 'portal-menu-recolhido'
 
@@ -116,15 +124,6 @@ export function PortalAluna() {
             </div>
           </header>
           <main id="conteudo" tabIndex={-1} className="mx-auto w-full max-w-6xl flex-1 px-4 py-5 outline-none sm:px-6 lg:px-8">
-            {eu!.trocar_senha && rota.pagina !== 'conta' && (
-              <p role="status" className="mb-4 rounded-[var(--radius-control)] border border-gold-line bg-gold-soft px-3 py-2 text-sm text-ink-soft">
-                Sua senha foi criada pela equipe.{' '}
-                <a className="font-medium text-brand-700 underline" href={hrefAluna('conta')}>
-                  Troque agora
-                </a>
-                .
-              </p>
-            )}
             <PaginaAluna rota={rota} tipos={tipos} />
           </main>
         </div>
@@ -252,14 +251,31 @@ function PaginaAluna({ rota, tipos }: { rota: RotaAluna; tipos: Reg[] }) {
     case 'mentorias': {
       const tipo = tipos.find((t) => t.id === rota.id)
       return (
-        <div className="space-y-3">
+        <div className="space-y-4">
           {tipo && <p className="text-sm text-ink-soft">Encontros de {tipo.nome}.</p>}
+          <SaldoMentorias key={`saldo-${rota.id ?? ''}`} tipoId={rota.id} />
           <SecaoPortal key={rota.id ?? ''} secao="mentorias" tipoId={rota.id} />
         </div>
       )
     }
+    case 'mes':
+      return <MesDoPlano key={rota.id ?? ''} numero={rota.id} />
     case 'vitorias':
-      return <SecaoPortal secao="vitorias" />
+      return <Vitorias />
+    case 'trilhas':
+      return <Trilhas />
+    case 'acoes':
+      return <PlanoAcao />
+    case 'agenda':
+      return <Agenda />
+    case 'rotina':
+      return <Conteudos key="rotina" secao="rotina" />
+    case 'biblioteca':
+      return <Conteudos key="biblioteca" secao="biblioteca" />
+    case 'livros':
+      return <Conteudos key="livros" secao="livros" />
+    case 'mural':
+      return <Mural />
     case 'links':
       return <LinksImportantes />
     case 'conta':

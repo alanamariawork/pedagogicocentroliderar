@@ -128,8 +128,9 @@ export function Conquistas({ m, recarregar }: { m: Reg; recarregar: () => void }
                 )}
               </dl>
               <p className="text-xs text-ink-muted">
-                Registrada por {c.autor_nome ?? '—'}
-                {c.validada_por_nome && ` · validada por ${c.validada_por_nome} em ${formatarCarimbo(c.validada_em)}`}
+                {c.enviada_pela_aluna ? 'Enviada pela aluna no portal' : `Registrada por ${c.autor_nome ?? '—'}`}
+                {c.validada_por_nome && ` · ${c.validada ? 'validada' : 'analisada (não validada)'} por ${c.validada_por_nome} em ${formatarCarimbo(c.validada_em)}`}
+                {!c.validada_em && ' · aguardando análise'}
               </p>
               {pode('conquistas:validar') && (
                 <button type="button" className="btn-secondary btn-sm mt-1" onClick={() => setDialogo(c)}>
