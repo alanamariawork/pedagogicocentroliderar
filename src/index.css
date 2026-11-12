@@ -98,3 +98,9 @@ body {
 @utility tabela {
   @apply w-full text-left text-sm [&_td]:border-t [&_td]:border-line [&_td]:px-3 [&_td]:py-2.5 [&_td]:align-top [&_th]:px-3 [&_th]:py-2 [&_th]:text-xs [&_th]:font-semibold [&_th]:text-ink-muted [&_th]:whitespace-nowrap;
 }
+
+/* Tabelas com rolagem lateral: textos só para leitor de tela (sr-only, absolute) ficam dentro da área
+   rolável, sem empurrar a página para os lados. */
+.overflow-x-auto {
+  position: relative;
+}

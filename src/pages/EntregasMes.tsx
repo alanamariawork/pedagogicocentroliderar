@@ -190,7 +190,7 @@ export function TabelaEntregas({ linhas, onAcao, pode, ocultarAluna }: { linhas:
   return (
     <>
       {/* Computador: tabela */}
-      <div className="hidden overflow-x-auto md:block">
+      <div className="relative hidden overflow-x-auto md:block">
         <table className="tabela min-w-[64rem]">
           <thead>
             <tr>

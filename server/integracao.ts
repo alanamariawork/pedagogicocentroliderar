@@ -52,7 +52,15 @@ export function clientesPeloBackoffice(bo: BackofficePedagogico): Clientes {
 export function acessoPeloBackoffice(bo: BackofficePedagogico): Acesso {
   return {
     async entrar(email, senha, escopo) {
-      return abrir(await bo.entrarDiamante(email, senha, escopo))
+      let r: RespostaRpc<{ token: string; senhaProvisoria: boolean }>
+      try {
+        r = await bo.entrarDiamante(email, senha, escopo)
+      } catch (err) {
+        // Backoffice fora do ar (ou sem o binding, no desenvolvimento local): a pessoa vê uma mensagem clara.
+        console.error('[entrar] backoffice indisponível', err)
+        throw new ErroHttp(503, 'O login está indisponível no momento. Tente novamente em instantes.')
+      }
+      return abrir(r)
     },
   }
 }
