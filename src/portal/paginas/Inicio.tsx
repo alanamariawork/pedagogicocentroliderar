@@ -42,7 +42,7 @@ export function Inicio() {
 
       {m && dados.linha_tempo && <LinhaDoTempo linha={dados.linha_tempo} />}
 
-      {m && dados.resumo && <ResumoExecutivo resumo={dados.resumo} />}
+      {m && dados.resumo && <ResumoExecutivo resumo={dados.resumo} ultima={(dados.mentorias?.ultimas ?? [])[0] ?? null} />}
 
       {m && (
         <div className="grid gap-4 lg:grid-cols-3">
@@ -226,7 +226,8 @@ function Indicadores({ metas }: { metas: Reg[] }) {
  * próximo encontro e vigência. Nos últimos dias da vigência (janela configurada, 45 dias), o término
  * fica em destaque.
  */
-function ResumoExecutivo({ resumo }: { resumo: Reg }) {
+function ResumoExecutivo({ resumo, ultima }: { resumo: Reg; ultima: Reg | null }) {
+  const mt = (resumo.mentorias ?? {}) as Reg
   const v = resumo.vigencia as Reg
   const etapa = resumo.etapa_atual as Reg | null
   const enc = resumo.proximo_encontro as Reg | null
@@ -239,7 +240,7 @@ function ResumoExecutivo({ resumo }: { resumo: Reg }) {
   return (
     <section className="card p-4" aria-labelledby="resumo-titulo">
       <h2 id="resumo-titulo" className="font-display text-base font-semibold">
-        Resumo da minha jornada
+        Resumo executivo
       </h2>
       <dl className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
         <Item rotulo="Programa">{resumo.programa ?? 'A definir pela equipe'}</Item>
@@ -286,6 +287,42 @@ function ResumoExecutivo({ resumo }: { resumo: Reg }) {
             </>
           ) : (
             <span className="font-medium">Sem prazo definido</span>
+          )}
+        </Item>
+        <Item rotulo="Mentorias">
+          {mt.contratadas ? (
+            <>
+              <span className="font-display text-lg font-semibold tabular-nums">
+                {mt.realizadas}/{mt.contratadas}
+              </span>
+              <span className="block text-xs text-ink-muted">realizadas / contratadas</span>
+            </>
+          ) : (
+            'Nenhuma contratada'
+          )}
+        </Item>
+        <Item rotulo="Última mentoria">
+          {ultima ? (
+            <>
+              <span className="font-medium">{formatarData(String(ultima.data).slice(0, 10))}</span>
+              <span className="block text-xs text-ink-muted">{[ultima.tipo, ultima.profissional_nome].filter(Boolean).join(' · ')}</span>
+            </>
+          ) : (
+            'Nenhuma ainda'
+          )}
+        </Item>
+        <Item rotulo="Presença">
+          <span className="font-medium">Sem registro</span>
+          <span className="block text-xs text-ink-muted">a equipe ainda vai definir como registrar</span>
+        </Item>
+        <Item rotulo="Próxima ação">
+          {resumo.proximo_passo?.titulo ? (
+            <>
+              <span className="font-medium">{resumo.proximo_passo.titulo}</span>
+              {resumo.proximo_passo.detalhe && <span className="block text-xs text-ink-muted">{resumo.proximo_passo.detalhe}</span>}
+            </>
+          ) : (
+            'A equipe vai combinar com você'
           )}
         </Item>
       </dl>

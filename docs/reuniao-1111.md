@@ -5,7 +5,7 @@ Tudo abaixo está no código do backoffice (aba Pedagógico) e no Portal da Alun
 ## Telas que mudaram
 
 **Portal da Aluna**
-- **Início:** card “Resumo da minha jornada” (programa, etapa atual com a cor do pilar e o prazo da etapa ou “Sem prazo definido”, próximo encontro, vigência). A vigência fica em destaque dourado quando faltam 45 dias ou menos (46 dias não destaca). Card “Avisos” no lugar de “Meu nível”. Mentorias realizadas mostram “de N contratado(s)”.
+- **Início:** card “Resumo executivo”, o mesmo da ficha só com o que a aluna pode ver (programa, etapa atual com a cor do pilar e o prazo da etapa ou “Sem prazo definido”, próximo encontro, vigência, mentorias realizadas/contratadas, última mentoria, presença e próxima ação). A vigência fica em destaque dourado quando faltam 45 dias ou menos (46 dias não destaca). Card “Avisos” no lugar de “Meu nível”. Mentorias realizadas mostram “de N contratado(s)”.
 - **Menu e busca:** saíram Tarefas e Plano 90 dias (menu, atalhos e busca). Entrou Livros, em Aprendizado. Agenda virou “Minha Agenda”.
 - **Mentorias:** saldo por tipo (contratados, realizados, agendados, disponíveis), botão “Marcar horário” com os horários livres da profissional, Remarcar e Desmarcar. Pendências de atividades nunca bloqueiam a marcação.
 - **Minha Agenda:** os mesmos encontros que a equipe vê.
