@@ -1,10 +1,12 @@
 import { useState } from 'react'
-import { Megaphone, Pause, Pencil, Play, Plus, Repeat } from 'lucide-react'
+import { Mail, Megaphone, MessageCircle, Pause, Pencil, Play, Plus, Repeat, RotateCw, Send } from 'lucide-react'
 import { Carregando, EstadoErro, EstadoVazio } from '../components/Estados'
 import { Campo, FormDialog, Opcoes, useValores } from '../components/Form'
 import { IdAluna, Selo } from '../components/Selos'
 import { useFeedback } from '../components/Feedback'
-import { post, put, useDados, type Reg } from '../lib/api'
+import { mensagemDeErro, post, put, useDados, type Reg } from '../lib/api'
+import { formatarCarimbo } from '../../shared/datas'
+import type { Tom } from '../components/Selos'
 import { ativos, useCatalogos } from '../state/Catalogos'
 import { agoraSP, formatarData } from '../../shared/datas'
 import { ITENS_ALUNA } from '../portal/menu'
@@ -31,7 +33,7 @@ export function Avisos() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="max-w-2xl text-sm text-ink-soft">
-          Avisos escritos pela equipe aparecem no sino do portal da aluna, junto com os automáticos (agendamentos, validações, etapas). Nada é enviado por e-mail ou WhatsApp.
+          Avisos escritos pela equipe e os automáticos (agendamentos, validações, etapas) aparecem no sino do portal da aluna e também saem por e-mail e WhatsApp, em até um minuto. A situação de cada envio fica em “Envios por e-mail e WhatsApp”, abaixo.
         </p>
         <button type="button" className="btn-primary" onClick={() => setNovo(true)}>
           <Plus className="size-4" aria-hidden /> Novo aviso
@@ -93,6 +95,7 @@ export function Avisos() {
           ))}
         </ul>
       )}
+      <EnviosAvisos />
       {novo && <DialogAviso onFechar={() => setNovo(false)} onConcluir={recarregar} />}
       {editando && <DialogEditarAviso aviso={editando} onFechar={() => setEditando(null)} onConcluir={recarregar} />}
     </div>
@@ -120,7 +123,7 @@ export function DialogAviso({ pessoa, onFechar, onConcluir }: { pessoa?: Reg; on
     <FormDialog
       aberto
       titulo={pessoa ? `Aviso para ${pessoa.nome}` : 'Novo aviso às alunas'}
-      descricao="Aparece no sino do portal. Nada é enviado por e-mail ou WhatsApp."
+      descricao="Aparece no sino do portal e também sai por e-mail e WhatsApp (quando configurados)."
       rotulo={valores.quando === 'agora' && valores.recorrencia === 'nenhuma' ? 'Enviar agora' : 'Programar'}
       onFechar={onFechar}
       onEnviar={async () => {
@@ -264,5 +267,114 @@ function DialogEditarAviso({ aviso, onFechar, onConcluir }: { aviso: Reg; onFech
         <Campo rotulo="Repetir até">{(p) => <input {...p} type="date" className="field-control" value={valores.fim} onChange={campo('fim')} />}</Campo>
       )}
     </FormDialog>
+  )
+}
+
+const SITUACAO_ENVIO: Record<string, [string, Tom]> = {
+  enviado: ['Enviado', 'sucesso'],
+  pendente: ['Na fila', 'info'],
+  falhou: ['Falhou', 'perigo'],
+  nao_configurado: ['Não configurado', 'alerta'],
+  desligado: ['Desligado', 'neutro'],
+}
+
+/** Situação de cada aviso por e-mail e WhatsApp, com nova tentativa e o envio manual pelo WhatsApp da equipe. */
+export function EnviosAvisos({ pessoaId }: { pessoaId?: string }) {
+  const fb = useFeedback()
+  const { dados, erro, recarregar } = useDados<{ envios: Reg[] }>(`/avisos/envios${pessoaId ? `?pessoa_id=${pessoaId}` : ''}`)
+  const canais = useDados<Reg>('/avisos/canais')
+  const [ocupado, setOcupado] = useState(false)
+  const tentar = async (ids?: string[]) => {
+    setOcupado(true)
+    try {
+      const r = await post<{ enviados: number }>('/avisos/envios/tentar', ids ? { ids } : {})
+      fb.sucesso(r.enviados ? `${r.enviados} envio(s) concluído(s).` : 'Nada foi enviado agora. Veja o motivo em cada linha.')
+      recarregar()
+    } catch (e) {
+      fb.erro(mensagemDeErro(e))
+    } finally {
+      setOcupado(false)
+    }
+  }
+  const c = canais.dados
+  return (
+    <section className="card p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="font-display text-base font-semibold">Envios por e-mail e WhatsApp</h2>
+          <p className="text-sm text-ink-soft">Cada aviso do sino também vai para o e-mail e o WhatsApp cadastrados em Clientes. Se um envio falhar, o sistema tenta de novo sozinho algumas vezes.</p>
+        </div>
+        <button type="button" className="btn-secondary btn-sm" disabled={ocupado} onClick={() => tentar()}>
+          <Send className="size-4" aria-hidden /> Enviar pendentes agora
+        </button>
+      </div>
+      {c && (
+        <ul className="mt-3 space-y-1 text-xs text-ink-muted">
+          <li>
+            <Mail className="mr-1 inline size-3.5" aria-hidden />
+            E-mail: {c.email.ligado ? 'ligado, pelo mesmo serviço do convite do portal (backoffice).' : 'desligado em Configurações › Parâmetros.'}
+          </li>
+          <li>
+            <MessageCircle className="mr-1 inline size-3.5" aria-hidden />
+            WhatsApp: {!c.whatsapp.ligado ? 'desligado em Configurações › Parâmetros.' : c.whatsapp.falta.length ? `ainda não configurado (falta ${c.whatsapp.falta.join(', ')}). Até lá, use o botão WhatsApp de cada linha.` : 'ligado, pela API oficial do WhatsApp.'}
+          </li>
+        </ul>
+      )}
+      {erro ? (
+        <p className="mt-3 text-sm text-danger">{erro}</p>
+      ) : !dados ? (
+        <Carregando />
+      ) : !dados.envios.length ? (
+        <p className="mt-3 text-sm text-ink-muted">Nenhum aviso entregue desde que o envio por e-mail e WhatsApp foi ligado.</p>
+      ) : (
+        <ul className="mt-3 divide-y divide-line text-sm">
+          {dados.envios.map((e) => {
+            const pendentes = Object.values(e.canais as Record<string, Reg>).filter((x) => x.situacao !== 'enviado').map((x) => x.id)
+            return (
+              <li key={e.notificacao_id} className="flex flex-wrap items-start justify-between gap-3 py-2.5">
+                <div className="min-w-56 flex-1">
+                  <p className="font-medium">{e.titulo}</p>
+                  <p className="text-xs text-ink-muted">
+                    {!pessoaId && (
+                      <>
+                        <IdAluna codigo={e.pessoa_codigo} />
+                        {e.pessoa_nome} ·{' '}
+                      </>
+                    )}
+                    {formatarCarimbo(e.criado_em)}
+                  </p>
+                  <div className="mt-1 space-y-0.5">
+                    {(['email', 'whatsapp'] as const).map((canal) => {
+                      const x = (e.canais as Record<string, Reg>)[canal]
+                      if (!x) return null
+                      const [rotulo, tom] = SITUACAO_ENVIO[x.situacao] ?? [x.situacao, 'neutro']
+                      return (
+                        <p key={canal} className="flex flex-wrap items-center gap-1.5 text-xs">
+                          <span className="w-16 text-ink-muted">{canal === 'email' ? 'E-mail' : 'WhatsApp'}</span>
+                          <Selo tom={tom}>{rotulo}</Selo>
+                          {x.detalhe && x.situacao !== 'enviado' && <span className="text-ink-muted">{x.detalhe}</span>}
+                        </p>
+                      )
+                    })}
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-1">
+                  {e.whatsapp_manual && (
+                    <a href={e.whatsapp_manual} target="_blank" rel="noopener noreferrer" className="btn-secondary btn-sm" title="Abre o WhatsApp com a mensagem pronta para esta aluna.">
+                      <MessageCircle className="size-4" aria-hidden /> WhatsApp
+                    </a>
+                  )}
+                  {pendentes.length > 0 && (
+                    <button type="button" className="btn-ghost btn-sm" disabled={ocupado} onClick={() => tentar(pendentes)}>
+                      <RotateCw className="size-4" aria-hidden /> Tentar novamente
+                    </button>
+                  )}
+                </div>
+              </li>
+            )
+          })}
+        </ul>
+      )}
+    </section>
   )
 }

@@ -5,6 +5,8 @@ import { agoraIso, novoId, type BD } from '../db'
 import { ErroHttp, exigir, exigirEquipe } from '../auth'
 import { auditar, data, destinatariosAviso, id, processarAvisos, proximoEnvio, texto, textoObrig, validar } from '../servicos'
 import { agoraSP, horarioValido } from '../../shared/datas'
+import { processarEnviosAvisos } from '../avisosExternos'
+import { telefoneWhatsapp } from '../confirmacoes'
 
 /** O link do aviso só pode abrir uma página do próprio portal (ex.: #/jornada). */
 const linkPortal = z.preprocess((v) => (v === '' ? null : v), z.string().regex(/^#\/[a-z0-9-]+(\/[A-Za-z0-9-]+)?$/, 'Escolha uma página do portal.').nullable().optional())
@@ -82,6 +84,65 @@ export function rotasAvisos(db: BD, ctx: ContextoApp) {
     await db.run('UPDATE ped_avisos_programados SET ativo = ?, proximo_envio = ?, atualizado_em = ? WHERE id = ?', ativo ? 1 : 0, prox, agoraIso(), a.id)
     await auditar(db, req, { entidade: 'aviso', entidade_id: a.id as string, acao: ativo ? 'retomado' : 'pausado' })
     res.json({ ok: true })
+  })
+
+  /* ---------------- Envio por e-mail e WhatsApp ---------------- */
+
+  // O que falta configurar em cada canal (o e-mail é do backoffice: só dá para saber tentando).
+  r.get('/avisos/canais', async (req, res) => {
+    exigir(req, 'avisos:enviar')
+    const c = ctx.confirmacoes?.config
+    const faltaWhatsapp = [!c?.whatsappToken && 'WHATSAPP_TOKEN', !c?.whatsappNumeroId && 'WHATSAPP_PHONE_NUMBER_ID', !c?.whatsappModeloAviso && 'WHATSAPP_MODELO_AVISO'].filter(Boolean)
+    const cfg = Object.fromEntries(((await db.all("SELECT chave, valor FROM ped_configuracoes WHERE chave IN ('avisos_email','avisos_whatsapp')")) as { chave: string; valor: string }[]).map((x) => [x.chave, x.valor]))
+    res.json({
+      email: { ligado: (cfg.avisos_email ?? '1') === '1' },
+      whatsapp: { ligado: (cfg.avisos_whatsapp ?? '1') === '1', falta: faltaWhatsapp },
+    })
+  })
+
+  // Cada aviso entregue no sino, com a situação do e-mail e do WhatsApp e o texto para envio manual.
+  r.get('/avisos/envios', async (req, res) => {
+    exigir(req, 'avisos:enviar')
+    const filtros: string[] = []
+    const params: unknown[] = []
+    if (req.query.aviso_id) (filtros.push('n.aviso_id = ?'), params.push(req.query.aviso_id))
+    if (req.query.pessoa_id) (filtros.push('ac.pessoa_id = ?'), params.push(req.query.pessoa_id))
+    const linhas = (await db.all(
+      `SELECT n.id AS notificacao_id, n.titulo, n.detalhe, n.link, n.criado_em, n.aviso_id, ac.pessoa_id, p.nome AS pessoa_nome, p.codigo AS pessoa_codigo, p.telefone,
+              ev.id AS envio_id, ev.canal, ev.situacao, ev.detalhe AS envio_detalhe, ev.tentativas, ev.enviado_em
+         FROM ped_notificacoes n JOIN ped_acessos_aluna ac ON ac.usuario_id = n.usuario_id JOIN ped_pessoas p ON p.id = ac.pessoa_id
+         JOIN ped_envios_aviso ev ON ev.notificacao_id = n.id
+        ${filtros.length ? `WHERE ${filtros.join(' AND ')}` : ''}
+        ORDER BY n.criado_em DESC LIMIT 400`,
+      ...params,
+    )) as Record<string, string | number | null>[]
+    const origem = new URL(req.raw.url).origin
+    const porAviso = new Map<string, Record<string, unknown>>()
+    for (const l of linhas) {
+      const k = l.notificacao_id as string
+      if (!porAviso.has(k)) {
+        const telefone = telefoneWhatsapp(l.telefone as string | null)
+        const texto = [l.titulo, l.detalhe, `Veja no portal: ${origem}/portal/diamante-business/${l.link ?? ''}`].filter(Boolean).join('\n\n')
+        porAviso.set(k, {
+          notificacao_id: k, titulo: l.titulo, detalhe: l.detalhe, criado_em: l.criado_em, aviso_id: l.aviso_id,
+          pessoa_id: l.pessoa_id, pessoa_nome: l.pessoa_nome, pessoa_codigo: l.pessoa_codigo,
+          // Envio manual: abre o WhatsApp da equipe com a mensagem pronta para esta aluna.
+          whatsapp_manual: telefone ? `https://wa.me/${telefone}?text=${encodeURIComponent(String(texto))}` : null,
+          canais: {},
+        })
+      }
+      ;(porAviso.get(k)!.canais as Record<string, unknown>)[l.canal as string] = { id: l.envio_id, situacao: l.situacao, detalhe: l.envio_detalhe, tentativas: l.tentativas, enviado_em: l.enviado_em }
+    }
+    res.json({ envios: [...porAviso.values()].slice(0, 100) })
+  })
+
+  // "Enviar agora" (fila pendente) ou "Tentar novamente" (linhas escolhidas). A mesma linha é reaproveitada: nunca duplica.
+  r.post('/avisos/envios/tentar', async (req, res) => {
+    exigir(req, 'avisos:enviar')
+    const d = validar(z.object({ ids: z.array(z.string().max(64)).max(200).optional() }), req.body)
+    const enviados = await processarEnviosAvisos(db, ctx, d.ids ? { ids: d.ids } : {})
+    await auditar(db, req, { entidade: 'aviso', entidade_id: 'envios', acao: 'envio_externo_tentado', dados: { linhas: d.ids?.length ?? 'fila', enviados } })
+    res.json({ ok: true, enviados })
   })
 
   return r

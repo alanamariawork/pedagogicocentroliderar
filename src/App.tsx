@@ -252,7 +252,7 @@ function Equipe() {
             <Pagina rota={rota} />
           </main>
           <footer className="border-t border-line px-4 py-3 text-xs text-ink-muted sm:px-6 lg:px-8">
-            {NOME_SISTEMA} · Piloto · Nenhuma mensagem é enviada automaticamente pelo sistema.
+            {NOME_SISTEMA} · Piloto · Avisos às alunas saem pelo portal, e-mail e WhatsApp quando configurados.
           </footer>
         </div>
       </div>

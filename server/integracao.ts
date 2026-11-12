@@ -10,7 +10,7 @@
  */
 import { ErroHttp } from './http'
 import type { BD } from './bd'
-import type { Autor, Clientes, ConvitePortal, DadosPessoa } from './contexto'
+import type { Autor, AvisoEmail, Clientes, ConvitePortal, DadosPessoa, ResultadoEmailAviso } from './contexto'
 
 /** O que o backoffice responde pelo RPC. Erros de regra voltam como dado, não como exceção. */
 export type RespostaRpc<T> = { ok: true; dados: T } | { ok: false; status: number; erro: string }
@@ -20,6 +20,7 @@ export interface BackofficePedagogico {
   criarPessoa(autor: Autor, dados: DadosPessoa): Promise<RespostaRpc<{ id: string }>>
   atualizarPessoa(autor: Autor, pessoaId: string, dados: Partial<DadosPessoa>): Promise<RespostaRpc<null>>
   convidarPortal(autor: Autor, pessoaId: string, reenviar?: boolean): Promise<RespostaRpc<ConvitePortal>>
+  enviarAvisoAluna(pessoaId: string, aviso: AvisoEmail): Promise<RespostaRpc<ResultadoEmailAviso>>
 }
 
 function abrir<T>(r: RespostaRpc<T>): T {
@@ -38,6 +39,9 @@ export function clientesPeloBackoffice(bo: BackofficePedagogico): Clientes {
     },
     async convidarPortal(autor, pessoaId, reenviar = false) {
       return abrir(await bo.convidarPortal(autor, pessoaId, reenviar))
+    },
+    async enviarAvisoAluna(pessoaId, aviso) {
+      return abrir(await bo.enviarAvisoAluna(pessoaId, aviso))
     },
   }
 }
@@ -72,13 +76,25 @@ function normalizar(d: Partial<DadosPessoa>): Partial<DadosPessoa> {
 /**
  * Imitação local da regra de Clientes, para testes. Convites não enviam e-mail: ficam em `convites`.
  */
-export function clientesLocais(db: BD): Clientes & { convites: { pessoaId: string; email: string }[]; autores: Autor[] } {
+export function clientesLocais(db: BD): Clientes & { convites: { pessoaId: string; email: string }[]; autores: Autor[]; emailsAviso: { pessoaId: string; email: string; aviso: AvisoEmail }[]; emailDesativado: boolean } {
   const convites: { pessoaId: string; email: string }[] = []
+  /** E-mails de aviso que o backoffice enviaria (nada sai daqui). */
+  const emailsAviso: { pessoaId: string; email: string; aviso: AvisoEmail }[] = []
   /** Quem pediu cada alteração (para os testes conferirem o escopo enviado ao backoffice). */
   const autores: Autor[] = []
   return {
     convites,
     autores,
+    emailsAviso,
+    emailDesativado: false,
+    async enviarAvisoAluna(pessoaId, aviso) {
+      const p = await db.get<{ email: string | null }>('SELECT email FROM pessoa WHERE id = ?', pessoaId)
+      if (!p) throw new ErroHttp(404, 'Pessoa não encontrada em Clientes.')
+      if (!p.email) return { enviado: false, motivo: 'sem_email', explicacao: 'a aluna não tem e-mail cadastrado em Clientes' }
+      if (this.emailDesativado) return { enviado: false, motivo: 'envio_desativado', explicacao: 'o envio de e-mail está desativado neste ambiente' }
+      emailsAviso.push({ pessoaId, email: p.email, aviso })
+      return { enviado: true, provedor_id: `local-${emailsAviso.length}` }
+    },
     async criarPessoa(autor, dados) {
       autores.push(autor)
       const d = normalizar(dados)

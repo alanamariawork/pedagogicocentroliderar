@@ -13,7 +13,7 @@
 import { bancoD1, type BD } from './bd'
 import { COOKIE, lerSessao } from './auth'
 import { PREFIXO_API, criarApi, type Api } from './app'
-import { arquivosR2 } from './contexto'
+import { arquivosR2, type ContextoApp } from './contexto'
 import { clientesPeloBackoffice, type BackofficePedagogico } from './integracao'
 import { configDoAmbiente } from './confirmacoes'
 
@@ -32,6 +32,7 @@ export interface Env {
   GOOGLE_CLIENT_EMAIL?: string
   GOOGLE_PRIVATE_KEY?: string
   GOOGLE_AGIR_COMO_MENTORA?: string
+  WHATSAPP_MODELO_AVISO?: string
 }
 
 export const BASE_EQUIPE = '/produtos/'
@@ -39,15 +40,16 @@ export const BASE_PORTAL = '/portal/diamante-business/'
 /** Páginas antigas da vitrine estática do backoffice. */
 const PAGINAS_ANTIGAS = new Set(['/produtos/diamante-business', '/produtos/mqa-master', '/produtos/empresaria-que-vende'])
 
-let cache: { d1: D1Database; db: BD; api: Api } | null = null
+let cache: { d1: D1Database; db: BD; api: Api; ctx: ContextoApp } | null = null
 export function montar(env: Env) {
   if (!cache || cache.d1 !== env.DB) {
     const db = bancoD1(env.DB)
-    cache = { d1: env.DB, db, api: criarApi(db, {
-        clientes: clientesPeloBackoffice(env.BACKOFFICE),
-        arquivos: arquivosR2(env.ANEXOS),
-        confirmacoes: { config: configDoAmbiente(env as unknown as Record<string, unknown>), fetch: (i, o) => fetch(i, o) },
-      }) }
+    const ctx: ContextoApp = {
+      clientes: clientesPeloBackoffice(env.BACKOFFICE),
+      arquivos: arquivosR2(env.ANEXOS),
+      confirmacoes: { config: configDoAmbiente(env as unknown as Record<string, unknown>), fetch: (i, o) => fetch(i, o) },
+    }
+    cache = { d1: env.DB, db, api: criarApi(db, ctx), ctx }
   }
   return cache
 }

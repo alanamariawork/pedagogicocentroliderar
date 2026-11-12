@@ -29,7 +29,7 @@ As datas aparecem no formato DD/MM/AAAA e no horário de Brasília (America/Sao_
 
 **Validações** é a fila de atividades enviadas e de conquistas ainda não validadas.
 
-**Alertas** são calculados no momento da consulta: entrega vencida, encontro sem registro, contato a refazer, matrícula perto do término, cadastro incompleto, pausa sem decisão e atividade aguardando validação. Nenhuma mensagem é enviada automaticamente.
+**Alertas** são calculados no momento da consulta: entrega vencida, encontro sem registro, contato a refazer, matrícula perto do término, cadastro incompleto, pausa sem decisão e atividade aguardando validação. Alertas não geram mensagens para as alunas; só os avisos do sino saem também por e-mail e WhatsApp.
 
 **Trilhas e etapas** guarda o modelo pedagógico: trilhas, pilares, etapas, pré-requisitos (o sistema bloqueia ciclos), links e atividades-modelo.
 

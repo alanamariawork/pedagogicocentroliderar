@@ -30,6 +30,8 @@ export interface ConfigIntegracoes {
   whatsappNumeroId?: string
   /** Nomes dos modelos de mensagem aprovados na Meta, um por ação. */
   whatsappModelos?: Partial<Record<AcaoIntegracao, string>>
+  /** Modelo aprovado na Meta para os avisos às alunas (server/avisosExternos.ts). */
+  whatsappModeloAviso?: string
   whatsappIdioma?: string
   googleEmailConta?: string
   googleChavePrivada?: string
@@ -48,6 +50,7 @@ export function configDoAmbiente(env: Record<string, unknown>): ConfigIntegracoe
     whatsappToken: s('WHATSAPP_TOKEN'),
     whatsappNumeroId: s('WHATSAPP_PHONE_NUMBER_ID'),
     whatsappModelos: { confirmar: s('WHATSAPP_MODELO_CONFIRMAR'), atualizar: s('WHATSAPP_MODELO_ATUALIZAR'), cancelar: s('WHATSAPP_MODELO_CANCELAR') },
+    whatsappModeloAviso: s('WHATSAPP_MODELO_AVISO'),
     whatsappIdioma: s('WHATSAPP_IDIOMA') ?? 'pt_BR',
     googleEmailConta: s('GOOGLE_CLIENT_EMAIL'),
     googleChavePrivada: s('GOOGLE_PRIVATE_KEY')?.replace(/\\n/g, '\n'),
@@ -88,6 +91,7 @@ async function dadosDoEncontro(db: BD, ocorrenciaId: string) {
 /** Telefone no formato internacional, só dígitos (Brasil por padrão). */
 export function telefoneWhatsapp(t: string | null | undefined): string | null {
   const d = (t ?? '').replace(/\D/g, '')
+  if (/^0+$/.test(d)) return null
   if (d.length === 10 || d.length === 11) return `55${d}`
   if (d.length >= 12 && d.length <= 15) return d
   return null

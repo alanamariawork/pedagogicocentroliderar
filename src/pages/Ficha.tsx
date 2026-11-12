@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { ArrowLeft, Megaphone, Pencil, Plus } from 'lucide-react'
+import { ArrowLeft, Megaphone, MessageCircle, Pencil, Plus } from 'lucide-react'
+import { linkWhatsApp } from './Alunas'
 import { DialogAviso } from './Avisos'
 import { Carregando, EstadoErro, Secao, Vazio } from '../components/Estados'
 import { Campo, FormDialog, Opcoes, useValores } from '../components/Form'
@@ -83,6 +84,11 @@ export function Ficha({ pessoaId, aba = 'perfil' }: { pessoaId: string; aba?: st
             <button type="button" className="btn-secondary" onClick={() => setDialogo('pessoa')}>
               <Pencil className="size-4" aria-hidden /> Dados
             </button>
+          )}
+          {linkWhatsApp(pessoa.telefone) && (
+            <a href={linkWhatsApp(pessoa.telefone)!} target="_blank" rel="noopener noreferrer" className="btn-secondary" title="Abre a conversa com a aluna no WhatsApp para você enviar a mensagem.">
+              <MessageCircle className="size-4" aria-hidden /> WhatsApp
+            </a>
           )}
           {pode('avisos:enviar') && dados.acesso_portal?.ativo ? (
             <button type="button" className="btn-secondary" onClick={() => setDialogo('aviso')}>

@@ -287,6 +287,8 @@ function Parametros() {
   const [diasFrente, setDiasFrente] = useState('')
   const [muralPub, setMuralPub] = useState('moderada')
   const [muralVis, setMuralVis] = useState('ativas')
+  const [avisoEmail, setAvisoEmail] = useState(true)
+  const [avisoWhats, setAvisoWhats] = useState(true)
   const [salvando, setSalvando] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
   useEffect(() => {
@@ -297,6 +299,8 @@ function Parametros() {
       setDiasFrente(cat.configuracoes.agenda_dias_a_frente ?? '30')
       setMuralPub(cat.configuracoes.mural_publicacao ?? 'moderada')
       setMuralVis(cat.configuracoes.mural_visibilidade ?? 'ativas')
+      setAvisoEmail((cat.configuracoes.avisos_email ?? '1') === '1')
+      setAvisoWhats((cat.configuracoes.avisos_whatsapp ?? '1') === '1')
     }
   }, [cat])
   if (!cat) return <Carregando />
@@ -316,6 +320,8 @@ function Parametros() {
               agenda_dias_a_frente: diasFrente,
               mural_publicacao: muralPub,
               mural_visibilidade: muralVis,
+              avisos_email: avisoEmail ? '1' : '0',
+              avisos_whatsapp: avisoWhats ? '1' : '0',
             })
             invalidarCatalogos()
             fb.sucesso('Parâmetros salvos.')
@@ -330,7 +336,7 @@ function Parametros() {
         <Campo rotulo="Janela de “próxima do término” (dias)" dica="Matrículas que terminam dentro deste prazo aparecem nos alertas e na visão geral.">
           {(p) => <input type="number" min={1} max={365} className="field-control max-w-32" {...p} value={janela} onChange={(e) => setJanela(e.target.value)} />}
         </Campo>
-        <Campo rotulo="Texto de ajuda no portal da aluna" dica="Diga como a aluna pede ajuda. Não há envio automático de mensagens.">
+        <Campo rotulo="Texto de ajuda no portal da aluna" dica="Diga como a aluna pede ajuda.">
           {(p) => <textarea rows={3} maxLength={2000} className="field-control" {...p} value={ajuda} onChange={(e) => setAjuda(e.target.value)} />}
         </Campo>
         <h3 className="pt-2 text-sm font-semibold">Agenda do portal</h3>
@@ -340,6 +346,14 @@ function Parametros() {
         <Campo rotulo="Quantos dias à frente a aluna vê horários" dica="Horários vêm da disponibilidade cadastrada em Capacidade e agenda.">
           {(p) => <input type="number" min={1} max={180} className="field-control max-w-32" {...p} value={diasFrente} onChange={(e) => setDiasFrente(e.target.value)} />}
         </Campo>
+        <h3 className="pt-2 text-sm font-semibold">Avisos às alunas</h3>
+        <p className="text-xs text-ink-muted">Todo aviso do sino também sai pelos canais ligados aqui, para o e-mail e o telefone cadastrados em Clientes.</p>
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={avisoEmail} onChange={(e) => setAvisoEmail(e.target.checked)} /> Enviar avisos por e-mail
+        </label>
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={avisoWhats} onChange={(e) => setAvisoWhats(e.target.checked)} /> Enviar avisos por WhatsApp
+        </label>
         <h3 className="pt-2 text-sm font-semibold">Mural de oportunidades</h3>
         <Campo rotulo="Publicação pelas alunas">
           {(p) => (

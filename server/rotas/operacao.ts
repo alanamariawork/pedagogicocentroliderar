@@ -155,7 +155,7 @@ export function rotasOperacao(db: BD, ctx: ContextoApp) {
       const reserva = await reservar(db, tx, req, o, d)
       enfileirar(tx, o.id as string, 'confirmar', reserva)
       await historico(tx, req, o.id as string, 'agendada', null, d.inicio, d.motivo ?? null)
-      await notificarAluna(tx, o.matricula_id as string, { titulo: 'Encontro agendado', detalhe: `${formatarData(d.inicio.slice(0, 10))} às ${d.inicio.slice(11, 16)}`, link: '#/mentorias' })
+      await notificarAluna(tx, o.matricula_id as string, { titulo: 'Encontro agendado', detalhe: `${formatarData(d.inicio.slice(0, 10))} às ${d.inicio.slice(11, 16)}`, link: '#/mentorias' }, ['email'])
       await auditar(tx, req, { entidade: 'ocorrencia', entidade_id: o.id as string, acao: 'agendada', matricula_id: o.matricula_id as string, dados: d })
     }))
     res.json({ ok: true, confirmacao: await confirmar(req.params.id as string) })
@@ -174,7 +174,7 @@ export function rotasOperacao(db: BD, ctx: ContextoApp) {
       enfileirar(tx, o.id as string, 'atualizar', reserva)
       // Histórico preserva previsão original, data anterior, nova data, motivo, autor e momento (RN11).
       await historico(tx, req, o.id as string, 'reagendada', anterior, d.inicio, d.motivo)
-      await notificarAluna(tx, o.matricula_id as string, { titulo: 'Encontro remarcado', detalhe: `Nova data: ${formatarData(d.inicio.slice(0, 10))} às ${d.inicio.slice(11, 16)}`, link: '#/mentorias' })
+      await notificarAluna(tx, o.matricula_id as string, { titulo: 'Encontro remarcado', detalhe: `Nova data: ${formatarData(d.inicio.slice(0, 10))} às ${d.inicio.slice(11, 16)}`, link: '#/mentorias' }, ['email'])
       await auditar(tx, req, { entidade: 'ocorrencia', entidade_id: o.id as string, acao: 'reagendada', matricula_id: o.matricula_id as string, dados: { de: anterior, para: d.inicio, motivo: d.motivo } })
     }))
     res.json({ ok: true, confirmacao: await confirmar(req.params.id as string) })
@@ -191,7 +191,7 @@ export function rotasOperacao(db: BD, ctx: ContextoApp) {
       // Desmarcar libera o horário mas NÃO reduz a obrigação: a entrega volta a aguardar agenda.
       tx.run("UPDATE ped_ocorrencias SET situacao='aguardando_agenda', data_agendada=NULL, atualizado_em=? WHERE id=?", agoraIso(), o.id)
       await historico(tx, req, o.id as string, 'desmarcada', o.data_agendada as string, null, d.motivo)
-      await notificarAluna(tx, o.matricula_id as string, { titulo: 'Encontro desmarcado', detalhe: 'A equipe vai combinar uma nova data com você.', link: '#/mentorias' })
+      await notificarAluna(tx, o.matricula_id as string, { titulo: 'Encontro desmarcado', detalhe: 'A equipe vai combinar uma nova data com você.', link: '#/mentorias' }, ['email'])
       await auditar(tx, req, { entidade: 'ocorrencia', entidade_id: o.id as string, acao: 'desmarcada', matricula_id: o.matricula_id as string, dados: d })
     })
     res.json({ ok: true, confirmacao: await confirmar(req.params.id as string) })
@@ -711,7 +711,7 @@ export function rotasOperacao(db: BD, ctx: ContextoApp) {
     }
     // Chave de deduplicação: cada condição gera no máximo um alerta.
     const unicos = [...new Map(alertas.map((a) => [a.chave, a])).values()]
-    res.json({ calculado_em: agoraIso(), observacao: 'Alertas calculados no momento da consulta. Não há envio automático de mensagens nesta versão.', alertas: unicos })
+    res.json({ calculado_em: agoraIso(), observacao: 'Alertas calculados no momento da consulta. Alertas da equipe não geram mensagens para as alunas.', alertas: unicos })
   })
 
   return r

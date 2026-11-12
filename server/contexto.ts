@@ -41,6 +41,25 @@ export interface Clientes {
   atualizarPessoa(autor: Autor, pessoaId: string, dados: Partial<DadosPessoa>): Promise<void>
   /** Convida a pessoa para o Portal (e-mail de primeiro acesso do backoffice). */
   convidarPortal(autor: Autor, pessoaId: string, reenviar?: boolean): Promise<ConvitePortal>
+  /** Aviso por e-mail para a aluna, sempre no e-mail de Clientes (o backoffice envia). Falha volta como dado. */
+  enviarAvisoAluna(pessoaId: string, aviso: AvisoEmail): Promise<ResultadoEmailAviso>
+}
+
+export interface AvisoEmail {
+  titulo: string
+  detalhe: string | null
+  /** Rota do portal (#/...) para o botão do e-mail. */
+  caminho: string | null
+  /** Chave da linha de envio: repetir não duplica o e-mail. */
+  chave: string
+}
+
+export interface ResultadoEmailAviso {
+  enviado: boolean
+  provedor_id?: string
+  motivo?: string
+  explicacao?: string
+  config?: string | null
 }
 
 export interface Arquivos {

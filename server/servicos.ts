@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { enfileirarEnvios, instrucoesEnvio, type CanalAviso } from './avisosExternos'
 import { agoraIso, novoId, type BD, type BDouTX } from './db'
 import { ErroHttp, tem } from './auth'
 import type { Req } from './http'
@@ -261,10 +262,18 @@ export function filtrarNotas<T extends Record<string, unknown>>(req: Req, linha:
  * Aviso no sino do portal da aluna dona da matrícula. Fica só dentro do sistema (nada é enviado
  * por e-mail ou WhatsApp) e deve ter texto curto, sem detalhes pessoais.
  */
-export async function notificarAluna(db: BDouTX, matriculaId: string, aviso: { titulo: string; detalhe?: string; link?: string }) {
+/**
+ * Aviso no sino da aluna, que também entra na fila de e-mail e WhatsApp. `canais` restringe os canais
+ * externos (ex.: encontros, cujo WhatsApp já sai pela confirmação do agendamento).
+ */
+export async function notificarAluna(db: BDouTX, matriculaId: string, aviso: { titulo: string; detalhe?: string; link?: string }, canais?: CanalAviso[]) {
   const usuarios = await db.all<{ id: string }>('SELECT a.usuario_id AS id FROM ped_acessos_aluna a JOIN ped_matriculas m ON m.pessoa_id = a.pessoa_id WHERE m.id = ?', matriculaId)
-  for (const u of usuarios)
-    await db.run('INSERT INTO ped_notificacoes (id, usuario_id, titulo, detalhe, link, criado_em) VALUES (?, ?, ?, ?, ?, ?)', novoId(), u.id, aviso.titulo, aviso.detalhe ?? null, aviso.link ?? null, agoraIso())
+  for (const u of usuarios) {
+    const id = novoId()
+    await db.run('INSERT INTO ped_notificacoes (id, usuario_id, titulo, detalhe, link, criado_em) VALUES (?, ?, ?, ?, ?, ?)', id, u.id, aviso.titulo, aviso.detalhe ?? null, aviso.link ?? null, agoraIso())
+    // O mesmo aviso também sai por e-mail e WhatsApp (server/avisosExternos.ts).
+    await enfileirarEnvios(db, id, u.id, canais)
+  }
 }
 
 /* ---------------- Listas configuráveis e estado da aluna ---------------- */
@@ -325,7 +334,12 @@ export async function processarAvisos(db: BD, agora = agoraSP()) {
     const r = await db.run('UPDATE ped_avisos_programados SET envios = envios + 1, ultimo_envio = ?, proximo_envio = ?, ativo = ? WHERE id = ? AND proximo_envio = ?', agora, prox, prox ? 1 : 0, a.id, a.proximo_envio)
     if (r.changes !== 1) continue
     const criado = agoraIso()
-    await db.lote(destinatarios.map((u) => ({ sql: 'INSERT INTO ped_notificacoes (id, usuario_id, titulo, detalhe, link, aviso_id, criado_em) VALUES (?, ?, ?, ?, ?, ?, ?)', params: [novoId(), u, a.titulo, a.detalhe, a.link, a.id, criado] })))
+    await db.lote(
+      destinatarios.flatMap((u) => {
+        const id = novoId()
+        return [{ sql: 'INSERT INTO ped_notificacoes (id, usuario_id, titulo, detalhe, link, aviso_id, criado_em) VALUES (?, ?, ?, ?, ?, ?, ?)', params: [id, u, a.titulo, a.detalhe, a.link, a.id, criado] }, ...instrucoesEnvio(id, u)]
+      }),
+    )
   }
 }
 
