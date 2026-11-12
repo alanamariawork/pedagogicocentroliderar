@@ -22,6 +22,7 @@ export const PAGINAS_ALUNA = [
   'agenda',
   'links',
   'conta',
+  'mes',
 ] as const
 
 export type PaginaAluna = (typeof PAGINAS_ALUNA)[number]

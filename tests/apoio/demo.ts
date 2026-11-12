@@ -35,7 +35,9 @@ export async function popularDemonstracao(amb: Ambiente) {
       janela_termino_dias: 45,
       texto_ajuda_aluna: 'Precisa de ajuda? Fale com o time de Sucesso do Cliente pelo seu grupo individual de acompanhamento no WhatsApp, de segunda a sexta, das 9h às 18h. (Texto de demonstração: ajuste em Configurações.)',
     })
-    const programa = (await api.post('/catalogos/programas', { nome: 'Diamante Business', descricao: 'Programa de mentoria do Centro Liderar — Grupo Mendes' })).id
+    // O programa e as profissionais dos planos oficiais já vêm da migration 0003: reaproveita pelo nome.
+    const jaExiste = async (tabela: string, nome: string) => ((await db.get(`SELECT id FROM ${tabela} WHERE lower(nome) = lower(?)`, nome)) as { id: string } | undefined)?.id
+    const programa = (await jaExiste('ped_programas', 'Diamante Business')) ?? (await api.post('/catalogos/programas', { nome: 'Diamante Business', descricao: 'Programa de mentoria do Centro Liderar — Grupo Mendes' })).id
 
     // Profissionais citadas no material de onboarding. Especialidades conforme o material; ajuste em Configurações.
     const prof: Record<string, string> = {}
@@ -48,7 +50,7 @@ export async function popularDemonstracao(amb: Ambiente) {
       ['cs', 'Time de Sucesso do Cliente', 'Rota inicial e acompanhamento'],
       ['tutoria', 'Mentora de Tutoria (demo)', 'Tutorias (demonstração)'],
     ] as const)
-      prof[chave] = (await api.post('/catalogos/profissionais', { nome, especialidade: esp })).id
+      prof[chave] = (await jaExiste('ped_profissionais', nome)) ?? (await api.post('/catalogos/profissionais', { nome, especialidade: esp })).id
 
     // Tipos de entregável observados na planilha de acompanhamento. Durações são FICTÍCIAS (demonstração).
     const tipo: Record<string, string> = {}
@@ -410,6 +412,19 @@ export async function popularDemonstracao(amb: Ambiente) {
       ['[Demo] Área de membros', 'Aulas', false, 1],
     ] as const)
       await api.post('/catalogos/links', { titulo, url: `https://example.com/${ordem}-${categoria.toLowerCase()}`, categoria, destaque_inicio: destaque, ordem, descricao: 'Link de demonstração: troque em Configurações.' })
+    // Aulas gravadas fictícias por mês do plano, e o quanto a aluna de demonstração já assistiu
+    // (mês 1 completo, mês 2 com 1 de 4, mês 3 sem assistir, mês 4 sem aulas = "não contabiliza progresso").
+    const VIDEO_DEMO = 'https://vimeo.com/76979871' // vídeo público do próprio Vimeo, só para a demonstração
+    const aulasDemo: [number, string, number][] = [
+      [1, '[Demo] Boas-vindas ao programa', 100], [1, '[Demo] Como usar o portal', 100],
+      [2, '[Demo] Aula 1 do mês', 100], [2, '[Demo] Aula 2 do mês', 0], [2, '[Demo] Aula 3 do mês', 0], [2, '[Demo] Aula 4 do mês', 0],
+      [3, '[Demo] Aula 1 do mês', 0],
+    ]
+    for (const [i, [mesPlano, titulo, visto]] of aulasDemo.entries()) {
+      const aula = (await api.post('/aulas', { programa_id: programa, mes: mesPlano, titulo, video_url: VIDEO_DEMO, ordem: i, descricao: 'Aula de demonstração: o conteúdo oficial é cadastrado pela coordenação.' })).id
+      await api.post(`/aulas/${aula}/publicar`, { publicado: true })
+      if (visto) await aluna1.post(`/portal/aulas/${aula}/progresso`, { percentual: visto })
+    }
     // Mural: publicações fictícias (uma da equipe, já publicada; uma da aluna, conforme a regra de moderação).
     await api.post('/mural', { categoria: 'oportunidade', titulo: '[Demo] Encontro de networking entre alunas', descricao: 'Publicação de demonstração: troque ou arquive em Conteúdos e mural.', contato_canal: 'email', contato_valor: 'contato@example.com', autora_nome: 'Equipe (demo)' })
     await aluna1.post('/portal/mural', { categoria: 'produto', titulo: '[Demo] Consultoria de vitrine', descricao: 'Publicação fictícia de demonstração de uma aluna.', contato_canal: 'instagram', contato_valor: '@demo.vitrine' })

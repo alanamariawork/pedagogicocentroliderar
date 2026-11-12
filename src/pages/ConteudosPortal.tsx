@@ -6,6 +6,7 @@ import { Selo, type Tom } from '../components/Selos'
 import { useFeedback } from '../components/Feedback'
 import { del as apagar, enviarArquivo, mensagemDeErro, post, put, useDados, type Reg } from '../lib/api'
 import { useSessao } from '../state/Sessao'
+import { useCatalogos } from '../state/Catalogos'
 import { formatarData } from '../../shared/datas'
 import { CANAL_MURAL, CATEGORIA_MURAL } from '../portal/paginas/Mural'
 
@@ -18,7 +19,7 @@ const SECOES: { id: 'rotina' | 'biblioteca' | 'livros'; nome: string; dica: stri
 /** Página da equipe: o que aparece em Rotina, Biblioteca e Livros do portal, e a moderação do Mural. */
 export function ConteudosPortal() {
   const { pode } = useSessao()
-  const abas = [pode('conteudos:editar') && { id: 'conteudos', nome: 'Rotina, Biblioteca e Livros' }, pode('mural:moderar') && { id: 'mural', nome: 'Mural' }].filter(Boolean) as { id: string; nome: string }[]
+  const abas = [pode('conteudos:editar') && { id: 'aulas', nome: 'Aulas do plano' }, pode('conteudos:editar') && { id: 'conteudos', nome: 'Rotina, Biblioteca e Livros' }, pode('mural:moderar') && { id: 'mural', nome: 'Mural' }].filter(Boolean) as { id: string; nome: string }[]
   const [aba, setAba] = useState(abas[0]?.id ?? '')
   if (!abas.length) return <EstadoVazio icone={Lock} titulo="Seu perfil não edita conteúdos do portal." />
   return (
@@ -30,7 +31,7 @@ export function ConteudosPortal() {
           </button>
         ))}
       </div>
-      {aba === 'conteudos' ? <Conteudos /> : <MuralEquipe />}
+      {aba === 'aulas' ? <AulasPlano /> : aba === 'conteudos' ? <Conteudos /> : <MuralEquipe />}
     </div>
   )
 }
@@ -362,6 +363,128 @@ function DialogNovaPublicacao({ onFechar, onConcluir }: { onFechar: () => void; 
           {(p) => <input className="field-control" maxLength={200} {...p} value={valores.contato_valor} onChange={campo('contato_valor')} />}
         </Campo>
       </div>
+    </FormDialog>
+  )
+}
+
+/* ---------------- Aulas gravadas por mês do plano (linha do tempo do portal) ---------------- */
+
+function AulasPlano() {
+  const fb = useFeedback()
+  const { dados, erro, recarregar } = useDados<{ aulas: Reg[] }>('/aulas')
+  const [editando, setEditando] = useState<Reg | 'nova' | null>(null)
+  if (erro) return <EstadoErro mensagem={erro} onTentar={recarregar} />
+  if (!dados) return <Carregando />
+  const porMes = new Map<number, Reg[]>()
+  for (const a of dados.aulas) porMes.set(a.mes, [...(porMes.get(a.mes) ?? []), a])
+  return (
+    <Secao
+      titulo="Aulas do plano"
+      descricao="Cada aula entra no mês do plano em que a aluna deve assistir (mês 1 começa na data de início da matrícula). A barra de progresso da linha do tempo no Início avança conforme ela assiste. Mês sem aula publicada aparece como “Não contabiliza progresso”."
+      acao={
+        <button type="button" className="btn-secondary btn-sm" onClick={() => setEditando('nova')}>
+          <Plus className="size-4" aria-hidden /> Nova aula
+        </button>
+      }
+    >
+      {!dados.aulas.length ? (
+        <p className="text-sm text-ink-muted">Nenhuma aula cadastrada. O conteúdo oficial das aulas é da coordenação.</p>
+      ) : (
+        <div className="space-y-4">
+          {[...porMes].map(([mes, aulas]) => (
+            <div key={mes}>
+              <h3 className="mb-1 text-sm font-semibold">Mês {mes}</h3>
+              <ul className="divide-y divide-line text-sm">
+                {aulas.map((a) => (
+                  <li key={a.id} className="flex flex-wrap items-start justify-between gap-2 py-2">
+                    <div className="min-w-0">
+                      <p className="font-medium">
+                        {a.titulo} {a.publicado ? <Selo tom="sucesso">Publicada</Selo> : <Selo>Rascunho</Selo>}
+                      </p>
+                      <p className="text-xs text-ink-muted">
+                        {a.programa_nome ?? 'Todos os programas'} · {a.assistiram} aluna(s) já assistiram
+                      </p>
+                    </div>
+                    <div className="flex gap-1">
+                      <button type="button" className="btn-ghost btn-sm" onClick={() => setEditando(a)}>
+                        Editar
+                      </button>
+                      <button
+                        type="button"
+                        className={a.publicado ? 'btn-secondary btn-sm' : 'btn-primary btn-sm'}
+                        onClick={async () => {
+                          try {
+                            await post(`/aulas/${a.id}/publicar`, { publicado: !a.publicado })
+                            recarregar()
+                          } catch (e) {
+                            fb.erro(mensagemDeErro(e))
+                          }
+                        }}
+                      >
+                        {a.publicado ? 'Retirar do portal' : 'Publicar'}
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </div>
+      )}
+      {editando && <DialogAula reg={editando === 'nova' ? null : editando} onFechar={() => setEditando(null)} onConcluir={recarregar} />}
+    </Secao>
+  )
+}
+
+function DialogAula({ reg, onFechar, onConcluir }: { reg: Reg | null; onFechar: () => void; onConcluir: () => void }) {
+  const cat = useCatalogos()
+  const { valores, campo } = useValores({
+    programa_id: reg?.programa_id ?? '',
+    mes: String(reg?.mes ?? 1),
+    titulo: reg?.titulo ?? '',
+    descricao: reg?.descricao ?? '',
+    video_url: reg?.video_url ?? '',
+    ordem: String(reg?.ordem ?? 0),
+  })
+  return (
+    <FormDialog
+      aberto
+      titulo={reg ? 'Editar aula' : 'Nova aula'}
+      onFechar={onFechar}
+      onEnviar={async () => {
+        const corpo = { ...valores, programa_id: valores.programa_id || null, descricao: valores.descricao || null }
+        if (reg) await put(`/aulas/${reg.id}`, corpo)
+        else await post('/aulas', corpo)
+        onConcluir()
+      }}
+    >
+      <Campo rotulo="Título" obrigatorio>
+        {(p) => <input className="field-control" maxLength={200} {...p} value={valores.titulo} onChange={campo('titulo')} />}
+      </Campo>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Campo rotulo="Mês do plano" obrigatorio dica="1 = primeiro mês da matrícula.">
+          {(p) => <input type="number" min={1} max={36} className="field-control" {...p} value={valores.mes} onChange={campo('mes')} />}
+        </Campo>
+        <Campo rotulo="Programa">
+          {(p) => (
+            <select className="field-control" {...p} value={valores.programa_id} onChange={campo('programa_id')}>
+              <option value="">Todos os programas</option>
+              {(cat?.programas ?? []).map((pg: Reg) => (
+                <option key={pg.id} value={pg.id}>{pg.nome}</option>
+              ))}
+            </select>
+          )}
+        </Campo>
+      </div>
+      <Campo rotulo="Vídeo do Vimeo" obrigatorio dica="Cole o endereço do vídeo (https://vimeo.com/…). O progresso vem do próprio player.">
+        {(p) => <input className="field-control" placeholder="https://vimeo.com/…" {...p} value={valores.video_url} onChange={campo('video_url')} />}
+      </Campo>
+      <Campo rotulo="Descrição">
+        {(p) => <textarea rows={3} maxLength={4000} className="field-control" {...p} value={valores.descricao} onChange={campo('descricao')} />}
+      </Campo>
+      <Campo rotulo="Ordem no mês">
+        {(p) => <input type="number" min={0} max={999} className="field-control max-w-32" {...p} value={valores.ordem} onChange={campo('ordem')} />}
+      </Campo>
     </FormDialog>
   )
 }

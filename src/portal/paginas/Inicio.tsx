@@ -7,6 +7,7 @@ import { cx } from '../../lib/format'
 import { formatarData } from '../../../shared/datas'
 import { hrefAluna } from '../rotas'
 import { progressoMeta } from '../metas'
+import { LinhaDoTempo } from './LinhaDoTempo'
 
 const dataHora = (h: string) => `${formatarData(h.slice(0, 10))} às ${h.slice(11, 16)}`
 
@@ -38,6 +39,8 @@ export function Inicio() {
         )}
         {m && <ProximoPasso dados={dados} />}
       </section>
+
+      {m && dados.linha_tempo && <LinhaDoTempo linha={dados.linha_tempo} />}
 
       {m && dados.resumo && <ResumoExecutivo resumo={dados.resumo} />}
 

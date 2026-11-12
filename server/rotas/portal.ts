@@ -1,4 +1,5 @@
 import { Router, type Req as Request, type Res as Response, type Next as NextFunction } from '../http'
+import { linhaDoTempo } from '../aulas'
 import type { ContextoApp } from '../contexto'
 import { z } from 'zod'
 import { agoraIso, novoId, transacao, type BD } from '../db'
@@ -18,7 +19,7 @@ type Linha = Record<string, any>
  * no futuro só assume o portal quando começa; antes disso vale o ciclo atual.
  */
 export async function matriculaDaAluna(db: BD, pessoaId: string, h = hoje()) {
-  return (await db.get(`SELECT m.id, m.data_inicio, m.data_fim, m.situacao, pg.nome AS programa_nome, m.proximo_passo, pr.nome AS mentora_nome,
+  return (await db.get(`SELECT m.id, m.data_inicio, m.data_fim, m.situacao, m.programa_id, pg.nome AS programa_nome, m.proximo_passo, pr.nome AS mentora_nome,
               tu.nome AS turma_nome, m.data_boas_vindas, m.contrato_situacao, m.contrato_link
        FROM ped_matriculas m LEFT JOIN ped_programas pg ON pg.id = m.programa_id LEFT JOIN ped_profissionais pr ON pr.id = m.mentora_id
        LEFT JOIN ped_turmas tu ON tu.id = m.turma_id
@@ -218,6 +219,8 @@ export function rotasPortal(db: BD, ctx: ContextoApp) {
         vigencia: { data_inicio: m.data_inicio, ...situacaoVigencia(m.data_fim as string | null, h, janela), janela_dias: janela },
         mentorias: { realizadas: realizados.length, contratadas: contratados },
       },
+      // Linha do tempo: os meses do plano contratado, com início, encerramento e o progresso das aulas.
+      linha_tempo: { programa: m.programa_nome ?? null, ...(await linhaDoTempo(db, m, pessoaId, h)) },
       // Avisos da equipe (os mesmos do sino). Aviso programado só existe depois da data de publicação.
       avisos: await db.all('SELECT id, titulo, detalhe, link, lida_em, criado_em FROM ped_notificacoes WHERE usuario_id = ? AND aviso_id IS NOT NULL ORDER BY criado_em DESC LIMIT 5', req.usuario!.id),
     })

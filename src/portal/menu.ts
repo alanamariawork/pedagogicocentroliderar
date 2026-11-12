@@ -86,5 +86,6 @@ export const ITENS_ALUNA = SECOES_ALUNA.flatMap((s) => s.itens.map((i) => ({ ...
 
 export function nomePaginaAluna(p: PaginaAluna): string {
   if (p === 'mentoria') return 'Mentoria'
+  if (p === 'mes') return 'Mês do plano'
   return ITENS_ALUNA.find((i) => i.id === p)?.nome ?? 'Início'
 }

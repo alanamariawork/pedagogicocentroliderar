@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { MesDoPlano } from './paginas/LinhaDoTempo'
 import { ChevronDown, Gem, LogOut, Menu, PanelLeftClose, PanelLeftOpen, Search, X } from 'lucide-react'
 import { cx } from '../lib/format'
 import { useDados, type Reg } from '../lib/api'
@@ -257,6 +258,8 @@ function PaginaAluna({ rota, tipos }: { rota: RotaAluna; tipos: Reg[] }) {
         </div>
       )
     }
+    case 'mes':
+      return <MesDoPlano key={rota.id ?? ''} numero={rota.id} />
     case 'vitorias':
       return <Vitorias />
     case 'trilhas':

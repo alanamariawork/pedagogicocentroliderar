@@ -74,7 +74,7 @@ describe('Critérios de aceite', () => {
 
   it('CA03 — editar o modelo de pacote não altera matrículas existentes', async () => {
     const pacotes = (await c.admin.ok('GET', '/pacotes')) as unknown as J[]
-    const p4 = pacotes.find((p) => p.nome.includes('4 meses'))!
+    const p4 = pacotes.find((p) => p.nome === 'Modelo demonstrativo · 4 meses')!
     const beatriz = await c.admin.ok('GET', `/pessoas/${(await pessoaPorNome('Beatriz')).id}`)
     const mat = beatriz.matriculas.find((m: J) => m.pacote_origem_id === p4.id)
     const antes = mat.itens.find((i: J) => i.descricao === 'Tutoria').contratada
@@ -382,7 +382,7 @@ describe('Permissões e segurança', () => {
   describe('Portal da aluna, fase 1', () => {
     it('as migrations do pedagógico ficam registradas à parte e a turma vira cadastro', async () => {
       const versoes = (await db().all<J>('SELECT name FROM ped_migracoes ORDER BY id')).map((v) => v.name)
-      expect(versoes).toEqual(['0001_ped_esquema.sql', '0002_ped_ajustes_reuniao_1111.sql'])
+      expect(versoes).toEqual(['0001_ped_esquema.sql', '0002_ped_ajustes_reuniao_1111.sql', '0003_ped_planos_linha_do_tempo.sql'])
       // As matrículas da demonstração receberam uma das duas turmas cadastradas
       const turmas = (await db().get('SELECT COUNT(DISTINCT turma_id) AS n FROM ped_matriculas WHERE turma_id IS NOT NULL')) as J
       expect(turmas.n).toBe(2)
