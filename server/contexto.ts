@@ -68,8 +68,16 @@ export interface Arquivos {
   apagar(chaves: string[]): Promise<void>
 }
 
+/** Login da página Diamante Business (alunas e mentoras). A senha é sempre conferida pelo backoffice. */
+export interface Acesso {
+  /** Confere e-mail e senha e abre a sessão no escopo pedido. Falha volta como ErroHttp, com a mensagem do backoffice. */
+  entrar(email: string, senha: string, escopo: 'equipe' | 'portal'): Promise<{ token: string; senhaProvisoria: boolean }>
+}
+
 export interface ContextoApp {
   clientes: Clientes
+  /** Login da página Diamante Business. Ausente = a página mostra que o login está indisponível. */
+  acesso?: Acesso
   arquivos: Arquivos
   /** WhatsApp e Google Agenda (server/confirmacoes.ts). Ausente = nada é enviado. */
   confirmacoes?: Confirmacoes

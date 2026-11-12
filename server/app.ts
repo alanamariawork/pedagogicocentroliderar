@@ -12,6 +12,7 @@ import { rotasPortalServicos } from './rotas/portalServicos'
 import { rotasAvisos } from './rotas/avisos'
 import { rotasAcompanhamento } from './rotas/acompanhamento'
 import { rotasAulas } from './rotas/aulas'
+import { rotaEntrar } from './rotas/entrar'
 
 /** Prefixo da API do sistema pedagógico no endereço do backoffice. */
 export const PREFIXO_API = '/api/ped'
@@ -22,6 +23,8 @@ export type Api = (request: Request) => Promise<Response>
 export function criarApi(db: BD, ctx: ContextoApp): Api {
   const api = Router()
   api.use(exigirCabecalhoApp)
+  // Login da página Diamante Business: antes da leitura da sessão (quem entra ainda não tem uma).
+  api.use(rotaEntrar(db, ctx))
   api.use(async (req, _res, next) => {
     const s = await lerSessao(db, req.cookies[COOKIE])
     req.usuario = s.usuario

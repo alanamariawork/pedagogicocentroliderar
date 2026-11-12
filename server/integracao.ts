@@ -10,7 +10,8 @@
  */
 import { ErroHttp } from './http'
 import type { BD } from './bd'
-import type { Autor, AvisoEmail, Clientes, ConvitePortal, DadosPessoa, ResultadoEmailAviso } from './contexto'
+import type { Acesso, Autor, AvisoEmail, Clientes, ConvitePortal, DadosPessoa, ResultadoEmailAviso } from './contexto'
+import { sha256 } from './auth'
 
 /** O que o backoffice responde pelo RPC. Erros de regra voltam como dado, não como exceção. */
 export type RespostaRpc<T> = { ok: true; dados: T } | { ok: false; status: number; erro: string }
@@ -21,6 +22,8 @@ export interface BackofficePedagogico {
   atualizarPessoa(autor: Autor, pessoaId: string, dados: Partial<DadosPessoa>): Promise<RespostaRpc<null>>
   convidarPortal(autor: Autor, pessoaId: string, reenviar?: boolean): Promise<RespostaRpc<ConvitePortal>>
   enviarAvisoAluna(pessoaId: string, aviso: AvisoEmail): Promise<RespostaRpc<ResultadoEmailAviso>>
+  /** Login da página Diamante Business: a mesma conferência de senha e o mesmo bloqueio do backoffice. */
+  entrarDiamante(email: string, senha: string, escopo: 'equipe' | 'portal'): Promise<RespostaRpc<{ token: string; senhaProvisoria: boolean }>>
 }
 
 function abrir<T>(r: RespostaRpc<T>): T {
@@ -46,7 +49,38 @@ export function clientesPeloBackoffice(bo: BackofficePedagogico): Clientes {
   }
 }
 
+export function acessoPeloBackoffice(bo: BackofficePedagogico): Acesso {
+  return {
+    async entrar(email, senha, escopo) {
+      return abrir(await bo.entrarDiamante(email, senha, escopo))
+    },
+  }
+}
+
 /* ---------------- Somente testes e desenvolvimento local ---------------- */
+
+/**
+ * Imitação local do login do backoffice, para testes: senhas em memória (nunca no banco), mesma
+ * mensagem para e-mail inexistente e senha errada, e as mesmas exigências de vínculo por escopo
+ * (equipe precisa de membro; portal precisa de cliente).
+ */
+export function acessoLocal(db: BD): Acesso & { senhas: Map<string, string> } {
+  const senhas = new Map<string, string>()
+  return {
+    senhas,
+    async entrar(emailBruto, senha, escopo) {
+      const email = emailBruto.trim().toLowerCase()
+      const u = await db.get<{ id: string; senha_provisoria: number }>('SELECT id, senha_provisoria FROM usuario WHERE email = ?', email)
+      if (!u || senhas.get(email) !== senha) throw new ErroHttp(401, 'E-mail ou senha incorretos.')
+      const vinculo = escopo === 'equipe' ? 'SELECT 1 AS ok FROM membro WHERE usuario_id = ?' : 'SELECT 1 AS ok FROM cliente WHERE usuario_id = ?'
+      if (!(await db.get(vinculo, u.id))) throw new ErroHttp(escopo === 'equipe' ? 403 : 401, escopo === 'equipe' ? 'Seu e-mail ainda não tem acesso.' : 'E-mail ou senha incorretos.')
+      const token = crypto.randomUUID() + crypto.randomUUID()
+      const agora = new Date()
+      await db.run('INSERT INTO sessao (token_hash, usuario_id, criada_em, expira_em, ultimo_uso_em, escopo) VALUES (?,?,?,?,?,?)', await sha256(token), u.id, agora.toISOString(), new Date(agora.getTime() + 12 * 3600_000).toISOString(), agora.toISOString(), escopo)
+      return { token, senhaProvisoria: u.senha_provisoria === 1 }
+    },
+  }
+}
 
 function normalizar(d: Partial<DadosPessoa>): Partial<DadosPessoa> {
   const out: Partial<DadosPessoa> = {}

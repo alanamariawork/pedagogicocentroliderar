@@ -4,7 +4,9 @@
  * só recebe o que o Worker do backoffice repassa pelo service binding, no mesmo domínio.
  *
  *   /api/ped/*                    API (equipe e portal da aluna)
- *   /produtos, /produtos/*        área da equipe (tela única, rotas por #)
+ *   /produtos, /produtos/*        área da equipe (Administração, Coordenação, Suporte; login do backoffice)
+ *   /diamante/entrar              login de alunas e mentoras (página própria do Diamante Business)
+ *   /diamante/mentora/            área da mentora (a mesma tela da equipe, limitada pelo perfil)
  *   /portal/diamante-business*    portal da aluna (a mesma tela, que abre no modo portal)
  *
  * As páginas são liberadas ou redirecionadas aqui, no servidor, pela sessão do backoffice. A API
@@ -14,7 +16,9 @@ import { bancoD1, type BD } from './bd'
 import { COOKIE, lerSessao } from './auth'
 import { PREFIXO_API, criarApi, type Api } from './app'
 import { arquivosR2, type ContextoApp } from './contexto'
-import { clientesPeloBackoffice, type BackofficePedagogico } from './integracao'
+import { acessoPeloBackoffice, clientesPeloBackoffice, type BackofficePedagogico } from './integracao'
+import { BASE_MENTORA, PAGINA_ENTRAR } from './rotas/entrar'
+import { paginaEntrar } from './paginaEntrar'
 import { configDoAmbiente } from './confirmacoes'
 
 export interface Env {
@@ -46,6 +50,7 @@ export function montar(env: Env) {
     const db = bancoD1(env.DB)
     const ctx: ContextoApp = {
       clientes: clientesPeloBackoffice(env.BACKOFFICE),
+      acesso: acessoPeloBackoffice(env.BACKOFFICE),
       arquivos: arquivosR2(env.ANEXOS),
       confirmacoes: { config: configDoAmbiente(env as unknown as Record<string, unknown>), fetch: (i, o) => fetch(i, o) },
     }
@@ -101,10 +106,31 @@ export async function atender(request: Request, env: Env): Promise<Response> {
 
   const ehEquipe = caminho === '/produtos' || caminho.startsWith('/produtos/')
   const ehPortal = caminho === '/portal/diamante-business' || caminho.startsWith('/portal/diamante-business/')
-  if (!ehEquipe && !ehPortal) return new Response('Não encontrado.', { status: 404 })
+  const ehDiamante = caminho === '/diamante' || caminho.startsWith('/diamante/')
+  if (!ehEquipe && !ehPortal && !ehDiamante) return new Response('Não encontrado.', { status: 404 })
   if (request.method !== 'GET' && request.method !== 'HEAD') return new Response('Método não permitido.', { status: 405 })
 
   const s = await lerSessao(db, lerCookie(request, COOKIE))
+  const mentora = s.situacao === 'ok' && s.escopo === 'equipe' && s.usuario?.perfil === 'mentora'
+
+  if (ehDiamante) {
+    // Login de alunas e mentoras: quem já tem sessão vai direto para a sua área.
+    if (caminho === PAGINA_ENTRAR || caminho === `${PAGINA_ENTRAR}/`) {
+      if (s.situacao === 'ok') return redirecionar(url, s.escopo === 'portal' ? BASE_PORTAL : mentora ? BASE_MENTORA : BASE_EQUIPE)
+      return paginaEntrar()
+    }
+    if (caminho === '/diamante/mentora' || caminho.startsWith('/diamante/mentora/')) {
+      if (caminho !== BASE_MENTORA) return redirecionar(url, BASE_MENTORA)
+      if (s.situacao === 'sem_sessao') return redirecionar(url, PAGINA_ENTRAR)
+      if (s.escopo === 'portal') return redirecionar(url, s.situacao === 'ok' ? BASE_PORTAL : PAGINA_ENTRAR)
+      if (s.situacao === 'senha_provisoria') return redirecionar(url, '/definir-senha')
+      if (s.situacao !== 'ok') return semAcesso()
+      // Administração, Coordenação e Suporte usam a área da equipe, pelo backoffice.
+      if (!mentora) return redirecionar(url, BASE_EQUIPE)
+      return tela(env, url)
+    }
+    return redirecionar(url, PAGINA_ENTRAR)
+  }
 
   if (ehEquipe) {
     if (PAGINAS_ANTIGAS.has(caminho.replace(/\/$/, ''))) return redirecionar(url, BASE_EQUIPE)
@@ -114,13 +140,15 @@ export async function atender(request: Request, env: Env): Promise<Response> {
     if (s.escopo === 'portal') return redirecionar(url, s.situacao === 'ok' ? BASE_PORTAL : '/portal')
     if (s.situacao === 'senha_provisoria') return redirecionar(url, '/entrar')
     if (s.situacao !== 'ok') return semAcesso()
+    // A mentora tem a área própria, com o login do Diamante Business.
+    if (mentora) return redirecionar(url, BASE_MENTORA)
     return tela(env, url)
   }
 
   // Portal da aluna.
   if (caminho !== BASE_PORTAL) return redirecionar(url, BASE_PORTAL)
-  if (s.situacao === 'sem_sessao') return redirecionar(url, '/portal/entrar')
-  if (s.escopo === 'equipe') return redirecionar(url, s.situacao === 'ok' ? BASE_EQUIPE : '/')
+  if (s.situacao === 'sem_sessao') return redirecionar(url, PAGINA_ENTRAR)
+  if (s.escopo === 'equipe') return redirecionar(url, s.situacao === 'ok' ? (mentora ? BASE_MENTORA : BASE_EQUIPE) : '/')
   if (s.situacao !== 'ok') return redirecionar(url, '/portal') // cliente do backoffice que não é aluna do pedagógico
   return tela(env, url)
 }

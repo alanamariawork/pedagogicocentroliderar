@@ -127,10 +127,11 @@ function Marca({ claro }: { claro?: boolean }) {
   )
 }
 
-/** Sem sessão válida (ela terminou ou a conta não tem perfil pedagógico). O login é o do backoffice. */
+/** Sem sessão válida (ela terminou ou a conta não tem perfil pedagógico). Alunas e mentoras entram pelo login do Diamante Business; o restante da equipe, pelo backoffice. */
 function SemSessao() {
   const { erro } = useSessao()
   const portal = window.location.pathname.startsWith('/portal/')
+  const diamante = portal || window.location.pathname.startsWith('/diamante/')
   const semPerfil = erro?.status === 403
   return (
     <main className="flex min-h-screen items-center justify-center bg-gradient-to-b from-brand-50 to-canvas px-4 py-10">
@@ -141,7 +142,7 @@ function SemSessao() {
         <div className="card space-y-4 p-6">
           <h1 className="font-display text-xl font-semibold text-ink">{semPerfil ? 'Sem acesso' : 'Sua sessão terminou'}</h1>
           {semPerfil ? <AlertaErro mensagem={erro!.mensagem} /> : <p className="text-sm text-ink-soft">Entre novamente para continuar.</p>}
-          <a className="btn-primary w-full text-center" href={semPerfil ? (portal ? '/portal' : '/') : portal ? '/portal/entrar' : `/entrar?de=${encodeURIComponent('/produtos/')}`}>
+          <a className="btn-primary w-full text-center" href={semPerfil ? (diamante ? '/diamante/entrar' : '/') : diamante ? '/diamante/entrar' : `/entrar?de=${encodeURIComponent('/produtos/')}`}>
             {semPerfil ? 'Voltar' : 'Entrar'}
           </a>
         </div>
@@ -202,10 +203,12 @@ function Equipe() {
             <span className="block text-xs">{NOME_PERFIL[eu!.perfil]}</span>
           </span>
         </a>
-        <a href="/" className="mt-1 flex items-center gap-3 rounded-[var(--radius-control)] px-3 py-2 text-sm text-sidebar-muted hover:bg-white/5 hover:text-sidebar-ink">
-          <ArrowLeft className="size-4" aria-hidden />
-          Voltar ao backoffice
-        </a>
+        {eu!.perfil !== 'mentora' && (
+          <a href="/" className="mt-1 flex items-center gap-3 rounded-[var(--radius-control)] px-3 py-2 text-sm text-sidebar-muted hover:bg-white/5 hover:text-sidebar-ink">
+            <ArrowLeft className="size-4" aria-hidden />
+            Voltar ao backoffice
+          </a>
+        )}
         <button type="button" onClick={sair} className="mt-1 flex w-full items-center gap-3 rounded-[var(--radius-control)] px-3 py-2 text-left text-sm text-sidebar-muted hover:bg-white/5 hover:text-sidebar-ink">
           <LogOut className="size-4" aria-hidden />
           Sair

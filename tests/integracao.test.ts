@@ -35,10 +35,10 @@ afterAll(async () => {
 })
 
 describe('Login único e páginas', () => {
-  it('sem login: a equipe vai para /entrar e a aluna para /portal/entrar', async () => {
+  it('sem login: a equipe vai para /entrar (backoffice) e a aluna para /diamante/entrar', async () => {
     const anon = amb.semLogin()
     expect(await anon.pagina('/produtos/')).toMatchObject({ status: 302, destino: `${ORIGEM}/entrar?de=%2Fprodutos%2F` })
-    expect(await anon.pagina('/portal/diamante-business/')).toMatchObject({ status: 302, destino: `${ORIGEM}/portal/entrar` })
+    expect(await anon.pagina('/portal/diamante-business/')).toMatchObject({ status: 302, destino: `${ORIGEM}/diamante/entrar` })
     expect((await anon.req('GET', '/auth/eu')).status).toBe(401)
   })
 

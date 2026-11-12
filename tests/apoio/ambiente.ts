@@ -12,7 +12,7 @@ import { getPlatformProxy } from 'wrangler'
 import { bancoD1, type BD } from '../../server/bd'
 import { criarApi, type Api } from '../../server/app'
 import { sha256 } from '../../server/auth'
-import { clientesLocais } from '../../server/integracao'
+import { acessoLocal, clientesLocais } from '../../server/integracao'
 import { atender, type Env } from '../../server/paginas'
 import type { Arquivos } from '../../server/contexto'
 import type { Integracoes } from '../../server/confirmacoes'
@@ -64,6 +64,8 @@ export interface Ambiente {
   /** Sessão nova, como o login do backoffice faria. */
   entrar(usuarioId: string, escopo?: 'equipe' | 'portal'): Promise<Cliente>
   semLogin(): Cliente
+  /** Senha de uma conta para o login da página Diamante Business (imitação local do backoffice). */
+  definirSenha(email: string, senha: string): void
   /** Fecha e reabre o banco local (como reiniciar o Worker), mantendo os dados. */
   reabrir(): Promise<void>
   fechar(): Promise<void>
@@ -99,18 +101,22 @@ export async function abrirAmbiente(opcoes: { pasta?: string; confirmacoes?: Int
   aplicarMigrations('wrangler.backoffice-local.jsonc', dir)
   aplicarMigrations('wrangler.jsonc', dir)
   const arquivos = arquivosEmMemoria()
+  /** Senhas das contas de teste (só em memória; o login de verdade é conferido pelo backoffice). */
+  const senhas = new Map<string, string>()
   const abrir = async () => {
     const proxy = await getPlatformProxy<{ DB: D1Database }>({ configPath: join(RAIZ, 'wrangler.backoffice-local.jsonc'), persist: { path: join(dir, 'v3') }, remoteBindings: false })
     const db = bancoD1(proxy.env.DB)
     const clientes = clientesLocais(db)
-    const api = criarApi(db, { clientes, arquivos, confirmacoes: opcoes.confirmacoes })
+    const acesso = acessoLocal(db)
+    for (const [k, v] of senhas) acesso.senhas.set(k, v)
+    const api = criarApi(db, { clientes, arquivos, confirmacoes: opcoes.confirmacoes, acesso })
     const env = {
       DB: proxy.env.DB,
       ASSETS: { fetch: async () => new Response('<!doctype html><title>Diamante Business</title>', { headers: { 'Content-Type': 'text/html' } }) } as unknown as Fetcher,
       ANEXOS: undefined as unknown as R2Bucket,
       BACKOFFICE: undefined as never,
     } satisfies Env
-    return { proxy, db, clientes, api, env }
+    return { proxy, db, clientes, api, env, acesso }
   }
   let atual = await abrir()
   const { db } = atual
@@ -143,6 +149,10 @@ export async function abrirAmbiente(opcoes: { pasta?: string; confirmacoes?: Int
       const token = crypto.randomUUID() + crypto.randomUUID()
       await db.run('INSERT INTO sessao (token_hash, usuario_id, expira_em, escopo) VALUES (?,?,?,?)', await sha256(token), usuarioId, new Date(Date.now() + 12 * 3600_000).toISOString(), escopo)
       return new Cliente(amb, `__Host-cl_sessao=${token}`)
+    },
+    definirSenha(email, senha) {
+      senhas.set(email.toLowerCase(), senha)
+      atual.acesso.senhas.set(email.toLowerCase(), senha)
     },
     semLogin() {
       return new Cliente(amb)

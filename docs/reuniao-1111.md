@@ -82,3 +82,12 @@ Seis questões novas estão em “Decisões pendentes”: qual presença acompan
 - Em **Configurações › Parâmetros › Google Agenda**: “Criar link do Google Meet” (ligado) e “Convidar a aluna para o evento” (desligado; ligado, o Google manda o convite e as mudanças para o e-mail da aluna em Clientes).
 - Requisito: credenciais do Google no servidor (`GOOGLE_CLIENT_EMAIL`, `GOOGLE_PRIVATE_KEY`) e, para o Meet, Google Workspace com delegação (`GOOGLE_AGIR_COMO_MENTORA=1`). Passo a passo em [producao.md](producao.md). Se o Google recusar o Meet, o evento é gravado sem link e o motivo aparece na confirmação.
 - Sem credenciais, nada é enviado nem simulado: o agendamento funciona e a confirmação fica “não configurado”.
+
+## Atualização de 12/11: login separado para alunas e mentoras
+
+- **Alunas e mentoras** entram por uma página própria do Diamante Business: `/diamante/entrar`. A aluna vai para o portal (`/portal/diamante-business/`); a mentora, para a área dela (`/diamante/mentora/`), que é a tela da equipe limitada pelo perfil Mentora, sem o atalho para o backoffice.
+- **Administração, Coordenação e Suporte** continuam entrando pelo backoffice do Centro Liderar (`/entrar`), aba Pedagógico. Se tentarem a página do Diamante, a senha é conferida, nenhuma sessão é aberta e aparece o aviso para usar o backoffice.
+- A senha continua no backoffice (nenhuma senha no pedagógico): a página nova chama o backoffice pelo service binding, com a mesma conferência e o mesmo bloqueio após tentativas erradas. A sessão é a mesma dos dois sistemas.
+- Sem sessão, o portal e a área da mentora levam para `/diamante/entrar`; uma mentora que abrir `/produtos/` vai para a área dela. "Sair" leva alunas e mentoras de volta para o login do Diamante.
+- Primeiro acesso e "esqueci minha senha" da aluna continuam nas telas do Portal do backoffice (links na página). A mentora com senha provisória é levada para criar a senha no backoffice.
+- Backoffice: `worker/pedagogico.ts` ganhou `entrarDiamante` e `worker/index.ts` passou a repassar `/diamante/*`.

@@ -49,10 +49,10 @@ export function ProvedorSessao({ children }: { children: ReactNode }) {
     void recarregar()
   }, [recarregar])
 
-  // O login e o "sair" são os do backoffice: uma sessão só para os dois sistemas.
+  // Uma sessão só para os dois sistemas. Alunas e mentoras voltam para o login do Diamante Business.
   const sair = useCallback(async () => {
     await fetch('/api/sair', { method: 'POST', credentials: 'same-origin', headers: { 'X-CL-App': '1' } }).catch(() => null)
-    window.location.assign(eu?.perfil === 'aluna' ? '/portal/entrar' : '/entrar')
+    window.location.assign(eu?.perfil === 'aluna' || eu?.perfil === 'mentora' ? '/diamante/entrar' : '/entrar')
   }, [eu])
   const pode = useCallback((p: Permissao) => !!eu?.permissoes.includes(p), [eu])
 
