@@ -41,6 +41,13 @@ export class Cliente {
     if (r.status >= 400) throw new Error(`${metodo} ${caminho} → ${r.status} ${r.corpo.erro}`)
     return r.corpo
   }
+  /** Envia um arquivo como corpo cru (como o navegador faz), com o nome no cabeçalho. */
+  async enviar(caminho: string, nome: string, dados: ArrayBuffer | Uint8Array) {
+    const headers: Record<string, string> = { 'Content-Type': 'application/octet-stream', 'X-CL-App': '1', Origin: ORIGEM, 'X-Nome-Arquivo': encodeURIComponent(nome) }
+    if (this.cookie) headers.Cookie = this.cookie
+    const r = await this.amb.api(new Request(`${ORIGEM}/api/ped${caminho}`, { method: 'POST', headers, body: dados as BodyInit }))
+    return { status: r.status, corpo: (await r.json().catch(() => ({}))) as J }
+  }
   get = (c: string) => this.ok('GET', c)
   post = (c: string, b: unknown) => this.ok('POST', c, b)
   put = (c: string, b: unknown) => this.ok('PUT', c, b)

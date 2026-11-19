@@ -1,4 +1,5 @@
 import type { Ambiente, Cliente } from './ambiente'
+import { pngFicticio } from './imagens'
 import { hoje } from '../../server/servicos'
 import { inicioDaSemana, mesDe, somarDias, somarMeses } from '../../shared/datas'
 
@@ -438,9 +439,52 @@ export async function popularDemonstracao(amb: Ambiente) {
       await api.post(`/conteudos/${id}/publicar`, { publicado: true })
       if (visto) await aluna1.post(`/portal/conteudos/${id}/progresso`, { percentual: visto })
     }
-    // Mural: publicações fictícias (uma da equipe, já publicada; uma da aluna, conforme a regra de moderação).
-    await api.post('/mural', { categoria: 'oportunidade', titulo: '[Demo] Encontro de networking entre alunas', descricao: 'Publicação de demonstração: troque ou arquive em Conteúdos e mural.', contato_canal: 'email', contato_valor: 'contato@example.com', autora_nome: 'Equipe (demo)' })
-    await aluna1.post('/portal/mural', { categoria: 'produto', titulo: '[Demo] Consultoria de vitrine', descricao: 'Publicação fictícia de demonstração de uma aluna.', contato_canal: 'instagram', contato_valor: '@demo.vitrine' })
+    // Mural (feed): publicações fictícias com imagens geradas aqui, curtidas, comentários e uma na fila de aprovação.
+    const catMural = async (nome: string) => ((await db.get('SELECT id FROM ped_mural_categorias WHERE nome = ?', nome)) as { id: string }).id
+    const imgMural = async (cli: Cliente, base: string, nome: string, de: string, para: string, largura = 800, altura = 600) => {
+      const r = await cli.enviar(`${base}/imagens`, nome, pngFicticio(largura, altura, de, para))
+      if (r.status !== 201) throw new Error(`imagem do mural: ${r.status} ${r.corpo.erro}`)
+      return r.corpo.id as string
+    }
+    const aluna2 = await amb.entrar(CONTAS['carla@demo.local'], 'portal')
+    const aluna3 = await amb.entrar(CONTAS['daniela@demo.local'], 'portal')
+    await api.post('/mural', {
+      tipo: 'servico', categoria_id: await catMural('Eventos'), negocio_nome: 'Centro Liderar', autora_nome: 'Equipe (demo)',
+      titulo: '[Demo] Encontro de networking entre alunas', descricao: 'Publicação de demonstração da equipe: troque ou arquive em Conteúdos do portal › Mural.',
+      atendimento: 'Encontro de 2 horas com apresentação rápida de cada negócio e conversa livre.', beneficios: ['Conhecer outras empresárias', 'Trocar indicações'], formato: 'presencial', local: 'Local a definir (demonstração)',
+      contato_canal: 'email', contato_valor: 'contato@example.com', capa_id: await imgMural(api, '/mural', 'networking.png', '#3b1222', '#9a7738'),
+    })
+    const pubMural = async (cli: Cliente, dados: Record<string, unknown>) => (await cli.post('/portal/mural', dados)).id as string
+    const mur1 = await pubMural(aluna1, {
+      tipo: 'produto', categoria_id: await catMural('Moda e acessórios'), negocio_nome: '[Demo] Ateliê Beatriz', titulo: '[Demo] Coleção de verão em linho',
+      descricao: 'Peças leves em linho, feitas em pequenas quantidades. Texto fictício de demonstração.',
+      caracteristicas: ['Tamanhos P ao GG', '100% linho', 'Três cores'], como_comprar: 'Peça pelo WhatsApp; entrega ou retirada combinada. (demonstração)',
+      preco_modo: 'valor', preco: 189.9, contato_canal: 'whatsapp', contato_valor: '(00) 90000-0000', link_externo: 'https://example.com/loja-demo',
+      capa_id: await imgMural(aluna1, '/portal/mural', 'capa.png', '#722642', '#dcc89f'),
+      galeria_ids: [await imgMural(aluna1, '/portal/mural', 'foto1.png', '#9a7738', '#f6efe1'), await imgMural(aluna1, '/portal/mural', 'foto2.png', '#46363c', '#8a3352')],
+      logo_id: await imgMural(aluna1, '/portal/mural', 'logo.png', '#5e1a33', '#5e1a33', 200, 200),
+    })
+    const mur2 = await pubMural(aluna2, {
+      tipo: 'servico', categoria_id: await catMural('Consultoria e mentoria'), negocio_nome: '[Demo] Vitrine Viva', titulo: '[Demo] Consultoria de vitrine para lojas físicas',
+      descricao: 'Ajudo lojas a organizar a vitrine e o salão para vender mais. Texto fictício de demonstração.',
+      atendimento: 'Visita de diagnóstico, proposta de layout e acompanhamento por 30 dias.', beneficios: ['Vitrine que atrai', 'Produtos mais fáceis de achar', 'Orientação para a equipe'],
+      formato: 'hibrido', local: 'Atendimento on-line ou na sua loja', preco_modo: 'consultar', contato_canal: 'instagram', contato_valor: '@demo.vitrine',
+      capa_id: await imgMural(aluna2, '/portal/mural', 'vitrine.png', '#2f5d86', '#f6efe1'),
+    })
+    const mur3 = await pubMural(aluna3, {
+      tipo: 'produto', categoria_id: await catMural('Alimentação'), negocio_nome: '[Demo] Doces da Dani', titulo: '[Demo] Bolos caseiros por encomenda',
+      descricao: 'Bolos para aniversários e cafés da tarde. Texto fictício de demonstração.', caracteristicas: ['Massa de baunilha ou chocolate', 'Serve 15 pessoas'],
+      como_comprar: 'Encomendas com 3 dias de antecedência. (demonstração)', preco_modo: 'valor', preco: 85, contato_canal: 'email', contato_valor: 'doces@example.com',
+      capa_id: await imgMural(aluna3, '/portal/mural', 'bolo.png', '#9a7738', '#fbefed'),
+    })
+    for (const id of [mur1, mur2, mur3]) await api.post(`/mural/${id}/moderar`, { decisao: 'publicar' })
+    await pubMural(aluna1, { tipo: 'produto', categoria_id: await catMural('Moda e acessórios'), negocio_nome: '[Demo] Ateliê Beatriz', titulo: '[Demo] Kit presente de fim de ano', descricao: 'Publicação fictícia aguardando aprovação da equipe.', preco_modo: 'consultar', contato_canal: 'whatsapp', contato_valor: '(00) 90000-0000' })
+    await aluna2.post(`/portal/mural/${mur1}/curtir`, { curtir: true })
+    await aluna3.post(`/portal/mural/${mur1}/curtir`, { curtir: true })
+    await aluna1.post(`/portal/mural/${mur2}/curtir`, { curtir: true })
+    const coment = (await aluna2.post(`/portal/mural/${mur1}/comentarios`, { texto: 'Que lindas! Tem entrega para outras cidades? (demonstração)' })).id
+    await aluna1.post(`/portal/mural/${mur1}/comentarios`, { texto: 'Tem sim, combinamos pelo WhatsApp. (demonstração)', pai_id: coment })
+    await aluna3.post(`/portal/mural/${mur2}/comentarios`, { texto: 'Preciso disso na minha loja! (demonstração)' })
     await aluna1.put('/portal/diagnostico/inicio/situacao', {
       respostas: { negocio: 'Loja de roupas com 2 funcionárias (demonstração).', numeros: 'Faturamento médio de R$ 30 mil por mês (demonstração).', funciona: 'Clientes fiéis e boa vitrine.' },
     })

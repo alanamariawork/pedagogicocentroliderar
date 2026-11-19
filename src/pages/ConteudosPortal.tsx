@@ -2,13 +2,12 @@ import { useRef, useState } from 'react'
 import { LibraryBig, Lock, Paperclip, Plus } from 'lucide-react'
 import { Carregando, EstadoErro, EstadoVazio, Secao } from '../components/Estados'
 import { Campo, FormDialog, useValores } from '../components/Form'
-import { Selo, type Tom } from '../components/Selos'
+import { Selo } from '../components/Selos'
 import { useFeedback } from '../components/Feedback'
 import { del as apagar, enviarArquivo, mensagemDeErro, post, put, useDados, type Reg } from '../lib/api'
 import { useSessao } from '../state/Sessao'
 import { useCatalogos } from '../state/Catalogos'
-import { formatarData } from '../../shared/datas'
-import { CANAL_MURAL, CATEGORIA_MURAL } from '../portal/paginas/Mural'
+import { GestaoMural as MuralEquipe } from '../mural/GestaoMural'
 
 const SECOES: { id: 'rotina' | 'biblioteca' | 'livros'; nome: string; dica: string }[] = [
   { id: 'rotina', nome: 'Rotina', dica: 'Ex.: o “Dia Extraordinário da Mulher que Age”, quando a coordenação publicar o material oficial.' },
@@ -345,154 +344,6 @@ function DialogConteudo({ secao, reg, estanteId, estantes, onFechar, onConcluir 
       <Campo rotulo="Ordem">
         {(p) => <input type="number" min={0} max={999} className="field-control max-w-32" {...p} value={valores.ordem} onChange={campo('ordem')} />}
       </Campo>
-    </FormDialog>
-  )
-}
-
-const SITUACAO: Record<string, [string, Tom]> = { pendente: ['Aguardando aprovação', 'dourado'], publicada: ['Publicada', 'sucesso'], recusada: ['Recusada', 'neutro'], arquivada: ['Arquivada', 'neutro'] }
-
-function MuralEquipe() {
-  const fb = useFeedback()
-  const { dados, erro, recarregar } = useDados<{ publicacoes: Reg[] }>('/mural')
-  const [nova, setNova] = useState(false)
-  const [recusando, setRecusando] = useState<Reg | null>(null)
-  if (erro) return <EstadoErro mensagem={erro} onTentar={recarregar} />
-  if (!dados) return <Carregando />
-
-  async function moderar(p: Reg, decisao: 'publicar' | 'arquivar') {
-    try {
-      await post(`/mural/${p.id}/moderar`, { decisao })
-      fb.sucesso(decisao === 'publicar' ? 'Publicada no mural.' : 'Arquivada.')
-      recarregar()
-    } catch (e) {
-      fb.erro(mensagemDeErro(e))
-    }
-  }
-
-  return (
-    <Secao
-      titulo="Mural de oportunidades"
-      descricao="As regras (publicação direta, moderada ou só pela equipe, e quem vê) ficam em Configurações › Parâmetros."
-      acao={
-        <button type="button" className="btn-secondary btn-sm" onClick={() => setNova(true)}>
-          <Plus className="size-4" aria-hidden /> Publicar pela equipe
-        </button>
-      }
-    >
-      {!dados.publicacoes.length ? (
-        <p className="text-sm text-ink-muted">Nenhuma publicação ainda.</p>
-      ) : (
-        <ul className="divide-y divide-line text-sm">
-          {dados.publicacoes.map((p) => {
-            const [rot, tom] = SITUACAO[p.situacao] ?? [p.situacao, 'neutro']
-            return (
-              <li key={p.id} className="space-y-1 py-3">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="font-medium">{p.titulo}</span>
-                  <Selo tom={tom}>{rot}</Selo>
-                  <Selo>{CATEGORIA_MURAL[p.categoria] ?? p.categoria}</Selo>
-                </div>
-                <p className="whitespace-pre-line text-ink-soft">{p.descricao}</p>
-                <p className="text-xs text-ink-muted">
-                  {p.autora_nome} · {CANAL_MURAL[p.contato_canal] ?? p.contato_canal}: {p.contato_valor} · enviada em {formatarData(String(p.criado_em).slice(0, 10))}
-                  {p.moderada_por_nome && ` · analisada por ${p.moderada_por_nome}`}
-                  {p.motivo_moderacao && ` · motivo: ${p.motivo_moderacao}`}
-                </p>
-                <div className="flex flex-wrap gap-1">
-                  {p.situacao !== 'publicada' && (
-                    <button type="button" className="btn-primary btn-sm" onClick={() => moderar(p, 'publicar')}>
-                      Publicar
-                    </button>
-                  )}
-                  {p.situacao === 'pendente' && (
-                    <button type="button" className="btn-secondary btn-sm" onClick={() => setRecusando(p)}>
-                      Recusar
-                    </button>
-                  )}
-                  {p.situacao !== 'arquivada' && (
-                    <button type="button" className="btn-ghost btn-sm" onClick={() => moderar(p, 'arquivar')}>
-                      Arquivar
-                    </button>
-                  )}
-                </div>
-              </li>
-            )
-          })}
-        </ul>
-      )}
-      {recusando && <DialogRecusar p={recusando} onFechar={() => setRecusando(null)} onConcluir={recarregar} />}
-      {nova && <DialogNovaPublicacao onFechar={() => setNova(false)} onConcluir={recarregar} />}
-    </Secao>
-  )
-}
-
-function DialogRecusar({ p, onFechar, onConcluir }: { p: Reg; onFechar: () => void; onConcluir: () => void }) {
-  const [motivo, setMotivo] = useState('')
-  return (
-    <FormDialog
-      aberto
-      titulo="Recusar publicação"
-      descricao={`“${p.titulo}”. A aluna verá o motivo.`}
-      rotulo="Recusar"
-      perigo
-      onFechar={onFechar}
-      onEnviar={async () => {
-        await post(`/mural/${p.id}/moderar`, { decisao: 'recusar', motivo })
-        onConcluir()
-      }}
-    >
-      <Campo rotulo="Motivo" obrigatorio>
-        {(pr) => <textarea rows={3} maxLength={500} className="field-control" {...pr} value={motivo} onChange={(e) => setMotivo(e.target.value)} />}
-      </Campo>
-    </FormDialog>
-  )
-}
-
-function DialogNovaPublicacao({ onFechar, onConcluir }: { onFechar: () => void; onConcluir: () => void }) {
-  const { valores, campo } = useValores({ categoria: 'oportunidade', titulo: '', descricao: '', contato_canal: 'whatsapp', contato_valor: '', autora_nome: 'Equipe Centro Liderar' })
-  return (
-    <FormDialog
-      aberto
-      titulo="Publicar no mural"
-      descricao="Publicações da equipe aparecem na hora."
-      onFechar={onFechar}
-      onEnviar={async () => {
-        await post('/mural', valores)
-        onConcluir()
-      }}
-    >
-      <Campo rotulo="Categoria">
-        {(p) => (
-          <select className="field-control" {...p} value={valores.categoria} onChange={campo('categoria')}>
-            {Object.entries(CATEGORIA_MURAL).map(([k, v]) => (
-              <option key={k} value={k}>{v}</option>
-            ))}
-          </select>
-        )}
-      </Campo>
-      <Campo rotulo="Título" obrigatorio>
-        {(p) => <input className="field-control" maxLength={120} {...p} value={valores.titulo} onChange={campo('titulo')} />}
-      </Campo>
-      <Campo rotulo="Descrição" obrigatorio>
-        {(p) => <textarea rows={4} maxLength={2000} className="field-control" {...p} value={valores.descricao} onChange={campo('descricao')} />}
-      </Campo>
-      <Campo rotulo="Autoria">
-        {(p) => <input className="field-control" maxLength={120} {...p} value={valores.autora_nome} onChange={campo('autora_nome')} />}
-      </Campo>
-      <div className="grid gap-3 sm:grid-cols-2">
-        <Campo rotulo="Canal de contato">
-          {(p) => (
-            <select className="field-control" {...p} value={valores.contato_canal} onChange={campo('contato_canal')}>
-              {Object.entries(CANAL_MURAL).map(([k, v]) => (
-                <option key={k} value={k}>{v}</option>
-              ))}
-            </select>
-          )}
-        </Campo>
-        <Campo rotulo="Contato" obrigatorio>
-          {(p) => <input className="field-control" maxLength={200} {...p} value={valores.contato_valor} onChange={campo('contato_valor')} />}
-        </Campo>
-      </div>
     </FormDialog>
   )
 }

@@ -545,11 +545,13 @@ describe('Vitórias, depoimentos, conteúdos e mural', () => {
   })
 
   it('mural: com moderação, a publicação da aluna só aparece depois de aprovada e mostra só o contato escolhido', async () => {
-    const p = await jaciara.cliente.post('/portal/mural', { categoria: 'servico', titulo: 'Consultoria fictícia', descricao: 'Serviço de teste.', contato_canal: 'instagram', contato_valor: '@ficticia' })
+    const categoria = (await jaciara.cliente.get('/portal/mural')).categorias[0].id
+    const p = await jaciara.cliente.post('/portal/mural', { tipo: 'servico', categoria_id: categoria, negocio_nome: 'Negócio Fictício', titulo: 'Consultoria fictícia', descricao: 'Serviço de teste.', contato_canal: 'instagram', contato_valor: '@ficticia' })
     expect(p.situacao).toBe('pendente')
     expect((await bia.cliente.get('/portal/mural')).publicadas).toHaveLength(0)
     await c.suporte.post(`/mural/${p.id}/moderar`, { decisao: 'publicar' })
-    const visto = (await bia.cliente.get('/portal/mural')).publicadas[0]
+    expect((await bia.cliente.get('/portal/mural')).publicadas[0]).toMatchObject({ titulo: 'Consultoria fictícia', autora_nome: 'Jaciara Fictícia' })
+    const visto = (await bia.cliente.get(`/portal/mural/${p.id}`)).publicacao
     expect(visto).toMatchObject({ titulo: 'Consultoria fictícia', contato_canal: 'instagram', contato_valor: '@ficticia', autora_nome: 'Jaciara Fictícia' })
     expect(JSON.stringify(visto)).not.toContain('jaciara@ficticio.local')
     expect(JSON.stringify(visto)).not.toContain('97777')

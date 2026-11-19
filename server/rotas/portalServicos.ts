@@ -17,13 +17,12 @@ import { enfileirar, processarIntegracoes } from '../confirmacoes'
 import { matriculaDaAluna } from './portal'
 import { agoraSP, somarDias, somarMinutos } from '../../shared/datas'
 import { PERCENTUAL_ASSISTIDA } from '../../shared/linhaTempo'
-import { entregarAnexo } from '../anexos'
+import { corpoDoArquivo, entregarAnexo } from '../anexos'
+import { categorias, comentar, comentarios, contagens, criarPublicacao, editarPublicacao, entregarImagem, feed, guardarImagem, lerFiltros, publicacaoCompleta, publicacoesDa, schemaComentario, schemaPublicacao, type Dona } from '../mural'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Linha = Record<string, any>
 
-export const CANAIS_CONTATO = ['whatsapp', 'email', 'instagram', 'site', 'outro'] as const
-export const CATEGORIAS_MURAL = ['oportunidade', 'produto', 'servico'] as const
 
 export function rotasPortalServicos(db: BD, ctx: ContextoApp) {
   const r = Router()
@@ -403,7 +402,7 @@ export function rotasPortalServicos(db: BD, ctx: ContextoApp) {
     await entregarAnexo(ctx.arquivos, res, c)
   })
 
-  /* ---------------- Mural de oportunidades ---------------- */
+  /* ---------------- Mural de oportunidades (feed) ---------------- */
 
   async function regrasMural() {
     return {
@@ -412,48 +411,156 @@ export function rotasPortalServicos(db: BD, ctx: ContextoApp) {
     }
   }
 
-  r.get('/portal/mural', async (req, res) => {
+  /** Quem vê o feed segue a regra de Configurações; curtir, comentar e publicar exigem matrícula ativa. */
+  async function acessoMural(req: Request) {
     const regras = await regrasMural()
     const m = await matriculaDaAluna(db, req.usuario!.pessoa_id!)
-    const podeVer = regras.visibilidade === 'todas' || m?.situacao === 'ativa'
-    // Só o contato escolhido para a publicação é mostrado; nenhum outro dado da autora sai daqui.
-    const publicadas = podeVer
-      ? await db.all("SELECT id, autora_nome, categoria, titulo, descricao, contato_canal, contato_valor, criado_em FROM ped_mural WHERE situacao = 'publicada' ORDER BY criado_em DESC LIMIT 100")
-      : []
-    const minhas = await db.all('SELECT id, categoria, titulo, situacao, motivo_moderacao, criado_em FROM ped_mural WHERE autora_pessoa_id = ? ORDER BY criado_em DESC LIMIT 50', req.usuario!.pessoa_id)
-    res.json({ pode_ver: podeVer, pode_publicar: regras.publicacao !== 'somente_equipe' && m?.situacao === 'ativa', moderada: regras.publicacao === 'moderada', publicadas, minhas })
+    const ativa = m?.situacao === 'ativa'
+    return { regras, podeVer: regras.visibilidade === 'todas' || ativa, podeInteragir: ativa, podePublicar: ativa && regras.publicacao !== 'somente_equipe' }
+  }
+
+  const dona = (req: Request): Dona => ({ pessoa_id: req.usuario!.pessoa_id! })
+  const nomeDaAluna = async (req: Request) => ((await db.get('SELECT nome FROM ped_pessoas WHERE id = ?', req.usuario!.pessoa_id)) as { nome: string }).nome
+
+  /** Publicação que a aluna pode abrir: publicada (se ela vê o mural) ou dela, em qualquer situação. */
+  async function publicacaoVisivel(req: Request, id: string) {
+    const a = await acessoMural(req)
+    const p = await publicacaoCompleta(db, id)
+    const minha = !!p && p.autora_pessoa_id === req.usuario!.pessoa_id
+    if (!p || !(minha || (p.situacao === 'publicada' && a.podeVer))) throw new ErroHttp(404, 'Publicação não encontrada.')
+    return { p, a, minha }
+  }
+
+  /** Só publicações publicadas recebem curtidas e comentários, e só de quem vê o mural com matrícula ativa. */
+  async function publicacaoParaInteragir(req: Request, id: string) {
+    const a = await acessoMural(req)
+    if (!a.podeVer) throw new ErroHttp(404, 'Publicação não encontrada.')
+    if (!a.podeInteragir) throw new ErroHttp(403, 'Curtidas e comentários são para alunas com matrícula ativa.')
+    const p = (await db.get("SELECT id FROM ped_mural WHERE id = ? AND situacao = 'publicada'", id)) as Linha | undefined
+    if (!p) throw new ErroHttp(404, 'Publicação não encontrada.')
+    return p
+  }
+
+  r.get('/portal/mural', async (req, res) => {
+    const a = await acessoMural(req)
+    const f = lerFiltros(req.query)
+    const publicadas = a.podeVer ? await feed(db, f, req.usuario!.pessoa_id!) : { itens: [], tem_mais: false }
+    res.json({
+      pode_ver: a.podeVer,
+      pode_publicar: a.podePublicar,
+      pode_interagir: a.podeInteragir,
+      moderada: a.regras.publicacao === 'moderada',
+      categorias: await categorias(db, true),
+      publicadas: publicadas.itens,
+      tem_mais: publicadas.tem_mais,
+      minhas: await publicacoesDa(db, dona(req)),
+    })
+  })
+
+  // Imagens: enviar (fica solta até salvar a publicação) e exibir.
+  r.post('/portal/mural/imagens', corpoDoArquivo, async (req, res) => {
+    const a = await acessoMural(req)
+    if (!a.podePublicar) throw new ErroHttp(403, a.regras.publicacao === 'somente_equipe' ? 'Por enquanto, só a equipe publica no mural.' : 'O mural é para alunas com matrícula ativa.')
+    res.status(201).json(await guardarImagem(db, ctx.arquivos, req, dona(req)))
+  })
+
+  r.get('/portal/mural/imagens/:id', async (req, res) => {
+    const a = await acessoMural(req)
+    const img = (await db.get(
+      `SELECT i.chave, i.tipo FROM ped_mural_imagens i LEFT JOIN ped_mural mu ON mu.id = i.mural_id
+       WHERE i.id = ? AND (i.dona_pessoa_id = ? OR mu.autora_pessoa_id = ? OR (? AND mu.situacao = 'publicada' AND i.papel IN ('capa','galeria','logo')))`,
+      req.params.id, req.usuario!.pessoa_id, req.usuario!.pessoa_id, a.podeVer ? 1 : 0,
+    )) as Linha | undefined
+    if (!img) throw new ErroHttp(404, 'Imagem não encontrada.')
+    await entregarImagem(ctx.arquivos, res, img)
+  })
+
+  r.get('/portal/mural/:id', async (req, res) => {
+    const { p, a, minha } = await publicacaoVisivel(req, req.params.id as string)
+    const c = await contagens(db, p.id, req.usuario!.pessoa_id!)
+    const { autora_pessoa_id: _a, autora_equipe_id: _e, ...publica } = p
+    res.json({
+      publicacao: { ...publica, ...c, motivo_moderacao: minha ? p.motivo_moderacao : undefined },
+      minha,
+      pode_interagir: a.podeInteragir && p.situacao === 'publicada',
+      pode_editar: minha && a.podePublicar && p.situacao !== 'arquivada',
+      moderada: a.regras.publicacao === 'moderada',
+      comentarios: p.situacao === 'publicada' ? await comentarios(db, p.id, { pessoaId: req.usuario!.pessoa_id! }) : [],
+    })
   })
 
   r.post('/portal/mural', async (req, res) => {
-    const regras = await regrasMural()
-    const m = await matriculaDaAluna(db, req.usuario!.pessoa_id!)
-    if (regras.publicacao === 'somente_equipe') throw new ErroHttp(403, 'Por enquanto, só a equipe publica no mural.')
-    if (m?.situacao !== 'ativa') throw new ErroHttp(403, 'O mural é para alunas com matrícula ativa.')
-    const d = validar(
-      z.object({
-        categoria: z.enum(CATEGORIAS_MURAL, { error: 'Escolha a categoria.' }),
-        titulo: textoObrig('o título', 120),
-        descricao: textoObrig('a descrição', 2000),
-        contato_canal: z.enum(CANAIS_CONTATO, { error: 'Escolha como as pessoas falam com você.' }),
-        contato_valor: textoObrig('o contato', 200),
-      }),
-      req.body,
-    )
+    const a = await acessoMural(req)
+    if (a.regras.publicacao === 'somente_equipe') throw new ErroHttp(403, 'Por enquanto, só a equipe publica no mural.')
+    if (!a.podePublicar) throw new ErroHttp(403, 'O mural é para alunas com matrícula ativa.')
+    const d = validar(schemaPublicacao, req.body)
     const pendentes = ((await db.get("SELECT COUNT(*) AS n FROM ped_mural WHERE autora_pessoa_id = ? AND situacao = 'pendente'", req.usuario!.pessoa_id)) as { n: number }).n
     if (pendentes >= 5) throw new ErroHttp(429, 'Você já tem 5 publicações aguardando aprovação.')
-    const pessoa = (await db.get('SELECT nome FROM ped_pessoas WHERE id = ?', req.usuario!.pessoa_id)) as { nome: string }
-    const id = novoId()
-    const situacao = regras.publicacao === 'direta' ? 'publicada' : 'pendente'
-    await db.run('INSERT INTO ped_mural (id, autora_pessoa_id, autora_nome, categoria, titulo, descricao, contato_canal, contato_valor, situacao, criado_em, atualizado_em) VALUES (?,?,?,?,?,?,?,?,?,?,?)', id, req.usuario!.pessoa_id, pessoa.nome, d.categoria, d.titulo, d.descricao, d.contato_canal, d.contato_valor, situacao, agoraIso(), agoraIso())
+    const situacao = a.regras.publicacao === 'direta' ? 'publicada' : 'pendente'
+    const id = await criarPublicacao(db, dona(req), await nomeDaAluna(req), d, situacao)
     await auditar(db, req, { entidade: 'mural', entidade_id: id, acao: 'enviada_pela_aluna', pessoa_id: req.usuario!.pessoa_id, dados: { titulo: d.titulo, situacao } })
     res.status(201).json({ id, situacao })
   })
 
+  // Editar: só a autora (conferido aqui pela sessão). Com moderação, a edição volta para aprovação.
+  r.put('/portal/mural/:id', async (req, res) => {
+    const a = await acessoMural(req)
+    const atual = (await db.get('SELECT * FROM ped_mural WHERE id = ?', req.params.id)) as Linha | undefined
+    if (!atual || atual.autora_pessoa_id !== req.usuario!.pessoa_id) throw new ErroHttp(404, 'Publicação não encontrada.')
+    if (atual.situacao === 'arquivada') throw new ErroHttp(409, 'Publicação arquivada não pode ser editada.')
+    if (a.regras.publicacao === 'somente_equipe') throw new ErroHttp(403, 'Por enquanto, só a equipe publica no mural.')
+    if (!a.podePublicar) throw new ErroHttp(403, 'O mural é para alunas com matrícula ativa.')
+    const d = validar(schemaPublicacao, req.body)
+    const situacao = atual.situacao === 'recusada' || (a.regras.publicacao === 'moderada' && atual.situacao === 'publicada') ? 'pendente' : atual.situacao
+    await editarPublicacao(db, atual, dona(req), d, situacao)
+    await auditar(db, req, { entidade: 'mural', entidade_id: atual.id, acao: 'editada_pela_aluna', pessoa_id: req.usuario!.pessoa_id, dados: { titulo: d.titulo, de: atual.situacao, para: situacao } })
+    res.json({ id: atual.id, situacao })
+  })
+
   r.post('/portal/mural/:id/arquivar', async (req, res) => {
-    const p = await db.run("UPDATE ped_mural SET situacao = 'arquivada', atualizado_em = ? WHERE id = ? AND autora_pessoa_id = ? AND situacao IN ('pendente','publicada')", agoraIso(), req.params.id, req.usuario!.pessoa_id)
+    const p = await db.run("UPDATE ped_mural SET situacao = 'arquivada', atualizado_em = ? WHERE id = ? AND autora_pessoa_id = ? AND situacao IN ('pendente','publicada','recusada')", agoraIso(), req.params.id, req.usuario!.pessoa_id)
     if (!p.changes) throw new ErroHttp(404, 'Publicação não encontrada.')
     await auditar(db, req, { entidade: 'mural', entidade_id: req.params.id as string, acao: 'arquivada_pela_aluna', pessoa_id: req.usuario!.pessoa_id })
     res.json({ ok: true })
+  })
+
+  // Curtir ou desfazer: uma curtida por pessoa (chave primária); repetir não duplica.
+  r.post('/portal/mural/:id/curtir', async (req, res) => {
+    const p = await publicacaoParaInteragir(req, req.params.id as string)
+    const d = validar(z.object({ curtir: z.boolean() }), req.body)
+    if (d.curtir) await db.run('INSERT OR IGNORE INTO ped_mural_curtidas (mural_id, pessoa_id, criado_em) VALUES (?,?,?)', p.id, req.usuario!.pessoa_id, agoraIso())
+    else await db.run('DELETE FROM ped_mural_curtidas WHERE mural_id = ? AND pessoa_id = ?', p.id, req.usuario!.pessoa_id)
+    res.json(await contagens(db, p.id, req.usuario!.pessoa_id!))
+  })
+
+  r.post('/portal/mural/:id/comentarios', async (req, res) => {
+    const p = await publicacaoParaInteragir(req, req.params.id as string)
+    const d = validar(schemaComentario, req.body)
+    const id = await comentar(db, p.id, req.usuario!.pessoa_id!, await nomeDaAluna(req), d)
+    res.status(201).json({ id, ...(await contagens(db, p.id, req.usuario!.pessoa_id!)) })
+  })
+
+  /** Comentário da própria aluna, ainda ativo, numa publicação que ela ainda pode ver. */
+  async function meuComentario(req: Request) {
+    const c = (await db.get("SELECT co.id, co.mural_id, co.autora_pessoa_id FROM ped_mural_comentarios co JOIN ped_mural mu ON mu.id = co.mural_id WHERE co.id = ? AND co.situacao = 'ativo' AND mu.situacao = 'publicada'", req.params.id)) as Linha | undefined
+    if (!c) throw new ErroHttp(404, 'Comentário não encontrado.')
+    if (c.autora_pessoa_id !== req.usuario!.pessoa_id) throw new ErroHttp(403, 'Você só pode alterar os seus comentários.')
+    await publicacaoParaInteragir(req, c.mural_id)
+    return c
+  }
+
+  r.put('/portal/mural/comentarios/:id', async (req, res) => {
+    const c = await meuComentario(req)
+    const d = validar(z.object({ texto: textoObrig('o comentário', 1000) }), req.body)
+    await db.run("UPDATE ped_mural_comentarios SET texto = ?, editado_em = ?, atualizado_em = ? WHERE id = ? AND autora_pessoa_id = ? AND situacao = 'ativo'", d.texto, agoraIso(), agoraIso(), c.id, req.usuario!.pessoa_id)
+    res.json({ ok: true })
+  })
+
+  // Excluir o próprio comentário: some da conversa (o registro fica guardado, sem aparecer).
+  r.delete('/portal/mural/comentarios/:id', async (req, res) => {
+    const c = await meuComentario(req)
+    await db.run("UPDATE ped_mural_comentarios SET situacao = 'excluido', atualizado_em = ? WHERE id = ? AND autora_pessoa_id = ? AND situacao = 'ativo'", agoraIso(), c.id, req.usuario!.pessoa_id)
+    res.json(await contagens(db, c.mural_id, req.usuario!.pessoa_id!))
   })
 
   return r

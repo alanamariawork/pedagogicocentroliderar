@@ -275,7 +275,7 @@ function PaginaAluna({ rota, tipos }: { rota: RotaAluna; tipos: Reg[] }) {
     case 'livros':
       return <Conteudos key="livros" secao="livros" destaqueId={rota.id} />
     case 'mural':
-      return <Mural />
+      return <Mural key={rota.id === 'minhas' || !rota.id ? 'feed' : rota.id} id={rota.id} />
     case 'links':
       return <LinksImportantes />
     case 'conta':

@@ -13,7 +13,7 @@ import { ErroHttp, exigir, exigirEquipe, tem } from '../auth'
 import { auditar, data, escopoMatriculas, exigirAcessoMatricula, hoje, link, notificarAluna, sincronizarOcorrencias, texto, textoObrig, validar } from '../servicos'
 import { arquivoEnviado, corpoDoArquivo, entregarAnexo, hashArquivo } from '../anexos'
 import { extrairContrato, normalizar, type DadosContrato } from '../../shared/contrato'
-import { CANAIS_CONTATO, CATEGORIAS_MURAL } from './portalServicos'
+import { categorias, comentarios, contagens, criarPublicacao, editarPublicacao, entregarImagem, guardarImagem, lerFiltros, listaEquipe, publicacaoCompleta, schemaPublicacao, type Dona } from '../mural'
 import { PERCENTUAL_ASSISTIDA } from '../../shared/linhaTempo'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -525,30 +525,111 @@ export function rotasAcompanhamento(db: BD, ctx: ContextoApp) {
     res.json({ ok: true })
   })
 
-  /* ---------------- Mural: moderação e publicação pela equipe ---------------- */
+  /* ---------------- Mural: gestão, moderação e publicação pela equipe ---------------- */
+
+  const donaEquipe = (req: Request): Dona => ({ equipe_id: req.usuario!.id })
 
   r.get('/mural', async (req, res) => {
     exigir(req, 'mural:moderar')
-    res.json({ publicacoes: await db.all("SELECT mu.*, u.nome AS moderada_por_nome FROM ped_mural mu LEFT JOIN ped_usuarios u ON u.id = mu.moderada_por ORDER BY CASE mu.situacao WHEN 'pendente' THEN 0 WHEN 'publicada' THEN 1 ELSE 2 END, mu.criado_em DESC LIMIT 300") })
+    const f = lerFiltros(req.query)
+    res.json({ publicacoes: await listaEquipe(db, { ...f, situacao: req.query.situacao }), categorias: await categorias(db, false) })
+  })
+
+  // Categorias configuráveis (antes de /mural/:id).
+  r.get('/mural/categorias', async (req, res) => {
+    exigir(req, 'mural:moderar')
+    res.json({ categorias: await db.all('SELECT c.id, c.nome, c.ordem, c.ativa, (SELECT COUNT(*) FROM ped_mural mu WHERE mu.categoria_id = c.id) AS publicacoes FROM ped_mural_categorias c ORDER BY c.ordem, c.nome') })
+  })
+
+  // O lower() do SQLite só trata letras sem acento: a comparação de nomes é feita aqui.
+  const chaveNome = (n: string) => n.trim().toLocaleLowerCase('pt-BR').normalize('NFC')
+  async function nomeEmUso(nome: string, exceto?: string) {
+    const todas = (await db.all('SELECT id, nome FROM ped_mural_categorias')) as Linha[]
+    return todas.some((c) => c.id !== exceto && chaveNome(c.nome) === chaveNome(nome))
+  }
+
+  const schemaCategoria = z.object({ nome: textoObrig('o nome', 60), ordem: z.coerce.number().int().min(0).max(999).default(0), ativa: z.boolean().default(true) })
+
+  r.post('/mural/categorias', async (req, res) => {
+    exigir(req, 'mural:moderar')
+    const d = validar(schemaCategoria, req.body)
+    if (await nomeEmUso(d.nome)) throw new ErroHttp(409, 'Já existe uma categoria com esse nome.')
+    const id = novoId()
+    await db.run('INSERT INTO ped_mural_categorias (id, nome, ordem, ativa, criado_em, atualizado_em, autor_id) VALUES (?,?,?,?,?,?,?)', id, d.nome, d.ordem, d.ativa ? 1 : 0, agoraIso(), agoraIso(), req.usuario!.id)
+    await auditar(db, req, { entidade: 'mural_categoria', entidade_id: id, acao: 'criada', dados: d })
+    res.status(201).json({ id })
+  })
+
+  r.put('/mural/categorias/:id', async (req, res) => {
+    exigir(req, 'mural:moderar')
+    const d = validar(schemaCategoria, req.body)
+    const c = (await db.get('SELECT * FROM ped_mural_categorias WHERE id = ?', req.params.id)) as Linha | undefined
+    if (!c) throw new ErroHttp(404, 'Categoria não encontrada.')
+    if (await nomeEmUso(d.nome, c.id)) throw new ErroHttp(409, 'Já existe uma categoria com esse nome.')
+    await db.run('UPDATE ped_mural_categorias SET nome = ?, ordem = ?, ativa = ?, atualizado_em = ? WHERE id = ?', d.nome, d.ordem, d.ativa ? 1 : 0, agoraIso(), c.id)
+    await auditar(db, req, { entidade: 'mural_categoria', entidade_id: c.id, acao: 'editada', dados: { de: { nome: c.nome, ordem: c.ordem, ativa: !!c.ativa }, para: d } })
+    res.json({ ok: true })
+  })
+
+  r.post('/mural/imagens', corpoDoArquivo, async (req, res) => {
+    exigir(req, 'mural:moderar')
+    res.status(201).json(await guardarImagem(db, ctx.arquivos, req, donaEquipe(req)))
+  })
+
+  r.get('/mural/imagens/:id', async (req, res) => {
+    exigir(req, 'mural:moderar')
+    const img = (await db.get('SELECT chave, tipo FROM ped_mural_imagens WHERE id = ?', req.params.id)) as Linha | undefined
+    if (!img) throw new ErroHttp(404, 'Imagem não encontrada.')
+    await entregarImagem(ctx.arquivos, res, img)
+  })
+
+  // Moderação de comentários: remover (some para as alunas) ou restaurar, sempre com registro.
+  r.post('/mural/comentarios/:id/moderar', async (req, res) => {
+    exigir(req, 'mural:moderar')
+    const d = validar(z.object({ decisao: z.enum(['remover', 'restaurar']), motivo: texto(500) }), req.body)
+    const c = (await db.get('SELECT * FROM ped_mural_comentarios WHERE id = ?', req.params.id)) as Linha | undefined
+    if (!c) throw new ErroHttp(404, 'Comentário não encontrado.')
+    if (d.decisao === 'remover' && c.situacao !== 'ativo') throw new ErroHttp(409, 'Esse comentário já não está visível.')
+    if (d.decisao === 'restaurar' && c.situacao !== 'removido') throw new ErroHttp(409, 'Só comentários removidos pela equipe podem ser restaurados.')
+    const para = d.decisao === 'remover' ? 'removido' : 'ativo'
+    await db.run('UPDATE ped_mural_comentarios SET situacao = ?, moderado_por = ?, moderado_em = ?, motivo_moderacao = ?, atualizado_em = ? WHERE id = ?', para, req.usuario!.id, agoraIso(), d.motivo ?? null, agoraIso(), c.id)
+    await auditar(db, req, { entidade: 'mural_comentario', entidade_id: c.id, acao: `comentario_${d.decisao}`, pessoa_id: c.autora_pessoa_id ?? null, dados: { mural_id: c.mural_id, de: c.situacao, para, motivo: d.motivo ?? null } })
+    res.json({ ok: true })
+  })
+
+  r.get('/mural/:id', async (req, res) => {
+    exigir(req, 'mural:moderar')
+    const p = await publicacaoCompleta(db, req.params.id as string)
+    if (!p) throw new ErroHttp(404, 'Publicação não encontrada.')
+    const historicoModeracao = await db.all("SELECT a.acao, a.dados, a.criado_em, u.nome AS autor_nome FROM ped_auditoria a LEFT JOIN ped_usuarios u ON u.id = a.autor_id WHERE a.entidade = 'mural' AND a.entidade_id = ? ORDER BY a.criado_em DESC LIMIT 30", p.id)
+    const { autora_pessoa_id: _a, ...publica } = p
+    res.json({
+      publicacao: { ...publica, ...(await contagens(db, p.id)) },
+      da_equipe: !!p.autora_equipe_id,
+      comentarios: await comentarios(db, p.id, { equipe: true }),
+      historico: historicoModeracao,
+    })
   })
 
   r.post('/mural', async (req, res) => {
     exigir(req, 'mural:moderar')
-    const d = validar(
-      z.object({
-        categoria: z.enum(CATEGORIAS_MURAL),
-        titulo: textoObrig('o título', 120),
-        descricao: textoObrig('a descrição', 2000),
-        contato_canal: z.enum(CANAIS_CONTATO),
-        contato_valor: textoObrig('o contato', 200),
-        autora_nome: texto(120),
-      }),
-      req.body,
-    )
-    const id = novoId()
-    await db.run("INSERT INTO ped_mural (id, autora_equipe_id, autora_nome, categoria, titulo, descricao, contato_canal, contato_valor, situacao, moderada_por, moderada_em, criado_em, atualizado_em) VALUES (?,?,?,?,?,?,?,?,'publicada',?,?,?,?)", id, req.usuario!.id, d.autora_nome ?? 'Equipe Centro Liderar', d.categoria, d.titulo, d.descricao, d.contato_canal, d.contato_valor, req.usuario!.id, agoraIso(), agoraIso(), agoraIso())
+    const d = validar(schemaPublicacao.and(z.object({ autora_nome: texto(120) })), req.body)
+    const id = await criarPublicacao(db, donaEquipe(req), d.autora_nome ?? 'Equipe Centro Liderar', d, 'publicada', req.usuario!.id)
     await auditar(db, req, { entidade: 'mural', entidade_id: id, acao: 'publicada_pela_equipe', dados: { titulo: d.titulo } })
     res.status(201).json({ id })
+  })
+
+  // A equipe edita só as publicações da própria equipe; as das alunas, ela modera.
+  r.put('/mural/:id', async (req, res) => {
+    exigir(req, 'mural:moderar')
+    const atual = (await db.get('SELECT * FROM ped_mural WHERE id = ?', req.params.id)) as Linha | undefined
+    if (!atual) throw new ErroHttp(404, 'Publicação não encontrada.')
+    if (!atual.autora_equipe_id) throw new ErroHttp(403, 'Publicações das alunas não são editadas pela equipe: publique, recuse ou arquive.')
+    const d = validar(schemaPublicacao.and(z.object({ autora_nome: texto(120) })), req.body)
+    await editarPublicacao(db, atual, { equipe_id: atual.autora_equipe_id }, d, atual.situacao)
+    if (d.autora_nome && d.autora_nome !== atual.autora_nome) await db.run('UPDATE ped_mural SET autora_nome = ? WHERE id = ?', d.autora_nome, atual.id)
+    await auditar(db, req, { entidade: 'mural', entidade_id: atual.id, acao: 'editada_pela_equipe', dados: { titulo: d.titulo } })
+    res.json({ ok: true })
   })
 
   r.post('/mural/:id/moderar', async (req, res) => {
