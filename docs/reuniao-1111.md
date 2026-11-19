@@ -91,3 +91,14 @@ Seis questões novas estão em “Decisões pendentes”: qual presença acompan
 - Sem sessão, o portal e a área da mentora levam para `/diamante/entrar`; uma mentora que abrir `/produtos/` vai para a área dela. "Sair" leva alunas e mentoras de volta para o login do Diamante.
 - Primeiro acesso e "esqueci minha senha" da aluna continuam nas telas do Portal do backoffice (links na página). A mentora com senha provisória é levada para criar a senha no backoffice.
 - Backoffice: `worker/pedagogico.ts` ganhou `entrarDiamante` e `worker/index.ts` passou a repassar `/diamante/*`.
+
+## Mural em formato de feed (19/11)
+
+- **Portal › Mural:** abas **Explorar** (cards com capa, título, negócio, autora, tipo, categoria, resumo, preço ou "Consultar valor", curtidas e comentários; busca por título ou negócio; filtros por categoria e por produto/serviço) e **Minhas publicações** (situação, motivo da recusa, Editar e Arquivar). Cada publicação abre em `#/mural/<id>` com galeria, texto completo, negócio e autora, botão de contato do canal escolhido para ela e link externo (só `https://`).
+- **Dois modelos:** produto (fotos, características, preço, como comprar) e serviço (atendimento, benefícios, formato on-line/presencial e local). Só os campos do modelo escolhido são guardados.
+- **Editor com prévia:** imagens JPG, PNG ou WEBP (até 5 MB; fotos grandes do celular são reduzidas no navegador antes do envio). O servidor confere a extensão e o conteúdo do arquivo; a imagem só pode ser usada por quem a enviou.
+- **Curtidas:** uma por pessoa por publicação (chave primária no banco); contagens sempre calculadas no banco. **Comentários:** um nível de resposta; a autora edita e exclui os próprios (conferido no servidor).
+- **Regras:** as mesmas de Configurações › Parâmetros. `mural_visibilidade` decide quem vê; curtir, comentar e publicar pedem matrícula ativa. Com `moderada`, a edição de uma publicação já aprovada volta para aprovação.
+- **Equipe › Aulas, conteúdos e mural › Mural (Gestão do Mural, permissão `mural:moderar`):** filtros por situação e busca, aprovar, recusar com motivo e arquivar, abrir a publicação com os comentários (inclusive removidos), remover ou restaurar comentário com motivo, registro das ações, categorias (criar, renomear, ordenar, desativar) e publicações da própria equipe.
+- **Decisão pendente nova:** o que é o "serviço de finalização" (checkout de compra ou marcar aula como concluída). Até a definição, o Mural usa link externo de compra e contato direto; não há checkout próprio.
+- Migration `0008_ped_mural_feed.sql` (só acrescenta). Testes em `tests/muralFeed.test.ts`.

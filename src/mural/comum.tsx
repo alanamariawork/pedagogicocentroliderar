@@ -45,6 +45,11 @@ export function textoPreco(p: Reg): string | null {
   return (Number(p.preco_centavos) / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 }
 
+/** Primeira letra ou número do nome (ignora colchetes, aspas e outros sinais). */
+export function inicial(nome: string) {
+  return ((nome || '').match(/[\p{L}\p{N}]/u)?.[0] ?? '?').toUpperCase()
+}
+
 export function nomeCategoria(p: Reg) {
   return p.categoria_nome ?? CATEGORIA_ANTIGA[p.categoria] ?? p.categoria
 }
@@ -54,7 +59,7 @@ export function Capa({ base, id, nome, className }: { base: BaseMural; id?: stri
   if (id) return <img src={urlImagem(base, id)} alt="" loading="lazy" decoding="async" className={cx('size-full object-cover', className)} />
   return (
     <div className={cx('flex size-full items-center justify-center bg-gradient-to-br from-brand-700 via-brand-600 to-gold', className)} aria-hidden>
-      <span className="font-display text-5xl font-semibold text-white/90">{(nome || '?').trim().charAt(0).toUpperCase()}</span>
+      <span className="font-display text-5xl font-semibold text-white/90">{inicial(nome)}</span>
     </div>
   )
 }
@@ -62,7 +67,7 @@ export function Capa({ base, id, nome, className }: { base: BaseMural; id?: stri
 export function Logo({ base, id, nome, className }: { base: BaseMural; id?: string | null; nome: string; className?: string }) {
   return (
     <span className={cx('inline-flex size-11 shrink-0 items-center justify-center overflow-hidden rounded-full border-2 border-white bg-gold-soft text-sm font-semibold text-brand-700 shadow', className)}>
-      {id ? <img src={urlImagem(base, id)} alt={`Logo de ${nome}`} className="size-full object-cover" /> : <span aria-hidden>{(nome || '?').trim().charAt(0).toUpperCase()}</span>}
+      {id ? <img src={urlImagem(base, id)} alt={`Logo de ${nome}`} className="size-full object-cover" /> : <span aria-hidden>{inicial(nome)}</span>}
     </span>
   )
 }
@@ -94,7 +99,7 @@ export function CardPublicacao({ p, base, href, mostrarSituacao, rodape, onAbrir
           {preco && <span className="absolute right-2 bottom-2 rounded-full bg-white/95 px-2.5 py-1 text-xs font-semibold text-brand-700 shadow">{preco}</span>}
         </div>
         <div className="flex flex-1 flex-col gap-1 p-4 pt-3">
-          <div className="-mt-8 flex items-end gap-2">
+          <div className="relative z-10 -mt-8 flex items-end gap-2">
             <Logo base={base} id={p.logo_id} nome={negocio} />
             <span className="mb-0.5 truncate text-xs font-medium tracking-wide text-gold uppercase">{nomeCategoria(p)}</span>
           </div>
