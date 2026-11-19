@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react'
 import { ArrowLeft, CalendarRange, CheckCircle2, ChevronLeft, ChevronRight, Clock, Gem, GraduationCap, PlayCircle, Sparkles } from 'lucide-react'
 import { Carregando, EstadoErro } from '../../components/Estados'
 import { useDados, type Reg } from '../../lib/api'
-import { PlayerVimeo } from '../PlayerVimeo'
+import { PlayerVideo } from '../PlayerVideo'
 import { cx } from '../../lib/format'
 import { formatarData } from '../../../shared/datas'
 import { hrefAluna } from '../rotas'
@@ -154,12 +154,12 @@ export function MesDoPlano({ numero }: { numero: string | undefined }) {
   )
 }
 
-/** Aula gravada do mês: o progresso é gravado pelo próprio player (PlayerVimeo). */
+/** Aula gravada do mês: o progresso é gravado pelo próprio player (PlayerVideo: Vimeo ou YouTube). */
 function Aula({ aula, limite, onProgresso }: { aula: Reg; limite: number; onProgresso: () => void }) {
   const assistida = (aula.percentual ?? 0) >= limite
   return (
     <section className="card overflow-hidden">
-      <PlayerVimeo id={aula.id} videoUrl={aula.video_url} titulo={aula.titulo} percentual={aula.percentual ?? 0} limite={limite} endpoint={`/portal/aulas/${aula.id}/progresso`} onAssistido={onProgresso} />
+      <PlayerVideo id={aula.id} videoUrl={aula.video_url} titulo={aula.titulo} percentual={aula.percentual ?? 0} limite={limite} endpoint={`/portal/aulas/${aula.id}/progresso`} onAssistido={onProgresso} />
       <div className="space-y-2 p-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h3 className="font-semibold">{aula.titulo}</h3>

@@ -15,34 +15,13 @@ import { arquivoEnviado, corpoDoArquivo, entregarAnexo, hashArquivo } from '../a
 import { extrairContrato, normalizar, type DadosContrato } from '../../shared/contrato'
 import { categorias, comentarios, contagens, criarPublicacao, editarPublicacao, entregarImagem, guardarImagem, lerFiltros, listaEquipe, publicacaoCompleta, schemaPublicacao, type Dona } from '../mural'
 import { PERCENTUAL_ASSISTIDA } from '../../shared/linhaTempo'
+import { conferirVideo } from '../videos'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Linha = Record<string, any>
 
-/** Endereço de vídeo do Vimeo aceito: vimeo.com/123, vimeo.com/123/hash, player.vimeo.com/video/123?h=hash. */
-export function embedVimeo(url: string | null | undefined): string | null {
-  if (!url) return null
-  let u: URL
-  try {
-    u = new URL(url)
-  } catch {
-    return null
-  }
-  if (u.protocol !== 'https:') return null
-  const host = u.hostname.replace(/^www\./, '')
-  let id: string | undefined
-  let hash: string | null = u.searchParams.get('h')
-  if (host === 'player.vimeo.com') {
-    const m = /^\/video\/(\d+)\/?$/.exec(u.pathname)
-    id = m?.[1]
-  } else if (host === 'vimeo.com') {
-    const m = /^\/(?:.*\/)?(\d+)(?:\/([0-9a-f]+))?\/?$/.exec(u.pathname)
-    id = m?.[1]
-    hash = hash ?? m?.[2] ?? null
-  }
-  if (!id) return null
-  return `https://player.vimeo.com/video/${id}${hash ? `?h=${encodeURIComponent(hash)}` : ''}`
-}
+// Os endereços de vídeo (Vimeo e YouTube) são conferidos em server/videos.ts.
+export { embedVimeo } from '../videos'
 
 /**
  * Sugestões de ação a partir da transcrição colada: frases com compromisso ("vou", "ficou combinado",
@@ -390,14 +369,15 @@ export function rotasAcompanhamento(db: BD, ctx: ContextoApp) {
     ordem: z.coerce.number().int().min(0).max(999).default(0),
   })
 
+  /** Confere o conteúdo e devolve o vídeo já no formato gravado (player do Vimeo, do YouTube ou null). */
   async function conferirConteudo(d: z.infer<typeof esquemaConteudo>) {
-    if (d.video_url && !embedVimeo(d.video_url)) throw new ErroHttp(400, 'Use o endereço de um vídeo do Vimeo (https://vimeo.com/…).')
     if (d.secao === 'livros' && d.video_url) throw new ErroHttp(400, 'Livros não têm vídeo. Use o link de compra.')
     if (d.secao !== 'livros' && d.compra_url) throw new ErroHttp(400, 'O link de compra é só para livros.')
     if (d.estante_id) {
       if (d.secao !== 'biblioteca') throw new ErroHttp(400, 'Estantes são só da Biblioteca.')
       if (!(await db.get('SELECT id FROM ped_estantes WHERE id = ?', d.estante_id))) throw new ErroHttp(400, 'Estante não encontrada.')
     }
+    return conferirVideo(d.video_url)
   }
 
   r.get('/conteudos', async (req, res) => {
@@ -419,9 +399,9 @@ export function rotasAcompanhamento(db: BD, ctx: ContextoApp) {
   r.post('/conteudos', async (req, res) => {
     const d = validar(esquemaConteudo, req.body)
     exigirSecao(req, d.secao)
-    await conferirConteudo(d)
+    const video = await conferirConteudo(d)
     const id = novoId()
-    await db.run('INSERT INTO ped_conteudos (id, secao, estante_id, categoria, titulo, descricao, link, video_url, compra_url, publicado, ordem, criado_em, atualizado_em, autor_id) VALUES (?,?,?,?,?,?,?,?,?,0,?,?,?,?)', id, d.secao, d.estante_id, d.categoria ?? null, d.titulo, d.descricao ?? null, d.link ?? null, embedVimeo(d.video_url), d.compra_url ?? null, d.ordem, agoraIso(), agoraIso(), req.usuario!.id)
+    await db.run('INSERT INTO ped_conteudos (id, secao, estante_id, categoria, titulo, descricao, link, video_url, compra_url, publicado, ordem, criado_em, atualizado_em, autor_id) VALUES (?,?,?,?,?,?,?,?,?,0,?,?,?,?)', id, d.secao, d.estante_id, d.categoria ?? null, d.titulo, d.descricao ?? null, d.link ?? null, video, d.compra_url ?? null, d.ordem, agoraIso(), agoraIso(), req.usuario!.id)
     await auditar(db, req, { entidade: 'conteudo', entidade_id: id, acao: 'criado', dados: { secao: d.secao, titulo: d.titulo, estante_id: d.estante_id } })
     res.status(201).json({ id })
   })
@@ -437,9 +417,9 @@ export function rotasAcompanhamento(db: BD, ctx: ContextoApp) {
     exigirSecao(req, c.secao)
     const d = validar(esquemaConteudo, req.body)
     exigirSecao(req, d.secao)
-    await conferirConteudo(d)
+    const video = await conferirConteudo(d)
     if (d.secao === 'livros' && c.arquivo_chave) throw new ErroHttp(400, 'Livros não podem ter arquivo anexado. Remova o arquivo antes.')
-    await db.run('UPDATE ped_conteudos SET secao=?, estante_id=?, categoria=?, titulo=?, descricao=?, link=?, video_url=?, compra_url=?, ordem=?, atualizado_em=?, autor_id=? WHERE id=?', d.secao, d.estante_id, d.categoria ?? null, d.titulo, d.descricao ?? null, d.link ?? null, embedVimeo(d.video_url), d.compra_url ?? null, d.ordem, agoraIso(), req.usuario!.id, c.id)
+    await db.run('UPDATE ped_conteudos SET secao=?, estante_id=?, categoria=?, titulo=?, descricao=?, link=?, video_url=?, compra_url=?, ordem=?, atualizado_em=?, autor_id=? WHERE id=?', d.secao, d.estante_id, d.categoria ?? null, d.titulo, d.descricao ?? null, d.link ?? null, video, d.compra_url ?? null, d.ordem, agoraIso(), req.usuario!.id, c.id)
     await auditar(db, req, { entidade: 'conteudo', entidade_id: c.id, acao: 'atualizado', dados: { titulo: d.titulo, estante_id: d.estante_id } })
     res.json({ ok: true })
   })
@@ -458,7 +438,7 @@ export function rotasAcompanhamento(db: BD, ctx: ContextoApp) {
     const c = await conteudo(req.params.id as string)
     exigirSecao(req, c.secao)
     if (c.secao === 'livros') throw new ErroHttp(400, 'Livros não recebem arquivo: use o link de compra.')
-    const f = arquivoEnviado(req, ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'jpg', 'jpeg', 'png', 'webp', 'txt', 'csv', 'mp3', 'm4a'], 'Tipo de arquivo não aceito. Envie PDF, Word, Excel, PowerPoint, imagem, texto ou áudio. Para vídeo, use o Vimeo.')
+    const f = arquivoEnviado(req, ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'jpg', 'jpeg', 'png', 'webp', 'txt', 'csv', 'mp3', 'm4a'], 'Tipo de arquivo não aceito. Envie PDF, Word, Excel, PowerPoint, imagem, texto ou áudio. Para vídeo, cole o link do YouTube ou do Vimeo no campo Vídeo.')
     const chave = `conteudos/${c.id}/${novoId()}`
     await ctx.arquivos.guardar(chave, f.dados, f.tipo)
     await db.run('UPDATE ped_conteudos SET arquivo_chave=?, arquivo_nome=?, arquivo_tipo=?, arquivo_tamanho=?, atualizado_em=? WHERE id=?', chave, f.nome, f.tipo, f.dados.byteLength, agoraIso(), c.id)

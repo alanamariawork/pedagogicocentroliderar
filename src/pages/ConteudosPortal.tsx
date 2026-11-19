@@ -11,9 +11,11 @@ import { GestaoMural as MuralEquipe } from '../mural/GestaoMural'
 
 const SECOES: { id: 'rotina' | 'biblioteca' | 'livros'; nome: string; dica: string }[] = [
   { id: 'rotina', nome: 'Rotina', dica: 'Ex.: o “Dia Extraordinário da Mulher que Age”, quando a coordenação publicar o material oficial.' },
-  { id: 'biblioteca', nome: 'Biblioteca', dica: 'Crie estantes e coloque nelas os arquivos, links e vídeos. Vídeos do Vimeo tocam no próprio portal e o sistema grava quanto cada aluna assistiu.' },
+  { id: 'biblioteca', nome: 'Biblioteca', dica: 'Crie estantes e coloque nelas os arquivos, links e vídeos. Vídeos do YouTube (não listados) ou do Vimeo tocam no próprio portal e o sistema grava quanto cada aluna assistiu.' },
   { id: 'livros', nome: 'Livros', dica: 'Só link de compra. O portal nunca oferece o PDF de um livro.' },
 ]
+
+const DICA_VIDEO = 'Cole o link do vídeo. No YouTube, publique como “Não listado” (vídeo “Privado” não toca no portal). A aluna assiste no próprio portal e o sistema grava quanto ela já viu.'
 
 /** Página da equipe: o que aparece em Rotina, Biblioteca e Livros do portal, e a moderação do Mural. */
 export function ConteudosPortal() {
@@ -98,7 +100,7 @@ function Conteudos() {
   return (
     <>
       <p className="max-w-3xl text-sm text-ink-soft">
-        Nada aparece para as alunas até ser publicado. O conteúdo oficial é da coordenação: o sistema não cria textos de aula. Vídeos entram pelo endereço do Vimeo (configure a privacidade do vídeo no próprio Vimeo para permitir incorporação só no portal).
+        Nada aparece para as alunas até ser publicado. O conteúdo oficial é da coordenação: o sistema não cria textos de aula. Vídeos entram pelo link do YouTube ou do Vimeo. No YouTube, publique o vídeo como “Não listado” (o “Privado” não toca no portal); quem tiver o link pode assistir e repassar. No Vimeo, dá para permitir a incorporação só no portal.
       </p>
       <input
         ref={arquivoRef}
@@ -210,7 +212,7 @@ function LinhaConteudo({ c, acoes }: { c: Reg; acoes: AcoesConteudo }) {
           {c.titulo} {c.publicado ? <Selo tom="sucesso">Publicado</Selo> : <Selo>Rascunho</Selo>}
         </p>
         <p className="text-xs text-ink-muted">
-          {[c.categoria, c.video_url && 'vídeo Vimeo', c.compra_url && 'link de compra', c.link && 'link', c.tem_arquivo && `arquivo: ${c.arquivo_nome}`].filter(Boolean).join(' · ') || 'sem anexo'}
+          {[c.categoria, c.video_url && (String(c.video_url).startsWith('https://player.vimeo.com/') ? 'vídeo Vimeo' : 'vídeo YouTube'), c.compra_url && 'link de compra', c.link && 'link', c.tem_arquivo && `arquivo: ${c.arquivo_nome}`].filter(Boolean).join(' · ') || 'sem anexo'}
         </p>
         {assistiram && <p className="text-xs text-ink-soft">{assistiram}</p>}
       </div>
@@ -333,8 +335,8 @@ function DialogConteudo({ secao, reg, estanteId, estantes, onFechar, onConcluir 
         </Campo>
       ) : (
         <>
-          <Campo rotulo="Vídeo do Vimeo" dica="Cole o endereço do vídeo (https://vimeo.com/…). A aluna assiste no próprio portal e o sistema grava quanto ela já viu.">
-            {(p) => <input className="field-control" placeholder="https://vimeo.com/…" {...p} value={valores.video_url} onChange={campo('video_url')} />}
+          <Campo rotulo="Vídeo (YouTube ou Vimeo)" dica={DICA_VIDEO}>
+            {(p) => <input className="field-control" placeholder="https://youtu.be/… ou https://vimeo.com/…" {...p} value={valores.video_url} onChange={campo('video_url')} />}
           </Campo>
           <Campo rotulo="Link externo" dica="Opcional (ex.: pasta de materiais).">
             {(p) => <input type="url" className="field-control" placeholder="https://…" {...p} value={valores.link} onChange={campo('link')} />}
@@ -457,8 +459,8 @@ function DialogAula({ reg, onFechar, onConcluir }: { reg: Reg | null; onFechar: 
           )}
         </Campo>
       </div>
-      <Campo rotulo="Vídeo do Vimeo" obrigatorio dica="Cole o endereço do vídeo (https://vimeo.com/…). O progresso vem do próprio player.">
-        {(p) => <input className="field-control" placeholder="https://vimeo.com/…" {...p} value={valores.video_url} onChange={campo('video_url')} />}
+      <Campo rotulo="Vídeo (YouTube ou Vimeo)" obrigatorio dica={DICA_VIDEO}>
+        {(p) => <input className="field-control" placeholder="https://youtu.be/… ou https://vimeo.com/…" {...p} value={valores.video_url} onChange={campo('video_url')} />}
       </Campo>
       <Campo rotulo="Descrição">
         {(p) => <textarea rows={3} maxLength={4000} className="field-control" {...p} value={valores.descricao} onChange={campo('descricao')} />}
