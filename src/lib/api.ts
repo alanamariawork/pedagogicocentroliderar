@@ -13,6 +13,9 @@ export class ErroApi extends Error {
   }
 }
 
+/** API do sistema pedagógico, no mesmo endereço do backoffice. */
+export const API = '/api/ped'
+
 let aoExpirar: (() => void) | null = null
 export function definirAoExpirar(fn: () => void) {
   aoExpirar = fn
@@ -21,10 +24,10 @@ export function definirAoExpirar(fn: () => void) {
 export async function api<T = Reg>(metodo: string, caminho: string, corpo?: unknown): Promise<T> {
   let r: Response
   try {
-    r = await fetch(`/api${caminho}`, {
+    r = await fetch(`${API}${caminho}`, {
       method: metodo,
       credentials: 'same-origin',
-      headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'diamante-business' },
+      headers: { 'Content-Type': 'application/json', 'X-CL-App': '1' },
       body: corpo === undefined ? undefined : JSON.stringify(corpo),
     })
   } catch {
@@ -32,7 +35,7 @@ export async function api<T = Reg>(metodo: string, caminho: string, corpo?: unkn
   }
   const json = await r.json().catch(() => ({}))
   if (!r.ok) {
-    if (r.status === 401 && caminho !== '/auth/login' && caminho !== '/auth/eu') aoExpirar?.()
+    if (r.status === 401 && caminho !== '/auth/eu') aoExpirar?.()
     throw new ErroApi(r.status, (json as { erro?: string }).erro ?? 'Não foi possível concluir a operação.')
   }
   return json as T
@@ -42,10 +45,10 @@ export async function api<T = Reg>(metodo: string, caminho: string, corpo?: unkn
 export async function enviarArquivo<T = Reg>(caminho: string, arquivo: File): Promise<T> {
   let r: Response
   try {
-    r = await fetch(`/api${caminho}`, {
+    r = await fetch(`${API}${caminho}`, {
       method: 'POST',
       credentials: 'same-origin',
-      headers: { 'Content-Type': 'application/octet-stream', 'X-Requested-With': 'diamante-business', 'X-Nome-Arquivo': encodeURIComponent(arquivo.name) },
+      headers: { 'Content-Type': 'application/octet-stream', 'X-CL-App': '1', 'X-Nome-Arquivo': encodeURIComponent(arquivo.name) },
       body: arquivo,
     })
   } catch {

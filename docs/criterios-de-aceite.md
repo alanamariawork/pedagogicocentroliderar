@@ -1,8 +1,8 @@
 # O que foi testado
 
-## Testes automáticos (`npm test`: 48 testes, todos passando)
+## Testes automáticos (`npm test`: 64 testes, todos passando)
 
-Os testes de aceite (`tests/aceite.test.ts`) sobem o servidor real com um banco em memória e a demonstração. Depois, fazem as chamadas pela API com cada perfil.
+Os testes de aceite (`tests/aceite.test.ts`) abrem um D1 local com as migrations do backoffice e do pedagógico, criam a demonstração fictícia e fazem as chamadas pela API com cada perfil. Os testes de integração (`tests/integracao.test.ts`) cobrem o login único, o bloqueio da aluna e a ligação com Clientes.
 
 | Critério | Teste |
 |---|---|

@@ -2,34 +2,45 @@
 
 ## Stack
 
-É a mesma base visual e técnica do sistema de marketing: React 19, TypeScript, Vite 7, Tailwind 4 e ícones lucide-react. O servidor usa Express 5, SQLite (better-sqlite3, em modo WAL e com chaves estrangeiras) e zod para validar cada entrada.
+React 19, TypeScript, Vite 7, Tailwind 4 e ícones lucide-react nas telas. O servidor é um Worker da Cloudflare (nome `pedagogico`) com D1, R2 e zod para validar cada entrada. Ele não tem endereço público: o Worker do backoffice (`sistema`) repassa para ele `/produtos/*`, `/api/ped/*` e `/portal/diamante-business/*`, e ele chama de volta o backoffice para gravar em Clientes.
 
 ```
-server/            API, banco e regras de negócio
-  db.ts            esquema SQLite (criado/atualizado ao abrir)
-  auth.ts          senhas (scrypt), sessões, permissões
-  servicos.ts      validações, auditoria, escopo por perfil, invariantes
-  rotas/           acesso, configuracao, alunas, operacao, pedagogico, portal
-  demo.ts, seed.ts demonstração fictícia criada pela própria API
-shared/            datas (fuso de São Paulo) e cálculos usados no servidor e na tela
-src/               telas (React)
-tests/             testes de aceite e de cálculo (Vitest)
+server/              API, banco e regras de negócio
+  worker.ts          ponto de entrada do Worker (fetch e o agendamento dos avisos)
+  paginas.ts         páginas: confere a sessão antes de abrir /produtos/ ou o portal da aluna
+  app.ts, http.ts    API em /api/ped
+  bd.ts              acesso ao D1 (transações em lote)
+  auth.ts            leitura da sessão do backoffice, perfis e permissões
+  integracao.ts      Clientes: ligação com o backoffice (e a imitação local, só para testes)
+  servicos.ts        validações, auditoria, escopo por perfil, invariantes
+  rotas/             acesso, configuracao, alunas, operacao, pedagogico, portal, avisos
+d1/migrations/       migrations do pedagógico (tabela de controle ped_migracoes)
+d1/backoffice/       cópia das migrations do backoffice, só para o banco local dos testes
+shared/              datas (fuso de São Paulo) e cálculos usados no servidor e na tela
+src/                 telas (React), servidas em /produtos/
+tests/               testes de aceite, de integração e de cálculo (Vitest, em D1 local)
 ```
+
+## Login único e identidade
+
+- **Conta e sessão:** são as do backoffice (tabelas `usuario` e `sessao`, cookie `__Host-cl_sessao`). O pedagógico só lê a sessão; entrar, sair e trocar senha são feitos no backoffice.
+- **Equipe:** sessão de escopo `equipe` e `membro.perfil_pedagogico` (Administração, Coordenação, Suporte/CS ou Mentora). A administradora do backoffice sem perfil escolhido entra como Administração. Quem não tem perfil recebe “sem acesso”.
+- **Aluna:** sessão de escopo `portal` (o login do Portal do backoffice) e a pessoa cadastrada em `ped_alunas`. Ela entra em `/portal/diamante-business/` e não abre nenhuma tela nem rota da equipe.
+- **Clientes:** a aluna é uma `pessoa` do backoffice; `ped_alunas` usa o mesmo id e guarda só o que é do pedagógico. Criar ou alterar nome, e-mail, telefone e CPF passa pela regra de Clientes do backoffice (validação, CPF único, auditoria e fila de gravação). Um e-mail já cadastrado em Clientes não gera outro cadastro: a equipe busca e vincula.
 
 ## Segurança
 
-- **Senhas:** guardadas com hash scrypt e sal, com no mínimo 10 caracteres, letras e números. O login tem limite de tentativas.
-- **Sessão:** usa um token aleatório num cookie `httpOnly` e `SameSite=Lax`, que dura 12 horas. O banco guarda só o hash do token. Trocar senha, perfil ou desativar o usuário encerra as sessões abertas.
-- **CSRF:** toda requisição que altera dados precisa do cabeçalho `X-Requested-With: diamante-business`.
-- **Permissões:** a matriz perfil × permissão fica no banco e a administração pode editá-la. Cada rota confere a permissão no servidor. Ver, editar, validar e administrar são permissões separadas.
+- **Sessão:** a do backoffice, num cookie `__Host-` `httpOnly`, com 12 horas de duração. O banco guarda só o hash do token. Senha provisória ou sessão vencida não entram.
+- **CSRF:** toda requisição que altera dados precisa do cabeçalho `X-CL-App: 1` (o mesmo do backoffice) e de uma origem do próprio sistema.
+- **Permissões:** a matriz perfil × permissão fica no banco e a administração pode editá-la. Cada rota confere a permissão no servidor. Ver, editar, validar e administrar são permissões separadas. O convite do Portal exige, além disso, o papel de administrador no backoffice.
 - **Mentora:** só vê matrículas em que atende. A restrição é feita no SQL (`escopoMatriculas`).
 - **Aluna:**
-  - Só usa `/api/portal`, sempre filtrado pelo próprio `pessoa_id`.
+  - Só usa `/api/ped/portal`, sempre filtrado pelo próprio `pessoa_id`. As rotas da equipe respondem 403, e as telas da equipe redirecionam para o portal dela.
   - Um registro de outra pessoa responde 404, para não revelar que ele existe.
-  - O portal não devolve notas internas nem anotações.
-- **Perfis:** Administração, Coordenação pedagógica, Suporte/CS, Mentora e Aluna. O Suporte/CS não recebe anotações pedagógicas privadas; o servidor remove esses campos da resposta. Usuários antigos com o perfil Comercial são desativados na migração.
-- **ID da aluna:** `pessoas.codigo`, sequencial e único, atribuído na primeira matrícula (ordem em que a matrícula foi registrada). A renovação mantém o ID. As listas são ordenadas por ele.
-- **Cabeçalhos de segurança e auditoria:** a API envia cabeçalhos de segurança e `Cache-Control: no-store`. Cada alteração vai para a tabela `auditoria` com o autor e a data.
+  - O portal não devolve notas internas nem anotações. O CPF nunca sai do servidor.
+- **Perfis:** Administração, Coordenação pedagógica, Suporte/CS, Mentora e Aluna. O Suporte/CS não recebe anotações pedagógicas privadas; o servidor remove esses campos da resposta.
+- **ID da aluna:** `ped_alunas.codigo`, sequencial e único, atribuído na primeira matrícula. A renovação mantém o ID. As listas são ordenadas por ele.
+- **Cabeçalhos de segurança e auditoria:** a API e as páginas enviam cabeçalhos de segurança e `Cache-Control: no-store`. Cada alteração vai para `ped_auditoria` com o autor e a data; as alterações em Clientes ficam também na auditoria do backoffice.
 
 ## Modelo de dados (principais)
 
@@ -50,11 +61,9 @@ tests/             testes de aceite e de cálculo (Vitest)
 
 ### Migrações
 
-O banco tem uma tabela `versao_esquema`. As migrações ficam na lista `MIGRACOES` de `server/db.ts`, são aplicadas em ordem, cada uma numa transação, e nunca são editadas depois de publicadas: uma mudança nova entra como uma nova versão no fim da lista.
-- **v1:** ajustes anteriores (ID sequencial da aluna e desativação do perfil Comercial).
-- **v4 (Avisos):** tabela `avisos_programados` (público, início, recorrência diária/semanal/mensal, fim, próximo envio) e `notificacoes.aviso_id`; permissão `avisos:enviar` para Administração, Coordenação e Suporte/CS. O servidor confere a cada minuto (e quando a aluna abre o portal) se algum envio venceu; envios perdidos não são mandados em lote.
-- **v3 (Administrativo, fase 1):** tabela `opcoes_lista` (listas configuráveis: status da aluna, saúde, engajamento, segmentos, e canais de venda; as opções com `codigo` alimentam os indicadores), tabela `campos_visibilidade` (marca "visível à aluna" por campo); colunas `pessoas.empresa`, `segmento_id`, `subsegmento`, `responsavel_id`, `data_entrada`, `status_id`, `saude_id`, `engajamento_id`, `em_risco`; `matriculas.canal_venda_id`. Cada aluna recebe status, responsável e data de entrada a partir da matrícula mais recente. Administração, Coordenação e Suporte/CS recebem a nova permissão `alunas:todas`.
-- **v2 (Portal da Aluna, fase 1):** tabelas `turmas`, `diagnosticos`, `metas`, `frases`, `links` e `notificacoes`; colunas `matriculas.turma_id`, `matriculas.data_boas_vindas`, `pessoas.instagram`, `pessoas.linkedin` e `pessoas.site`; conversão das turmas em texto para a tabela `turmas`.
+As mudanças de banco entram só por migrations em `d1/migrations/`, controladas na tabela `ped_migracoes` (separada da tabela de migrations do backoffice). Uma migration publicada nunca é editada: mudança nova entra como arquivo novo. A `0001_ped_esquema.sql` cria todas as tabelas `ped_` e não altera nenhuma tabela do backoffice; ela depende da migration `0017_perfil_pedagogico.sql` do backoffice (coluna `membro.perfil_pedagogico`).
+
+Nos nomes abaixo, as tabelas do pedagógico levam o prefixo `ped_` (por exemplo, `pessoas` é a visão `ped_pessoas`, que junta `pessoa` de Clientes com `ped_alunas`).
 
 As datas são gravadas como `AAAA-MM-DD`, os horários de agenda como `AAAA-MM-DDTHH:MM` (hora local de São Paulo) e os carimbos de auditoria em ISO UTC.
 

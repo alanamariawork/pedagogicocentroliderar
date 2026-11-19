@@ -145,7 +145,7 @@ export function Agenda() {
         </div>
       )}
       <p className="text-xs text-ink-muted">
-        Verde: disponibilidade cadastrada. Vinho: horário reservado por um encontro. Um mesmo horário nunca pode ser reservado duas vezes para a mesma profissional. A agenda é interna: nada é sincronizado com o Google Agenda.
+        Verde: disponibilidade cadastrada. Vinho: horário reservado por um encontro. Um mesmo horário nunca pode ser reservado duas vezes para a mesma profissional. Cada encontro agendado vai para o Google Agenda da mentora (com link do Google Meet) quando a integração está configurada; a disponibilidade continua sendo cadastrada aqui.
       </p>
 
       <h2 className="font-display pt-2 text-lg font-semibold">Capacidade de {nomeDoMes(mes)}</h2>

@@ -8,14 +8,13 @@ export const PAGINAS_ALUNA = [
   'jornada',
   'trilhas',
   'biblioteca',
+  'livros',
   'acoes',
-  'tarefas',
   'rotina',
   'mentorias',
   'mentoria',
   'nivel',
   'vitorias',
-  'plano-90',
   'balanco',
   'mural',
   'ranking',
@@ -23,6 +22,7 @@ export const PAGINAS_ALUNA = [
   'agenda',
   'links',
   'conta',
+  'mes',
 ] as const
 
 export type PaginaAluna = (typeof PAGINAS_ALUNA)[number]

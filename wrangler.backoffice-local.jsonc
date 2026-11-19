@@ -1,0 +1,15 @@
+{
+  // SÓ PARA TESTES E DESENVOLVIMENTO LOCAL: aplica as migrations do backoffice (cópia em d1/backoffice)
+  // no MESMO D1 local do pedagógico, para o banco local ficar igual ao de produção.
+  // Nunca usar com --remote.
+  "name": "backoffice-local",
+  "compatibility_date": "2026-09-01",
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "centro-liderar-eventos",
+      "database_id": "51ca76f1-b43b-425e-95e2-952540f36bad",
+      "migrations_dir": "d1/backoffice"
+    }
+  ]
+}

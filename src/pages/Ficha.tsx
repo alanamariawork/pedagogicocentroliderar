@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { ArrowLeft, Megaphone, Pencil, Plus } from 'lucide-react'
+import { ArrowLeft, Megaphone, MessageCircle, Pencil, Plus } from 'lucide-react'
+import { linkWhatsApp } from './Alunas'
 import { DialogAviso } from './Avisos'
 import { Carregando, EstadoErro, Secao, Vazio } from '../components/Estados'
 import { Campo, FormDialog, Opcoes, useValores } from '../components/Form'
@@ -14,6 +15,8 @@ import { useSessao } from '../state/Sessao'
 import { formatarCarimbo, formatarData, hojeSP } from '../../shared/datas'
 import { Entregaveis, Encontros } from './ficha/Entregaveis'
 import { JornadaAluna } from './ficha/Jornada'
+import { PlanoAcaoAluna } from './ficha/PlanoAcao'
+import { ContratoDocumento } from './ficha/Contrato'
 import { DiagnosticoAluna } from './ficha/Diagnostico'
 import { Continuidade } from './ficha/Continuidade'
 import { Anotacoes, Conquistas, Contatos, Historico } from './ficha/Registros'
@@ -26,6 +29,7 @@ const ABAS = [
   { id: 'entregaveis', nome: 'Entregáveis' },
   { id: 'encontros', nome: 'Encontros' },
   { id: 'jornada', nome: 'Jornada' },
+  { id: 'plano', nome: 'Plano de Ação' },
   { id: 'diagnostico', nome: 'Diagnóstico' },
   { id: 'contatos', nome: 'Contatos' },
   { id: 'conquistas', nome: 'Conquistas' },
@@ -44,7 +48,7 @@ export function Ficha({ pessoaId, aba = 'perfil' }: { pessoaId: string; aba?: st
   if (!dados) return <Carregando />
   const { pessoa, matriculas } = dados as { pessoa: Reg; matriculas: Reg[] }
   const m = matriculas.find((x) => x.id === matriculaId) ?? matriculas[0]
-  const abas = ABAS.filter((a) => (a.id === 'historico' ? !!dados.auditoria : a.id === 'jornada' || a.id === 'diagnostico' ? pode('jornada:ver') : a.id === 'anotacoes' ? pode('notas:internas') || pode('notas:pedagogicas') : true))
+  const abas = ABAS.filter((a) => (a.id === 'historico' ? !!dados.auditoria : a.id === 'jornada' || a.id === 'diagnostico' || a.id === 'plano' ? pode('jornada:ver') : a.id === 'anotacoes' ? pode('notas:internas') || pode('notas:pedagogicas') : true))
   const abaAtual = aba === 'programa' ? 'resumo' : abas.some((a) => a.id === aba) ? aba : 'perfil'
 
   return (
@@ -81,6 +85,11 @@ export function Ficha({ pessoaId, aba = 'perfil' }: { pessoaId: string; aba?: st
               <Pencil className="size-4" aria-hidden /> Dados
             </button>
           )}
+          {linkWhatsApp(pessoa.telefone) && (
+            <a href={linkWhatsApp(pessoa.telefone)!} target="_blank" rel="noopener noreferrer" className="btn-secondary" title="Abre a conversa com a aluna no WhatsApp para você enviar a mensagem.">
+              <MessageCircle className="size-4" aria-hidden /> WhatsApp
+            </a>
+          )}
           {pode('avisos:enviar') && dados.acesso_portal?.ativo ? (
             <button type="button" className="btn-secondary" onClick={() => setDialogo('aviso')}>
               <Megaphone className="size-4" aria-hidden /> Enviar aviso
@@ -88,7 +97,7 @@ export function Ficha({ pessoaId, aba = 'perfil' }: { pessoaId: string; aba?: st
           ) : null}
           {pode('usuarios:admin') && !dados.acesso_portal && (
             <button type="button" className="btn-secondary" onClick={() => setDialogo('acesso')}>
-              Criar acesso ao portal
+              Convidar para o portal
             </button>
           )}
           {pode('matriculas:criar') && (
@@ -157,6 +166,8 @@ function ConteudoAba({ aba, m, matriculas, pessoa, auditoria, recarregar }: { ab
       return <Encontros m={m} pessoa={pessoa} recarregar={recarregar} />
     case 'jornada':
       return <JornadaAluna m={m} />
+    case 'plano':
+      return <PlanoAcaoAluna key={m.id} m={m} />
     case 'diagnostico':
       return <DiagnosticoAluna m={m} />
     case 'contatos':
@@ -297,6 +308,8 @@ function Resumo({ m, matriculas, pessoa, recarregar }: { m: Reg; matriculas: Reg
         </dl>
       </Secao>
 
+      {pode('contratos:ver') && <ContratoDocumento m={m} onAplicado={recarregar} />}
+
       <Secao
         titulo="Onboarding"
         acao={
@@ -376,26 +389,25 @@ function FormDialogConferencia({ m, onFechar, onConcluir }: { m: Reg; onFechar: 
 
 function DialogAcesso({ pessoa, onFechar, onConcluir }: { pessoa: Reg; onFechar: () => void; onConcluir: () => void }) {
   const fb = useFeedback()
-  const { valores, campo } = useValores({ email: pessoa.email ?? '', senha_inicial: '' })
   return (
     <FormDialog
       aberto
-      titulo="Criar acesso ao portal"
-      descricao="A aluna verá somente os próprios dados. Ela deverá trocar a senha no primeiro acesso."
+      titulo="Convidar para o portal"
+      descricao="O backoffice envia agora um e-mail de primeiro acesso para a aluna. Ela cria a própria senha, aceita os termos e entra no Portal, onde vê somente os próprios dados."
       onFechar={onFechar}
-      rotulo="Criar acesso"
+      rotulo="Enviar convite"
       onEnviar={async () => {
-        await post('/usuarios', { nome: pessoa.nome, email: valores.email, perfil: 'aluna', pessoa_id: pessoa.id, senha_inicial: valores.senha_inicial })
-        fb.sucesso('Acesso criado. Envie a senha inicial à aluna por um canal seguro.')
+        const r = await post<{ email: string; situacao: string; mensagem: string }>(`/pessoas/${pessoa.id}/convite-portal`, {})
+        if (r.situacao === 'ja_tem_acesso') fb.sucesso(`Ela já tem acesso ao Portal com ${r.email}.`)
+        else if (r.situacao === 'enviado') fb.sucesso(`Convite enviado para ${r.email}.`)
+        // Convite recente, envio em andamento, e-mail inválido ou falha: a mensagem é a do backoffice.
+        else fb.erro(r.mensagem || 'O convite não foi enviado. Tente novamente mais tarde.')
         onConcluir()
       }}
     >
-      <Campo rotulo="E-mail de acesso" obrigatorio>
-        {(p) => <input {...p} type="email" className="field-control" value={valores.email} onChange={campo('email')} />}
-      </Campo>
-      <Campo rotulo="Senha inicial" obrigatorio dica="Mínimo de 10 caracteres, com letras e números.">
-        {(p) => <input {...p} type="text" autoComplete="off" className="field-control" value={valores.senha_inicial} onChange={campo('senha_inicial')} />}
-      </Campo>
+      <p className="text-sm text-ink-soft">
+        E-mail do convite: <strong>{pessoa.email || 'sem e-mail cadastrado'}</strong>. Para mudar, edite os dados da aluna (o e-mail fica no cadastro de Clientes).
+      </p>
     </FormDialog>
   )
 }

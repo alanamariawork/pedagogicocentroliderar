@@ -63,9 +63,10 @@ const CADASTROS: Cadastro[] = [
     campos: [
       { chave: 'nome', rotulo: 'Nome', obrigatorio: true },
       { chave: 'especialidade', rotulo: 'Especialidade' },
+      { chave: 'email', rotulo: 'E-mail da agenda', tipo: 'texto', dica: 'E-mail da agenda Google em que os encontros entram. Vazio: usa o e-mail da conta da equipe vinculada.' },
       { chave: 'contato', rotulo: 'Contato interno', dica: 'Opcional. Sem dados pessoais desnecessários.' },
     ],
-    detalhe: (r) => r.especialidade ?? '',
+    detalhe: (r) => [r.especialidade, r.email].filter(Boolean).join(' · '),
   },
   {
     nome: 'tipos-entregavel',
@@ -282,12 +283,28 @@ function Parametros() {
   const fb = useFeedback()
   const [janela, setJanela] = useState('')
   const [ajuda, setAjuda] = useState('')
+  const [antecedencia, setAntecedencia] = useState('')
+  const [diasFrente, setDiasFrente] = useState('')
+  const [muralPub, setMuralPub] = useState('moderada')
+  const [muralVis, setMuralVis] = useState('ativas')
+  const [avisoEmail, setAvisoEmail] = useState(true)
+  const [avisoWhats, setAvisoWhats] = useState(true)
+  const [meet, setMeet] = useState(true)
+  const [convidar, setConvidar] = useState(false)
   const [salvando, setSalvando] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
   useEffect(() => {
     if (cat) {
       setJanela(cat.configuracoes.janela_termino_dias ?? '45')
       setAjuda(cat.configuracoes.texto_ajuda_aluna ?? '')
+      setAntecedencia(cat.configuracoes.agenda_antecedencia_horas ?? '24')
+      setDiasFrente(cat.configuracoes.agenda_dias_a_frente ?? '30')
+      setMuralPub(cat.configuracoes.mural_publicacao ?? 'moderada')
+      setMuralVis(cat.configuracoes.mural_visibilidade ?? 'ativas')
+      setAvisoEmail((cat.configuracoes.avisos_email ?? '1') === '1')
+      setAvisoWhats((cat.configuracoes.avisos_whatsapp ?? '1') === '1')
+      setMeet((cat.configuracoes.agenda_google_meet ?? '1') === '1')
+      setConvidar((cat.configuracoes.agenda_convidar_aluna ?? '0') === '1')
     }
   }, [cat])
   if (!cat) return <Carregando />
@@ -300,7 +317,18 @@ function Parametros() {
           setSalvando(true)
           setErro(null)
           try {
-            await put('/configuracoes', { janela_termino_dias: janela, texto_ajuda_aluna: ajuda })
+            await put('/configuracoes', {
+              janela_termino_dias: janela,
+              texto_ajuda_aluna: ajuda,
+              agenda_antecedencia_horas: antecedencia,
+              agenda_dias_a_frente: diasFrente,
+              mural_publicacao: muralPub,
+              mural_visibilidade: muralVis,
+              avisos_email: avisoEmail ? '1' : '0',
+              avisos_whatsapp: avisoWhats ? '1' : '0',
+              agenda_google_meet: meet ? '1' : '0',
+              agenda_convidar_aluna: convidar ? '1' : '0',
+            })
             invalidarCatalogos()
             fb.sucesso('Parâmetros salvos.')
           } catch (err) {
@@ -314,8 +342,49 @@ function Parametros() {
         <Campo rotulo="Janela de “próxima do término” (dias)" dica="Matrículas que terminam dentro deste prazo aparecem nos alertas e na visão geral.">
           {(p) => <input type="number" min={1} max={365} className="field-control max-w-32" {...p} value={janela} onChange={(e) => setJanela(e.target.value)} />}
         </Campo>
-        <Campo rotulo="Texto de ajuda no portal da aluna" dica="Diga como a aluna pede ajuda. Não há envio automático de mensagens.">
+        <Campo rotulo="Texto de ajuda no portal da aluna" dica="Diga como a aluna pede ajuda.">
           {(p) => <textarea rows={3} maxLength={2000} className="field-control" {...p} value={ajuda} onChange={(e) => setAjuda(e.target.value)} />}
+        </Campo>
+        <h3 className="pt-2 text-sm font-semibold">Agenda do portal</h3>
+        <Campo rotulo="Antecedência mínima para marcar, reagendar ou desmarcar (horas)" dica="Depois desse limite, a aluna fala com a equipe.">
+          {(p) => <input type="number" min={0} max={720} className="field-control max-w-32" {...p} value={antecedencia} onChange={(e) => setAntecedencia(e.target.value)} />}
+        </Campo>
+        <Campo rotulo="Quantos dias à frente a aluna vê horários" dica="Horários vêm da disponibilidade cadastrada em Capacidade e agenda.">
+          {(p) => <input type="number" min={1} max={180} className="field-control max-w-32" {...p} value={diasFrente} onChange={(e) => setDiasFrente(e.target.value)} />}
+        </Campo>
+        <h3 className="pt-2 text-sm font-semibold">Google Agenda</h3>
+        <p className="text-xs text-ink-muted">Cada encontro agendado vira um evento no Google Agenda da mentora (precisa das credenciais do Google no servidor). Reagendar move o evento; desmarcar remove.</p>
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={meet} onChange={(e) => setMeet(e.target.checked)} /> Criar link do Google Meet em cada encontro
+        </label>
+        <label className="flex items-start gap-2 text-sm">
+          <input type="checkbox" className="mt-1" checked={convidar} onChange={(e) => setConvidar(e.target.checked)} /> Convidar a aluna para o evento (o Google manda o convite e as mudanças para o e-mail dela em Clientes)
+        </label>
+        <h3 className="pt-2 text-sm font-semibold">Avisos às alunas</h3>
+        <p className="text-xs text-ink-muted">Todo aviso do sino também sai pelos canais ligados aqui, para o e-mail e o telefone cadastrados em Clientes.</p>
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={avisoEmail} onChange={(e) => setAvisoEmail(e.target.checked)} /> Enviar avisos por e-mail
+        </label>
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={avisoWhats} onChange={(e) => setAvisoWhats(e.target.checked)} /> Enviar avisos por WhatsApp
+        </label>
+        <h3 className="pt-2 text-sm font-semibold">Mural de oportunidades</h3>
+        <Campo rotulo="Publicação pelas alunas">
+          {(p) => (
+            <select className="field-control" {...p} value={muralPub} onChange={(e) => setMuralPub(e.target.value)}>
+              <option value="moderada">Passa pela equipe antes de aparecer</option>
+              <option value="direta">Aparece na hora (a equipe pode arquivar depois)</option>
+              <option value="somente_equipe">Só a equipe publica</option>
+            </select>
+          )}
+        </Campo>
+        <Campo rotulo="Quem vê o mural">
+          {(p) => (
+            <select className="field-control" {...p} value={muralVis} onChange={(e) => setMuralVis(e.target.value)}>
+              <option value="ativas">Só alunas com matrícula ativa</option>
+              <option value="todas">Todas as alunas com acesso ao portal</option>
+            </select>
+          )}
         </Campo>
         <button type="submit" className="btn-primary" disabled={salvando}>
           {salvando ? 'Salvando…' : 'Salvar parâmetros'}
@@ -327,18 +396,13 @@ function Parametros() {
 
 function Usuarios() {
   const { dados, erro, recarregar } = useDados<Reg[]>('/usuarios')
-  const [editando, setEditando] = useState<Reg | 'novo' | null>(null)
+  const [editando, setEditando] = useState<Reg | null>(null)
   if (erro) return <EstadoErro mensagem={erro} onTentar={recarregar} />
   if (!dados) return <Carregando />
   return (
     <Secao
-      titulo="Usuários"
-      descricao="Cada pessoa da equipe tem o próprio login. Acesso de aluna também pode ser criado pela ficha."
-      acao={
-        <button type="button" className="btn-primary btn-sm" onClick={() => setEditando('novo')}>
-          <Plus className="size-4" aria-hidden /> Novo usuário
-        </button>
-      }
+      titulo="Equipe no sistema pedagógico"
+      descricao="As contas são as do backoffice (criadas em Configurações › Equipe, lá). Aqui você escolhe o perfil de cada pessoa no sistema pedagógico. Sem perfil, a pessoa não vê “Produtos & Entrega”. Alunas entram pelo convite do Portal, na ficha."
     >
       <div className="overflow-x-auto">
         <table className="tabela w-full min-w-[40rem]">
@@ -346,9 +410,8 @@ function Usuarios() {
             <tr>
               <th>Nome</th>
               <th>E-mail</th>
-              <th>Perfil</th>
-              <th>Vínculo</th>
-              <th>Situação</th>
+              <th>Perfil pedagógico</th>
+              <th>Profissional</th>
               <th>
                 <span className="sr-only">Ações</span>
               </th>
@@ -359,11 +422,11 @@ function Usuarios() {
               <tr key={u.id}>
                 <td>{u.nome}</td>
                 <td>{u.email}</td>
-                <td>{NOME_PERFIL[u.perfil as Perfil]}</td>
-                <td className="text-xs text-ink-muted">{u.pessoa_nome ?? u.profissional_nome ?? '—'}</td>
                 <td>
-                  {u.ativo ? <Selo tom="sucesso">Ativo</Selo> : <Selo>Inativo</Selo>} {u.trocar_senha ? <Selo tom="alerta">Troca de senha pendente</Selo> : null}
+                  {u.perfil ? NOME_PERFIL[u.perfil as Perfil] : <Selo>Sem acesso</Selo>}
+                  {!u.perfil_pedagogico && u.perfil === 'admin' ? <span className="block text-xs text-ink-muted">Administradora do backoffice</span> : null}
                 </td>
+                <td className="text-xs text-ink-muted">{u.profissional_nome ?? '—'}</td>
                 <td>
                   <button type="button" className="btn-ghost btn-sm" onClick={() => setEditando(u)}>
                     Editar
@@ -376,7 +439,7 @@ function Usuarios() {
       </div>
       {editando && (
         <DialogUsuario
-          usuario={editando === 'novo' ? null : editando}
+          usuario={editando}
           onFechar={() => setEditando(null)}
           onConcluir={() => {
             invalidarCatalogos()
@@ -388,51 +451,34 @@ function Usuarios() {
   )
 }
 
-function DialogUsuario({ usuario, onFechar, onConcluir }: { usuario: Reg | null; onFechar: () => void; onConcluir: () => void }) {
+function DialogUsuario({ usuario, onFechar, onConcluir }: { usuario: Reg; onFechar: () => void; onConcluir: () => void }) {
   const fb = useFeedback()
   const cat = useCatalogos()
-  const pessoas = useDados<Reg[]>('/pessoas').dados
   const { valores, campo } = useValores({
-    nome: usuario?.nome ?? '',
-    email: usuario?.email ?? '',
-    perfil: (usuario?.perfil as string) ?? 'suporte',
-    pessoa_id: usuario?.pessoa_id ?? '',
-    profissional_id: usuario?.profissional_id ?? '',
-    ativo: usuario ? !!usuario.ativo : true,
-    senha: '',
+    perfil: (usuario.perfil_pedagogico as string) ?? '',
+    profissional_id: usuario.profissional_id ?? '',
   })
   return (
     <FormDialog
       aberto
-      titulo={usuario ? 'Editar usuário' : 'Novo usuário'}
-      descricao="A senha inicial deve ser entregue à pessoa por um canal seguro. No primeiro acesso, ela será orientada a trocar."
+      titulo={`Perfil de ${usuario.nome}`}
+      descricao="Nome, e-mail e senha são cuidados no backoffice. A mudança de perfil vale no próximo clique da pessoa."
       onFechar={onFechar}
       onEnviar={async () => {
-        const corpo = {
-          nome: valores.nome,
-          email: valores.email,
-          perfil: valores.perfil,
-          ativo: valores.ativo,
-          pessoa_id: valores.perfil === 'aluna' ? valores.pessoa_id || null : null,
+        await put(`/usuarios/${usuario.id}`, {
+          perfil: valores.perfil || null,
           profissional_id: valores.perfil === 'mentora' ? valores.profissional_id || null : null,
-        }
-        if (usuario) await put(`/usuarios/${usuario.id}`, { ...corpo, nova_senha: valores.senha || undefined })
-        else await post('/usuarios', { ...corpo, senha_inicial: valores.senha })
-        fb.sucesso('Usuário salvo.')
+        })
+        fb.sucesso('Perfil salvo.')
         onConcluir()
       }}
     >
       <div className="grid gap-3 sm:grid-cols-2">
-        <Campo rotulo="Nome" obrigatorio>
-          {(p) => <input className="field-control" {...p} value={valores.nome} onChange={campo('nome')} />}
-        </Campo>
-        <Campo rotulo="E-mail de acesso" obrigatorio>
-          {(p) => <input type="email" className="field-control" {...p} value={valores.email} onChange={campo('email')} />}
-        </Campo>
-        <Campo rotulo="Perfil" obrigatorio>
+        <Campo rotulo="Perfil pedagógico" dica="Administradoras do backoffice sem perfil escolhido entram como Administração.">
           {(p) => (
             <select className="field-control" {...p} value={valores.perfil} onChange={campo('perfil')}>
-              {PERFIS.map((x) => (
+              <option value="">Sem perfil escolhido</option>
+              {PERFIS.filter((x) => x !== 'aluna').map((x) => (
                 <option key={x} value={x}>
                   {NOME_PERFIL[x]}
                 </option>
@@ -440,15 +486,6 @@ function DialogUsuario({ usuario, onFechar, onConcluir }: { usuario: Reg | null;
             </select>
           )}
         </Campo>
-        {valores.perfil === 'aluna' && (
-          <Campo rotulo="Aluna vinculada" obrigatorio>
-            {(p) => (
-              <select className="field-control" {...p} value={valores.pessoa_id} onChange={campo('pessoa_id')}>
-                <Opcoes itens={pessoas ?? []} vazio="Selecione" />
-              </select>
-            )}
-          </Campo>
-        )}
         {valores.perfil === 'mentora' && (
           <Campo rotulo="Profissional vinculada" obrigatorio dica="A mentora só verá as matrículas em que atende.">
             {(p) => (
@@ -459,14 +496,6 @@ function DialogUsuario({ usuario, onFechar, onConcluir }: { usuario: Reg | null;
           </Campo>
         )}
       </div>
-      <Campo rotulo={usuario ? 'Redefinir senha' : 'Senha inicial'} obrigatorio={!usuario} dica={usuario ? 'Deixe vazio para manter. Redefinir encerra as sessões abertas.' : 'Pelo menos 10 caracteres, com letras e números.'}>
-        {(p) => <input type="password" autoComplete="new-password" className="field-control" {...p} value={valores.senha} onChange={campo('senha')} />}
-      </Campo>
-      {usuario && (
-        <label className="flex items-center gap-2 text-sm">
-          <input type="checkbox" checked={valores.ativo} onChange={campo('ativo')} /> Acesso ativo
-        </label>
-      )}
     </FormDialog>
   )
 }

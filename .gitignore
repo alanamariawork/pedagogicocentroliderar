@@ -4,3 +4,5 @@ data/*.db
 data/*.db-*
 *.tsbuildinfo
 .env
+.wrangler
+tests/apoio/.preparar.mjs

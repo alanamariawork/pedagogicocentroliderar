@@ -1,0 +1,45 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  // Worker do sistema pedagógico. Não tem endereço público: só o Worker do backoffice ("sistema")
+  // fala com ele, por service binding, repassando /produtos/*, /api/ped/* e /portal/diamante-business*.
+  "name": "pedagogico",
+  "main": "server/worker.ts",
+  "compatibility_date": "2026-09-01",
+  "workers_dev": false,
+  "preview_urls": false,
+  "observability": { "enabled": true },
+  // Perto do banco D1 (região enam), como o backoffice.
+  "placement": { "mode": "smart" },
+
+  // Telas (build do Vite em dist/produtos). O Worker roda antes dos arquivos para conferir a sessão.
+  "assets": {
+    "directory": "dist",
+    "binding": "ASSETS",
+    "run_worker_first": true
+  },
+
+  // O MESMO banco do backoffice (contas, sessões e Clientes ficam lá). As migrations daqui só criam
+  // tabelas ped_ e são controladas na tabela ped_migracoes, separada das migrations do backoffice.
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "centro-liderar-eventos",
+      "database_id": "51ca76f1-b43b-425e-95e2-952540f36bad",
+      "migrations_dir": "d1/migrations",
+      "migrations_table": "ped_migracoes"
+    }
+  ],
+
+  // Arquivos anexados pelas alunas (até 10 MB cada). O bucket precisa ser criado na conta antes da
+  // primeira publicação: npx wrangler r2 bucket create pedagogico-anexos
+  "r2_buckets": [{ "binding": "ANEXOS", "bucket_name": "pedagogico-anexos" }],
+
+  // Funções do backoffice que o pedagógico usa (criar ou atualizar pessoa em Clientes, convite do
+  // Portal), sempre pela regra do próprio backoffice. Ver server/integracao.ts.
+  "services": [{ "binding": "BACKOFFICE", "service": "sistema", "entrypoint": "Pedagogico" }],
+
+  // Avisos programados pela equipe: confere a cada minuto se algum horário chegou.
+  "triggers": { "crons": ["* * * * *"] }
+
+  // Nenhum segredo neste arquivo.
+}

@@ -7,9 +7,10 @@ import { ativos, equipe, useCatalogos } from '../state/Catalogos'
 import { useSessao } from '../state/Sessao'
 import { useFeedback } from '../components/Feedback'
 import { diaDaSemana, formatarData, formatarHoras, hojeSP, somarDias, somarMinutos } from '../../shared/datas'
+import { BotaoMeet } from '../components/BotaoMeet'
 import { mesclarIntervalos, type Intervalo } from '../../shared/calculos'
 
-export type AcaoOcorrencia = 'agendar' | 'reagendar' | 'desmarcar' | 'contato' | 'impedimento' | 'realizar' | 'situacao' | 'cancelar' | 'conferir'
+export type AcaoOcorrencia = 'agendar' | 'reagendar' | 'desmarcar' | 'contato' | 'impedimento' | 'realizar' | 'situacao' | 'cancelar' | 'conferir' | 'confirmacao'
 
 /** Abre o diálogo da ação escolhida para uma ocorrência (entrega). */
 export function DialogoAcao({ acao, ocorrencia, onFechar, onConcluir }: { acao: AcaoOcorrencia | null; ocorrencia: Reg | null; onFechar: () => void; onConcluir: () => void }) {
@@ -33,7 +34,68 @@ export function DialogoAcao({ acao, ocorrencia, onFechar, onConcluir }: { acao: 
       return <DialogCancelar {...props} />
     case 'conferir':
       return <DialogConferir {...props} />
+    case 'confirmacao':
+      return <DialogConfirmacao {...props} />
   }
+}
+
+const CANAL_CONFIRMACAO: Record<string, string> = { whatsapp: 'WhatsApp', google_agenda: 'Google Agenda da mentora' }
+const SITUACAO_CONFIRMACAO: Record<string, string> = { pendente: 'Pendente', enviado: 'Enviado', falhou: 'Falhou', nao_configurado: 'Não configurado', descartado: 'Substituído' }
+
+/**
+ * Confirmação do agendamento (WhatsApp e Google Agenda). Tentar de novo usa os mesmos registros:
+ * não cria outra reserva, outra mensagem nem outro evento.
+ */
+function DialogConfirmacao({ ocorrencia, onFechar, onConcluir }: P) {
+  const [dados, setDados] = useState<Reg | null>(null)
+  const [erro, setErro] = useState<string | null>(null)
+  const fb = useFeedback()
+  useEffect(() => {
+    get(`/ocorrencias/${ocorrencia.id}/confirmacoes`).then(setDados, (e) => setErro(e instanceof Error ? e.message : 'Não foi possível carregar.'))
+  }, [ocorrencia.id])
+  const canais = (dados?.canais ?? {}) as Record<string, Reg | null>
+  return (
+    <FormDialog
+      aberto
+      titulo="Confirmação do agendamento"
+      descricao="O agendamento já está gravado. Aqui fica o resultado do envio por WhatsApp e do evento no Google Agenda, com o link do Google Meet."
+      rotulo="Tentar novamente"
+      onFechar={onFechar}
+      onEnviar={async () => {
+        const r = await post(`/ocorrencias/${ocorrencia.id}/confirmacoes/tentar`, {})
+        if (r.pendente) throw new Error('Ainda pendente: ' + Object.values(r.canais as Record<string, Reg | null>).filter((c) => c && c.situacao !== 'enviado').map((c) => c!.detalhe).join(' '))
+        fb.sucesso('Confirmação enviada.')
+        onConcluir()
+      }}
+    >
+      {erro && <p className="text-sm text-danger">{erro}</p>}
+      {!dados && !erro && <p className="text-sm text-ink-muted">Carregando…</p>}
+      {dados?.link_reuniao && (
+        <div className="flex flex-wrap items-center gap-2 rounded border border-line px-3 py-2 text-sm">
+          <span className="min-w-0 flex-1 truncate">
+            Google Meet: <span className="text-ink-soft">{dados.link_reuniao}</span>
+          </span>
+          <BotaoMeet link={dados.link_reuniao} rotulo="Abrir" className="btn-secondary btn-sm" />
+        </div>
+      )}
+      {dados && (
+        <ul className="space-y-2">
+          {Object.entries(CANAL_CONFIRMACAO).map(([k, nome]) => {
+            const c = canais[k]
+            return (
+              <li key={k} className="rounded border border-line px-3 py-2 text-sm">
+                <p className="font-medium">
+                  {nome}: {c ? SITUACAO_CONFIRMACAO[c.situacao] ?? c.situacao : 'Sem registro'}
+                  {c?.tentativas ? <span className="font-normal text-ink-muted"> · {c.tentativas} tentativa(s)</span> : null}
+                </p>
+                {c?.detalhe && <p className="text-xs text-ink-soft">{c.detalhe}</p>}
+              </li>
+            )
+          })}
+        </ul>
+      )}
+    </FormDialog>
+  )
 }
 
 interface P {
@@ -517,6 +579,7 @@ export function acoesDisponiveis(o: Reg, pode: (p: never) => boolean): { acao: A
   if (o.situacao === 'conferencia' && p('obrigacoes:ajustar')) lista.push({ acao: 'conferir', rotulo: 'Conferir registro' })
   if (aberta && o.situacao !== 'agendada' && o.situacao !== 'conferencia' && p('entregas:editar')) lista.push({ acao: 'agendar', rotulo: 'Agendar' })
   if (o.situacao === 'agendada' && p('entregas:editar')) lista.push({ acao: 'reagendar', rotulo: 'Reagendar' }, { acao: 'desmarcar', rotulo: 'Desmarcar' })
+  if (o.confirmacoes_pendentes > 0 && p('entregas:editar')) lista.push({ acao: 'confirmacao', rotulo: 'Confirmação: ver e tentar de novo' })
   if (aberta && o.situacao !== 'conferencia' && p('entregas:realizar')) lista.push({ acao: 'realizar', rotulo: 'Marcar como realizado' })
   if (p('entregas:editar')) lista.push({ acao: 'contato', rotulo: 'Registrar contato' })
   if (aberta && p('entregas:editar')) lista.push({ acao: 'impedimento', rotulo: 'Registrar impedimento' })

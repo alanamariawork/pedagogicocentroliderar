@@ -1,4 +1,4 @@
-import { limitesDoMes, minutosEntre, somarDias } from './datas'
+import { limitesDoMes, minutosEntre, somarDias, somarMinutos } from './datas'
 
 /* ---------------- Intervalos de horário (IN05, IN07) ---------------- */
 
@@ -168,4 +168,24 @@ export interface ResumoItem {
 export function resumoQuantidades(quantidade: number, somaAjustes: number, realizadas: number): ResumoItem {
   const contratada = quantidade + somaAjustes
   return { contratada, realizadas, restantes: Math.max(contratada - realizadas, 0) }
+}
+
+/**
+ * Horários que uma aluna pode reservar: dentro da disponibilidade da profissional, em blocos da duração
+ * do encontro (a partir do início de cada faixa), sem cruzar reservas ativas e a partir de `aPartirDe`.
+ */
+export function horariosLivres(disponibilidades: Intervalo[], reservas: Intervalo[], duracaoMin: number, aPartirDe: string, ate: string): Intervalo[] {
+  if (!duracaoMin || duracaoMin <= 0) return []
+  const saida: Intervalo[] = []
+  for (const d of mesclarIntervalos(disponibilidades)) {
+    let inicio = d.inicio
+    while (true) {
+      const fim = somarMinutos(inicio, duracaoMin)
+      if (fim > d.fim || inicio >= ate) break
+      const slot = { inicio, fim }
+      if (inicio >= aPartirDe && !reservas.some((r) => sobrepoe(slot, r))) saida.push(slot)
+      inicio = fim
+    }
+  }
+  return saida
 }

@@ -29,7 +29,7 @@ As datas aparecem no formato DD/MM/AAAA e no horário de Brasília (America/Sao_
 
 **Validações** é a fila de atividades enviadas e de conquistas ainda não validadas.
 
-**Alertas** são calculados no momento da consulta: entrega vencida, encontro sem registro, contato a refazer, matrícula perto do término, cadastro incompleto, pausa sem decisão e atividade aguardando validação. Nenhuma mensagem é enviada automaticamente.
+**Alertas** são calculados no momento da consulta: entrega vencida, encontro sem registro, contato a refazer, matrícula perto do término, cadastro incompleto, pausa sem decisão e atividade aguardando validação. Alertas não geram mensagens para as alunas; só os avisos do sino saem também por e-mail e WhatsApp.
 
 **Trilhas e etapas** guarda o modelo pedagógico: trilhas, pilares, etapas, pré-requisitos (o sistema bloqueia ciclos), links e atividades-modelo.
 
@@ -43,7 +43,7 @@ As datas aparecem no formato DD/MM/AAAA e no horário de Brasília (America/Sao_
 
 Cada aluna tem um **ID** (#001, #002…) que segue a ordem de matrícula. As listas são ordenadas por ele e a busca aceita o ID.
 
-**Configurações** tem os cadastros, os parâmetros (a janela de "próxima do término" e o texto de ajuda do portal), os usuários (inclusive a redefinição de senha) e as regras de acesso por perfil.
+**Configurações** tem os cadastros, os parâmetros (a janela de "próxima do término" e o texto de ajuda do portal), a equipe no sistema pedagógico (perfil de cada pessoa do backoffice) e as regras de acesso por perfil.
 
 ### Administrativo (fase 1)
 
@@ -64,7 +64,7 @@ O portal tem um menu lateral por seções (Minha Jornada, Meu Perfil, Aprendizad
 - **Meus Dados:** dados do cadastro e do programa, contrato e redes sociais. A aluna edita telefone, cidade e redes; nome e e-mail só pela equipe.
 - **Diagnóstico:** quatro áreas (situação atual, objetivos, desafios e expectativas) no início do programa. A versão de fim abre 30 dias antes do fim da vigência, e a aba Comparar mostra as duas lado a lado. As metas têm valor inicial, alvo e atual.
 - **Jornada** e **Mentorias** (um item por tipo contratado, com os nomes de sempre): as mesmas informações de antes, descritas abaixo.
-- **Links Úteis** e **Minha Conta** (troca de senha).
+- **Links Úteis** e **Minha Conta** (a senha é a do Portal: “Esqueci minha senha” na entrada).
 
 Na equipe, a ficha ganhou a aba **Diagnóstico** (só leitura), e Configurações ganhou os cadastros de Turmas, Links úteis e Frases.
 
@@ -79,6 +79,6 @@ O portal mostra:
 - Os encontros. O resumo compartilhável só aparece depois que o encontro foi realizado.
 - Os formatos que não fazem parte do contrato, marcados como **"Não incluído no contrato"**, um selo diferente do cadeado pedagógico.
 - **Meu crescimento:** um gráfico das conquistas validadas somadas ao longo do tempo, com a linha do tempo ao lado, sem comparação com outras alunas.
-- Como pedir ajuda, e a troca de senha.
+- Como pedir ajuda.
 
 A aluna só acessa os próprios dados, inclusive se tentar abrir um endereço ou chamar a API diretamente.

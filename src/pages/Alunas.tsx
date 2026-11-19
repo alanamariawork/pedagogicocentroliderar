@@ -51,10 +51,12 @@ export function Alunas() {
   const ops = opcoesPorId(cat)
   const codigo = (id: string | null | undefined) => (id ? ops.get(id)?.codigo : undefined)
   const hoje = hojeSP()
-  const limite90 = somarDias(hoje, 90)
+  // Mesma janela da Visão geral e do portal (Configurações › Geral; padrão 45 dias, inclusive).
+  const janela = Number(cat?.configuracoes?.janela_termino_dias ?? 45) || 45
+  const limite = somarDias(hoje, janela)
   const renova = (p: Reg) => {
     const m = p.matricula_atual
-    return m && ['ativa', 'pausada'].includes(m.situacao) && m.data_fim && m.data_fim >= hoje && m.data_fim <= limite90
+    return m && ['ativa', 'pausada'].includes(m.situacao) && m.data_fim && m.data_fim >= hoje && m.data_fim <= limite
   }
   const testes: Record<Exclude<Rapido, ''>, (p: Reg) => boolean> = {
     ativas: (p) => codigo(p.status_id) === 'ativa',
@@ -101,7 +103,7 @@ export function Alunas() {
     { id: 'ativas', titulo: 'Ativas' },
     { id: 'sem_responsavel', titulo: 'Sem responsável', tom: 'alerta' },
     { id: 'em_risco', titulo: 'Em risco', tom: 'perigo' },
-    { id: 'renovam', titulo: 'Renovam em 90 dias', tom: 'alerta' },
+    { id: 'renovam', titulo: `Terminam em ${janela} dias`, tom: 'alerta' },
     { id: 'canceladas', titulo: 'Canceladas' },
   ]
   const algumFiltro = !!(busca || rapido || Object.values(f).some(Boolean))
@@ -258,9 +260,9 @@ function Acoes({ p, onEditar, compacto }: { p: Reg; onEditar?: (id: string) => v
         <span className={compacto ? 'sr-only' : 'max-sm:sr-only'}>Ver perfil</span>
       </a>
       {wa ? (
-        <a href={wa} target="_blank" rel="noopener noreferrer" className={cls} title="Abrir conversa no WhatsApp (nada é enviado automaticamente)">
+        <a href={wa} target="_blank" rel="noopener noreferrer" className={cls} title="Ação manual: abre a conversa no WhatsApp para você escrever. Nada é enviado pelo sistema.">
           <MessageCircle className="size-4" aria-hidden />
-          <span className={compacto ? 'sr-only' : 'max-sm:sr-only'}>WhatsApp</span>
+          <span className={compacto ? 'sr-only' : 'max-sm:sr-only'}>WhatsApp (manual)</span>
         </a>
       ) : (
         <span className={cx(cls, 'cursor-not-allowed opacity-40')} title="Sem telefone válido cadastrado">

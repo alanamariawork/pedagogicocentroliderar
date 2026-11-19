@@ -1,0 +1,19 @@
+-- =====================================================================
+-- Fechamento pós-validação do PR #5: evento.timezone.
+--
+-- A validação ponta a ponta (docs/portal-v1/22-relatorio-implementacao-pr5.md, seção 15.11)
+-- encontrou uma lacuna: os horários de encontro/evento_dia eram exibidos no fuso do NAVEGADOR de
+-- quem acessa, não no fuso oficial da edição. Para um evento presencial (ou um encontro online
+-- anunciado num horário fixo, ex. "17h horário de Brasília"), isso é sempre a fonte de verdade
+-- errada — uma participante em outro fuso não pode ver um horário diferente do combinado.
+--
+-- Aditiva: coluna nova, nullable, sem backfill. Eventos existentes continuam funcionando sem
+-- alteração — o fallback para quando timezone é nulo é decidido em CÓDIGO (worker/contexto.ts:
+-- FUSO, 'America/Sao_Paulo', já usado como fuso padrão da organização para outros cálculos de
+-- data), nunca "inventado" por evento nem gravado retroativamente aqui.
+--
+-- Identificador IANA (ex.: 'America/Fortaleza'), validado em código (worker/regras/eventos.ts,
+-- via Intl.DateTimeFormat) — um CHECK de lista de fusos válidos não é portável para D1/SQLite
+-- (exigiria uma tabela de apoio só para isso, generalização maior do que o necessário).
+-- =====================================================================
+alter table evento add column timezone text check (timezone is null or length(timezone) between 1 and 60);

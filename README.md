@@ -1,74 +1,48 @@
 # Diamante Business | Gestão da Jornada
 
-Sistema interno do Centro Liderar (Grupo Mendes) para acompanhar as mentoradas do programa Diamante Business. Ele cobre matrículas, entregáveis contratados, entregas do mês, agenda e capacidade, contatos e impedimentos, a jornada pedagógica com validação humana, conquistas, satisfação e o portal da aluna.
+Sistema pedagógico do Centro Liderar (Grupo Mendes) para acompanhar as mentoradas do programa Diamante Business: matrículas, entregáveis contratados, entregas do mês, agenda e capacidade, contatos e impedimentos, jornada pedagógica com validação humana, conquistas, satisfação e o portal da aluna.
 
-É um piloto funcional, não uma maquete. Os dados ficam gravados em banco, o login é real e as permissões são verificadas no servidor em cada requisição.
+Ele entra no lugar das páginas “Produtos & Entrega” do backoffice e roda dentro do mesmo endereço:
 
-> Todos os dados de demonstração são **fictícios** (nomes "Demo", e-mails `@demo.local`). Nenhum dado real de aluna foi importado. Conteúdos marcados com **[Demo]** são exemplos e precisam ser substituídos pelo conteúdo oficial.
+| Quem | Endereço | Login |
+|---|---|---|
+| Equipe (Administração, Coordenação, Suporte/CS, Mentora) | `/produtos/`, pelo menu “Produtos & Entrega” do backoffice | o do backoffice |
+| Aluna | `/portal/diamante-business/` | o do Portal (convite por e-mail) |
 
-## Como rodar
+Não há login próprio, cadastro de pessoas próprio nem banco separado. Contas, sessões e Clientes são os do backoffice; o pedagógico guarda só o que é dele, em tabelas `ped_` do mesmo D1. Os detalhes estão em [docs/arquitetura.md](docs/arquitetura.md).
+
+> Nenhum dado real de aluna foi importado. Conteúdos de trilhas, etapas e pacotes são cadastrados pela equipe na própria tela.
+
+## Desenvolvimento local
 
 Você precisa de **Node.js 20.11 ou mais recente**.
 
 ```bash
 npm install
-npm run seed            # cria data/diamante-business.db com a demonstração
-npm run dev             # API em 127.0.0.1:3001 e tela em http://localhost:5173
+npm run dev:dados   # banco local (.wrangler/state) com as migrations do backoffice e do pedagógico
+                    # e dados fictícios (@demo.local); mostra um cookie de sessão por perfil
+npm run dev         # build + wrangler dev em http://localhost:8787/produtos/
 ```
 
-Para recriar a demonstração do zero, rode `npm run seed -- --recriar`.
-
-Usuários da demonstração (a senha é `diamante2026` para todos):
-
-| Perfil | E-mail |
-|---|---|
-| Administração | admin@demo.local |
-| Coordenação pedagógica | coordenacao@demo.local |
-| Suporte/CS | suporte@demo.local |
-| Mentora (vê só a própria agenda e as próprias alunas) | mentora@demo.local |
-| Alunas (portal) | beatriz@, carla@, daniela@, elisa@, fernanda@, gabriela@demo.local |
-
-### Uso real (sem demonstração)
-
-```bash
-npm install
-npm run build
-npm run criar-admin     # pergunta nome, e-mail e senha do primeiro administrador
-NODE_ENV=production npm start   # serve a API e a tela em http://127.0.0.1:3001
-```
-
-Depois disso, cadastre o restante pela própria tela: em **Configurações**, os programas, profissionais, tipos de entregável, motivos, parâmetros, usuários e regras de acesso; em **Trilhas e etapas**, o modelo pedagógico; e em **Pacotes**, os modelos de pacote.
-
-### Variáveis de ambiente (todas opcionais)
-
-| Variável | Padrão | Para quê |
-|---|---|---|
-| `PORT` / `HOST` | `3001` / `127.0.0.1` | Endereço do servidor |
-| `DB_PATH` | `data/diamante-business.db` | Arquivo do banco SQLite |
-| `NODE_ENV=production` | — | Liga o cookie `Secure` (exige HTTPS) |
-| `COOKIE_SECURE` | segue `NODE_ENV` | Use `false` para testar o build de produção por HTTP local |
-| `TRUST_PROXY` | `false` | `true` se estiver atrás de um proxy HTTPS |
-| `SENHA_DEMO` | `diamante2026` | Senha dos usuários da demonstração |
-| `HOJE_FIXO` | — | Fixa a data "de hoje" (AAAA-MM-DD), útil em testes |
-
-O código não guarda nenhum segredo. **Backup:** os arquivos anexados pelas alunas ficam dentro do banco, então basta copiar o arquivo do banco (e os arquivos `-wal`/`-shm`, se existirem) com o servidor parado.
-
-### Publicar
-
-Nada foi publicado. Para publicar, você precisa de um servidor com Node, disco persistente para o arquivo do banco e HTTPS na frente (por exemplo, um proxy reverso). Rode com `NODE_ENV=production` e `TRUST_PROXY=true`.
+O banco local é um D1 de verdade (o mesmo motor da Cloudflare), só na sua máquina. Os dados fictícios existem só nele: nada de demonstração vai para produção.
 
 ## Testes
 
 ```bash
-npm test          # 48 testes: 41 de aceite (CA01–CA16, segurança, portal e administrativo) e 7 de cálculo
+npm test            # 64 testes em D1 local: aceite (CA01–CA16), login único e ligação com Clientes, cálculos
 npm run typecheck
 ```
 
-Os testes de aceite sobem o servidor de verdade com um banco em memória e percorrem a API com cada perfil. Veja `docs/criterios-de-aceite.md`.
+Os testes aplicam as migrations do backoffice (cópia em `d1/backoffice/`) e as do pedagógico num D1 local e percorrem a API e as páginas com cada perfil. Veja [docs/criterios-de-aceite.md](docs/criterios-de-aceite.md).
+
+## Publicar
+
+Nada foi publicado. A publicação depende de uma alteração no backoffice (pacote à parte) e segue a ordem de [docs/producao.md](docs/producao.md). Nenhum segredo fica no código.
 
 ## Documentação
 
 - [docs/uso.md](docs/uso.md): o guia de uso por perfil e tela.
-- [docs/arquitetura.md](docs/arquitetura.md): a estrutura, o modelo de dados, a segurança e onde cada regra RN01–RN16 está implementada.
+- [docs/arquitetura.md](docs/arquitetura.md): a estrutura, o login único, a ligação com Clientes, o modelo de dados e onde cada regra RN01–RN16 está implementada.
+- [docs/producao.md](docs/producao.md): o roteiro de publicação e o checklist de teste por perfil.
 - [docs/criterios-de-aceite.md](docs/criterios-de-aceite.md): o que foi testado e como.
 - [docs/limitacoes.md](docs/limitacoes.md): as limitações, as premissas e as decisões em aberto.

@@ -1,12 +1,12 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Plus, Trash2 } from 'lucide-react'
 import { Campo, FormDialog, Opcoes, useValores } from '../components/Form'
-import { useDados, post, type Reg } from '../lib/api'
+import { get, useDados, post, type Reg } from '../lib/api'
 import { ORIGEM_ITEM } from '../lib/format'
 import { ativos, equipe, useCatalogos } from '../state/Catalogos'
 import { useSessao } from '../state/Sessao'
 import { useFeedback } from '../components/Feedback'
-import { irPara } from '../lib/rotas'
+import { href, irPara } from '../lib/rotas'
 import { hojeSP, somarDias, somarMeses } from '../../shared/datas'
 
 export interface ItemForm {
@@ -126,6 +126,7 @@ export function DialogMatricula({ pessoa, anterior, onFechar, onConcluir }: { pe
     condicoes_comerciais: '',
   })
   const [itens, setItens] = useState<ItemForm[]>([])
+  const [vinculo, setVinculo] = useState<Reg | null>(null)
   const pacote = pacotes?.find((p) => p.id === valores.pacote_id)
 
   return (
@@ -157,7 +158,10 @@ export function DialogMatricula({ pessoa, anterior, onFechar, onConcluir }: { pe
           fb.sucesso(anterior ? 'Renovação cadastrada.' : 'Matrícula cadastrada.')
           onConcluir?.()
         } else {
-          const r = await post('/pessoas', { nome: valores.nome, email: valores.email, telefone: valores.telefone, matricula })
+          // Com cadastro escolhido em Clientes, ele é só vinculado; sem, a pessoa é criada em Clientes.
+          const r = vinculo
+            ? await post('/pessoas', { pessoa_id: vinculo.id, nome: vinculo.nome, matricula })
+            : await post('/pessoas', { nome: valores.nome, email: valores.email, telefone: valores.telefone, matricula })
           fb.sucesso('Aluna cadastrada.')
           irPara({ pagina: 'ficha', id: r.id })
         }
@@ -166,15 +170,23 @@ export function DialogMatricula({ pessoa, anterior, onFechar, onConcluir }: { pe
       {!pessoa && (
         <fieldset className="grid gap-4 sm:grid-cols-3">
           <legend className="mb-2 font-display text-base font-semibold">Pessoa</legend>
-          <Campo rotulo="Nome" obrigatorio className="sm:col-span-3">
-            {(p) => <input {...p} className="field-control" value={valores.nome} onChange={campo('nome')} />}
-          </Campo>
-          <Campo rotulo="E-mail" className="sm:col-span-2">
-            {(p) => <input {...p} type="email" className="field-control" value={valores.email} onChange={campo('email')} />}
-          </Campo>
-          <Campo rotulo="Telefone">
-            {(p) => <input {...p} className="field-control" value={valores.telefone} onChange={campo('telefone')} />}
-          </Campo>
+          <div className="sm:col-span-3">
+            <BuscaClientes escolhido={vinculo} onEscolher={setVinculo} />
+          </div>
+          {!vinculo && (
+            <>
+              <p className="text-xs text-ink-muted sm:col-span-3">Não achou em Clientes? Preencha abaixo e o cadastro é criado lá, uma vez só.</p>
+              <Campo rotulo="Nome" obrigatorio className="sm:col-span-3">
+                {(p) => <input {...p} className="field-control" value={valores.nome} onChange={campo('nome')} />}
+              </Campo>
+              <Campo rotulo="E-mail" className="sm:col-span-2">
+                {(p) => <input {...p} type="email" className="field-control" value={valores.email} onChange={campo('email')} />}
+              </Campo>
+              <Campo rotulo="Telefone">
+                {(p) => <input {...p} className="field-control" value={valores.telefone} onChange={campo('telefone')} />}
+              </Campo>
+            </>
+          )}
         </fieldset>
       )}
       <fieldset className="grid gap-4 sm:grid-cols-2">
@@ -271,5 +283,69 @@ export function DialogMatricula({ pessoa, anterior, onFechar, onConcluir }: { pe
         <EditorItens itens={itens} onChange={setItens} />
       </fieldset>
     </FormDialog>
+  )
+}
+
+/** Busca no cadastro de Clientes do backoffice, para vincular a aluna sem criar cadastro repetido. */
+function BuscaClientes({ escolhido, onEscolher }: { escolhido: Reg | null; onEscolher: (p: Reg | null) => void }) {
+  const [termo, setTermo] = useState('')
+  const [achados, setAchados] = useState<Reg[] | null>(null)
+  const [erro, setErro] = useState<string | null>(null)
+  useEffect(() => {
+    if (termo.trim().length < 2) return setAchados(null)
+    let vivo = true
+    const t = setTimeout(() => {
+      get<Reg[]>(`/clientes/busca?termo=${encodeURIComponent(termo.trim())}`)
+        .then((r) => vivo && (setAchados(r), setErro(null)))
+        .catch((e: Error) => vivo && setErro(e.message))
+    }, 300)
+    return () => {
+      vivo = false
+      clearTimeout(t)
+    }
+  }, [termo])
+
+  if (escolhido)
+    return (
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-[var(--radius-control)] border border-gold-line bg-gold-soft px-3 py-2 text-sm">
+        <span>
+          Cadastro de Clientes: <strong>{escolhido.nome}</strong>
+          <span className="text-ink-muted"> {[escolhido.email, escolhido.telefone].filter(Boolean).join(' · ')}</span>
+        </span>
+        <button type="button" className="btn-ghost btn-sm" onClick={() => onEscolher(null)}>
+          Trocar
+        </button>
+      </div>
+    )
+  return (
+    <div>
+      <label htmlFor="busca-clientes" className="mb-1 block text-sm font-medium text-ink-soft">
+        Buscar em Clientes
+      </label>
+      <input id="busca-clientes" className="field-control" placeholder="Nome, e-mail, telefone ou CPF" value={termo} onChange={(e) => setTermo(e.target.value)} autoComplete="off" />
+      {erro && <p className="mt-1 text-xs text-danger">{erro}</p>}
+      {achados && (
+        <ul className="mt-2 max-h-48 divide-y divide-line overflow-y-auto rounded-[var(--radius-control)] border border-line">
+          {achados.length === 0 && <li className="px-3 py-2 text-sm text-ink-muted">Nenhum cadastro encontrado.</li>}
+          {achados.map((p) => (
+            <li key={p.id} className="flex items-center justify-between gap-2 px-3 py-2 text-sm">
+              <span className="min-w-0">
+                <span className="block truncate">{p.nome}</span>
+                <span className="block truncate text-xs text-ink-muted">{[p.email, p.telefone].filter(Boolean).join(' · ') || 'Sem contato'}</span>
+              </span>
+              {p.ja_aluna ? (
+                <a className="btn-ghost btn-sm shrink-0" href={href({ pagina: 'ficha', id: p.id })}>
+                  Já é aluna: abrir ficha
+                </a>
+              ) : (
+                <button type="button" className="btn-secondary btn-sm shrink-0" onClick={() => onEscolher(p)}>
+                  Usar este cadastro
+                </button>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   )
 }

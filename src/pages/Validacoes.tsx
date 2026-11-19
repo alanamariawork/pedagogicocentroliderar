@@ -51,7 +51,7 @@ export function Validacoes() {
                           Abrir link da evidência
                         </a>
                       )}
-                      <ListaAnexos anexos={a.ultima_evidencia.anexos} base="/api/anexos" />
+                      <ListaAnexos anexos={a.ultima_evidencia.anexos} base="/api/ped/anexos" />
                       <p className="text-xs text-ink-muted">
                         {a.ultima_evidencia.data_execucao && `Executada em ${formatarData(a.ultima_evidencia.data_execucao)} · `}
                         {a.ultima_evidencia.registrada_por_equipe ? 'Registrada pela equipe' : 'Enviada pela aluna'} · {a.evidencias} evidência(s)
