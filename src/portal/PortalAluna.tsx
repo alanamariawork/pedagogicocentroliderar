@@ -273,7 +273,7 @@ function PaginaAluna({ rota, tipos }: { rota: RotaAluna; tipos: Reg[] }) {
     case 'biblioteca':
       return <Conteudos key="biblioteca" secao="biblioteca" />
     case 'livros':
-      return <Conteudos key="livros" secao="livros" />
+      return <Conteudos key="livros" secao="livros" destaqueId={rota.id} />
     case 'mural':
       return <Mural />
     case 'links':

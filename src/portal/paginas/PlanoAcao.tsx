@@ -1,4 +1,5 @@
-import { ListChecks } from 'lucide-react'
+import { BookOpen, ListChecks } from 'lucide-react'
+import { hrefAluna } from '../rotas'
 import { Carregando, EstadoErro, EstadoVazio } from '../../components/Estados'
 import { Selo } from '../../components/Selos'
 import { useFeedback } from '../../components/Feedback'
@@ -59,6 +60,17 @@ export function PlanoAcao() {
                 </div>
                 {atrasada ? <Selo tom="perigo">Prazo passou</Selo> : <Selo tom={a.andamento === 'concluida' ? 'sucesso' : a.andamento === 'em_andamento' ? 'info' : 'neutro'}>{ANDAMENTO[a.andamento]}</Selo>}
               </div>
+              {a.livro_id && (
+                <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg bg-surface-muted/60 px-3 py-2 text-sm">
+                  <BookOpen className="size-4 shrink-0 text-gold" aria-hidden />
+                  <span className="min-w-0 text-ink-soft">
+                    Leitura indicada: <strong className="font-medium text-ink">{a.livro_titulo}</strong>
+                  </span>
+                  <a href={hrefAluna('livros', a.livro_id)} className="btn-secondary btn-sm ml-auto">
+                    Ir à Biblioteca
+                  </a>
+                </div>
+              )}
               <div className="mt-3 flex flex-wrap gap-2" role="group" aria-label={`Andamento de ${a.titulo}`}>
                 {Object.entries(ANDAMENTO).map(([k, r]) => (
                   <button key={k} type="button" aria-pressed={a.andamento === k} className={a.andamento === k ? 'btn-primary btn-sm' : 'btn-secondary btn-sm'} onClick={() => void mudar(a, k)}>

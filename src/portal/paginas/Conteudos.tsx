@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { BookOpen, CheckCircle2, Download, ExternalLink, Library, LibraryBig, Repeat, ShoppingBag } from 'lucide-react'
 import { Carregando, EstadoErro, EstadoVazio } from '../../components/Estados'
 import { useDados, type Reg } from '../../lib/api'
@@ -13,8 +14,17 @@ const VAZIO: Record<Secao, { icone: typeof Library; titulo: string; texto: strin
 }
 
 /** Rotina, Biblioteca (estantes e categorias, como Ferramentas) e Livros: só o que a equipe publicou. */
-export function Conteudos({ secao }: { secao: Secao }) {
+export function Conteudos({ secao, destaqueId }: { secao: Secao; destaqueId?: string }) {
   const { dados, erro, recarregar } = useDados<Reg>(`/portal/conteudos/${secao}`)
+  // Vindo de "Ir à Biblioteca" (Plano de Ação): rola até o livro indicado e põe o foco nele.
+  useEffect(() => {
+    if (!dados || !destaqueId) return
+    const el = document.getElementById(`material-${destaqueId}`)
+    if (el) {
+      el.scrollIntoView({ block: 'center', behavior: 'smooth' })
+      el.focus({ preventScroll: true })
+    }
+  }, [dados, destaqueId])
   if (erro) return <EstadoErro mensagem={erro} onTentar={recarregar} />
   if (!dados) return <Carregando />
   const itens = dados.itens as Reg[]
@@ -28,12 +38,18 @@ export function Conteudos({ secao }: { secao: Secao }) {
   }
   const limite = Number(dados.percentual_assistida ?? 90)
   const estantes = (dados.estantes ?? []) as Reg[]
-  const doItem = (c: Reg) => <Item key={c.id} c={c} limite={limite} onAssistido={recarregar} />
+  const doItem = (c: Reg) => <Item key={c.id} c={c} limite={limite} onAssistido={recarregar} destaque={c.id === destaqueId} />
+  const destaqueAusente = !!destaqueId && !itens.some((c) => c.id === destaqueId)
   const soltos = itens.filter((c) => !c.estante_id)
   const grupos = new Map<string, Reg[]>()
   for (const c of soltos) grupos.set(c.categoria ?? '', [...(grupos.get(c.categoria ?? '') ?? []), c])
   return (
     <div className="space-y-5">
+      {destaqueAusente && (
+        <p role="status" className="rounded-lg border border-line bg-surface-muted/60 px-4 py-3 text-sm text-ink-soft">
+          O livro indicado na sua ação não está disponível na Biblioteca agora. Fale com a equipe se precisar dele.
+        </p>
+      )}
       {estantes.map((e) => {
         const lista = itens.filter((c) => c.estante_id === e.id)
         if (!lista.length) return null
@@ -69,14 +85,15 @@ export function Conteudos({ secao }: { secao: Secao }) {
 }
 
 /** Um material: vídeo assistido aqui mesmo (com o progresso gravado), arquivo para baixar, link ou compra. */
-function Item({ c, limite, onAssistido }: { c: Reg; limite: number; onAssistido: () => void }) {
+function Item({ c, limite, onAssistido, destaque = false }: { c: Reg; limite: number; onAssistido: () => void; destaque?: boolean }) {
   const assistido = c.percentual >= limite
   return (
-    <li className="card overflow-hidden">
+    <li id={`material-${c.id}`} tabIndex={destaque ? -1 : undefined} aria-current={destaque ? 'true' : undefined} className={`card overflow-hidden scroll-mt-24 outline-none ${destaque ? 'ring-2 ring-gold ring-offset-2 ring-offset-surface' : ''}`}>
       {c.video_url && <PlayerVimeo id={c.id} videoUrl={c.video_url} titulo={c.titulo} percentual={c.percentual ?? 0} limite={limite} endpoint={`/portal/conteudos/${c.id}/progresso`} onAssistido={onAssistido} />}
       <div className="p-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h3 className="font-medium text-ink">{c.titulo}</h3>
+          {destaque && <span className="rounded-full bg-gold/15 px-2 py-0.5 text-xs font-medium text-ink">Indicado no seu Plano de Ação</span>}
           {c.video_url &&
             (assistido ? (
               <span className="inline-flex items-center gap-1 text-sm font-medium text-success">
@@ -125,22 +142,32 @@ interface ProdutoEditora {
 const SITUACAO: Record<ProdutoEditora['situacao'], string> = { disponivel: 'Disponível', pre_venda: 'Pré-venda', esgotado: 'Esgotado no momento' }
 const reais = (c: number) => (c / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
 
-/** "COMPRAR NA EDITORA PROSPERAR": abre a loja com origem=biblioteca e o id do material (atribuição da venda). */
+/**
+ * "Adquirir um livro": abre, em nova aba, a página do produto na Editora Prosperar, com origem=biblioteca
+ * e o id do material (atribuição da venda). Sem estoque, não há link: a aluna vê a indisponibilidade.
+ */
 function BotaoEditora({ p }: { p: ProdutoEditora }) {
-  const esgotado = p.situacao === 'esgotado'
+  const preco = p.preco_a_partir_centavos ? `${p.tipo === 'colecao' ? 'a partir de ' : ''}${reais(p.preco_a_partir_centavos)}` : ''
+  if (p.situacao === 'esgotado')
+    return (
+      <span className="btn-secondary btn-sm cursor-not-allowed opacity-80" aria-disabled="true" role="note">
+        <ShoppingBag className="size-4" aria-hidden /> Livro indisponível no momento
+      </span>
+    )
   return (
     <a
       href={p.url}
       target="_blank"
       rel="noopener"
-      className={esgotado ? 'btn-secondary btn-sm' : 'btn-primary btn-sm'}
-      aria-label={`${p.rotulo}: ${p.titulo}. ${SITUACAO[p.situacao]}${p.preco_a_partir_centavos ? `, a partir de ${reais(p.preco_a_partir_centavos)}` : ''}`}
+      className="btn-primary btn-sm h-auto max-w-full flex-wrap"
+      aria-label={`Adquirir um livro: ${p.titulo}, na Editora Prosperar (abre em nova aba). ${SITUACAO[p.situacao]}${preco ? `, ${preco}` : ''}`}
     >
-      <ShoppingBag className="size-4" aria-hidden /> {p.rotulo}
-      <span className="text-xs font-normal opacity-90">
-        · {SITUACAO[p.situacao]}
-        {p.preco_a_partir_centavos ? ` · ${p.tipo === 'colecao' ? 'a partir de ' : ''}${reais(p.preco_a_partir_centavos)}` : ''}
-      </span>
+      <ShoppingBag className="size-4" aria-hidden /> Adquirir um livro
+      {(preco || p.situacao === 'pre_venda') && (
+        <span className="text-xs font-normal opacity-90">
+          · {[p.situacao === 'pre_venda' ? 'Pré-venda' : null, preco || null].filter(Boolean).join(' · ')}
+        </span>
+      )}
     </a>
   )
 }

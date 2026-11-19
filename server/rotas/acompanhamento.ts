@@ -134,19 +134,29 @@ export function rotasAcompanhamento(db: BD, ctx: ContextoApp) {
   r.get('/matriculas/:id/acoes', async (req, res) => {
     exigir(req, 'jornada:ver')
     await exigirAcessoMatricula(db, req, req.params.id as string)
-    const acoes = await db.all(`SELECT a.*, COALESCE(t.nome, i.descricao) AS encontro_tipo, o.numero AS encontro_numero, COALESCE(o.data_realizada, o.data_agendada) AS encontro_data,
+    const acoes = await db.all(`SELECT a.*, lv.titulo AS livro_titulo, COALESCE(t.nome, i.descricao) AS encontro_tipo, o.numero AS encontro_numero, COALESCE(o.data_realizada, o.data_agendada) AS encontro_data,
            ua.nome AS autor_nome, ur.nome AS revisada_por_nome, up.nome AS publicada_por_nome
          FROM ped_acoes a LEFT JOIN ped_ocorrencias o ON o.id = a.ocorrencia_id LEFT JOIN ped_itens_contratados i ON i.id = o.item_id LEFT JOIN ped_tipos_entregavel t ON t.id = i.tipo_id
+         LEFT JOIN ped_conteudos lv ON lv.id = a.conteudo_id
          LEFT JOIN ped_usuarios ua ON ua.id = a.autor_id LEFT JOIN ped_usuarios ur ON ur.id = a.revisada_por LEFT JOIN ped_usuarios up ON up.id = a.publicada_por
          WHERE a.matricula_id = ? AND a.situacao <> 'arquivada' ORDER BY CASE a.situacao WHEN 'em_revisao' THEN 0 WHEN 'rascunho' THEN 1 ELSE 2 END, COALESCE(a.prazo, '9999'), a.criado_em`, req.params.id)
     const encontros = await db.all(`SELECT o.id, o.numero, o.situacao, COALESCE(o.data_realizada, o.data_agendada) AS data, COALESCE(t.nome, i.descricao) AS tipo,
            EXISTS (SELECT 1 FROM ped_transcricoes x WHERE x.ocorrencia_id = o.id) AS tem_transcricao
          FROM ped_ocorrencias o JOIN ped_itens_contratados i ON i.id = o.item_id LEFT JOIN ped_tipos_entregavel t ON t.id = i.tipo_id
          WHERE o.matricula_id = ? AND o.situacao IN ('realizada','agendada') ORDER BY COALESCE(o.data_realizada, o.data_agendada) DESC`, req.params.id)
-    res.json({ acoes, encontros: tem(req, 'transcricoes:ver') ? encontros : (encontros as Linha[]).map((e) => ({ ...e, tem_transcricao: undefined })) })
+    const livros = await db.all("SELECT id, titulo, publicado FROM ped_conteudos WHERE secao = 'livros' ORDER BY titulo")
+    res.json({ acoes, livros, encontros: tem(req, 'transcricoes:ver') ? encontros : (encontros as Linha[]).map((e) => ({ ...e, tem_transcricao: undefined })) })
   })
 
-  const esquemaAcao = z.object({ titulo: textoObrig('a ação', 300), descricao: texto(3000), prazo: data('o prazo'), ocorrencia_id: z.preprocess((v) => (v === '' ? null : v), z.string().uuid().nullable().optional()) })
+  const esquemaAcao = z.object({ titulo: textoObrig('a ação', 300), descricao: texto(3000), prazo: data('o prazo'), ocorrencia_id: z.preprocess((v) => (v === '' ? null : v), z.string().uuid().nullable().optional()),
+    // Livro indicado (opcional): material publicável da seção Livros da Biblioteca.
+    conteudo_id: z.preprocess((v) => (v === '' ? null : v), z.string().min(1).max(64).nullable().optional()) })
+
+  async function conferirLivro(conteudoId: string | null | undefined) {
+    if (!conteudoId) return
+    const ok = await db.get("SELECT 1 FROM ped_conteudos WHERE id = ? AND secao = 'livros'", conteudoId)
+    if (!ok) throw new ErroHttp(400, 'O livro indicado precisa ser um item da seção Livros da Biblioteca.')
+  }
 
   async function conferirEncontro(matriculaId: string, ocorrenciaId: string | null | undefined) {
     if (!ocorrenciaId) return
@@ -159,8 +169,9 @@ export function rotasAcompanhamento(db: BD, ctx: ContextoApp) {
     await exigirAcessoMatricula(db, req, req.params.id as string)
     const d = validar(esquemaAcao, req.body)
     await conferirEncontro(req.params.id as string, d.ocorrencia_id)
+    await conferirLivro(d.conteudo_id)
     const id = novoId()
-    await db.run("INSERT INTO ped_acoes (id, matricula_id, ocorrencia_id, titulo, descricao, prazo, situacao, andamento, origem, autor_id, criado_em, atualizado_em) VALUES (?,?,?,?,?,?,'rascunho','a_fazer','manual',?,?,?)", id, req.params.id, d.ocorrencia_id ?? null, d.titulo, d.descricao ?? null, d.prazo ?? null, req.usuario!.id, agoraIso(), agoraIso())
+    await db.run("INSERT INTO ped_acoes (id, matricula_id, ocorrencia_id, conteudo_id, titulo, descricao, prazo, situacao, andamento, origem, autor_id, criado_em, atualizado_em) VALUES (?,?,?,?,?,?,?,'rascunho','a_fazer','manual',?,?,?)", id, req.params.id, d.ocorrencia_id ?? null, d.conteudo_id ?? null, d.titulo, d.descricao ?? null, d.prazo ?? null, req.usuario!.id, agoraIso(), agoraIso())
     await auditar(db, req, { entidade: 'acao', entidade_id: id, acao: 'criada', matricula_id: req.params.id as string, dados: { titulo: d.titulo } })
     res.status(201).json({ id })
   })
@@ -180,7 +191,10 @@ export function rotasAcompanhamento(db: BD, ctx: ContextoApp) {
     if (a.situacao === 'arquivada') throw new ErroHttp(409, 'Esta ação foi arquivada.')
     const d = validar(esquemaAcao, req.body)
     await conferirEncontro(a.matricula_id, d.ocorrencia_id)
-    await db.run('UPDATE ped_acoes SET titulo=?, descricao=?, prazo=?, ocorrencia_id=?, atualizado_em=? WHERE id=?', d.titulo, d.descricao ?? null, d.prazo ?? null, d.ocorrencia_id ?? null, agoraIso(), a.id)
+    await conferirLivro(d.conteudo_id)
+    // Sem o campo no corpo (tela antiga), o livro indicado fica como estava.
+    const livro = d.conteudo_id === undefined ? (a.conteudo_id ?? null) : d.conteudo_id
+    await db.run('UPDATE ped_acoes SET titulo=?, descricao=?, prazo=?, ocorrencia_id=?, conteudo_id=?, atualizado_em=? WHERE id=?', d.titulo, d.descricao ?? null, d.prazo ?? null, d.ocorrencia_id ?? null, livro, agoraIso(), a.id)
     await auditar(db, req, { entidade: 'acao', entidade_id: a.id, acao: 'editada', matricula_id: a.matricula_id, dados: { antes: { titulo: a.titulo, prazo: a.prazo }, depois: { titulo: d.titulo, prazo: d.prazo ?? null } } })
     res.json({ ok: true })
   })

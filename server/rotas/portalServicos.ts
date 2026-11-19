@@ -227,9 +227,14 @@ export function rotasPortalServicos(db: BD, ctx: ContextoApp) {
 
   r.get('/portal/plano-acao', async (req, res) => {
     const m = await matricula(req)
+    // Livro indicado: só aparece se o livro estiver publicado e visível na Biblioteca (senão o botão levaria a nada).
     const acoes = await db.all(`SELECT a.id, a.titulo, a.descricao, a.prazo, a.andamento, a.publicada_em, a.ocorrencia_id,
+           lv.id AS livro_id, lv.titulo AS livro_titulo,
            COALESCE(t.nome, i.descricao) AS encontro_tipo, o.data_realizada AS encontro_data, o.numero AS encontro_numero
-         FROM ped_acoes a LEFT JOIN ped_ocorrencias o ON o.id = a.ocorrencia_id LEFT JOIN ped_itens_contratados i ON i.id = o.item_id LEFT JOIN ped_tipos_entregavel t ON t.id = i.tipo_id
+         FROM ped_acoes a
+         LEFT JOIN ped_conteudos lv ON lv.id = a.conteudo_id AND lv.secao = 'livros' AND lv.publicado = 1
+           AND (lv.estante_id IS NULL OR EXISTS (SELECT 1 FROM ped_estantes e WHERE e.id = lv.estante_id AND e.publicada = 1))
+         LEFT JOIN ped_ocorrencias o ON o.id = a.ocorrencia_id LEFT JOIN ped_itens_contratados i ON i.id = o.item_id LEFT JOIN ped_tipos_entregavel t ON t.id = i.tipo_id
          WHERE a.matricula_id = ? AND a.situacao = 'publicada' ORDER BY CASE a.andamento WHEN 'concluida' THEN 1 ELSE 0 END, COALESCE(a.prazo, '9999'), a.publicada_em`, m.id)
     res.json({ acoes })
   })
@@ -341,7 +346,8 @@ export function rotasPortalServicos(db: BD, ctx: ContextoApp) {
           url.searchParams.set('origem', 'biblioteca')
           url.searchParams.set('material_id', String(c.id))
           return {
-            rotulo: v.rotulo || 'COMPRAR NA EDITORA PROSPERAR',
+            // O botão da Biblioteca sempre diz "Adquirir um livro" (texto pedido pela equipe).
+            rotulo: 'Adquirir um livro',
             titulo: v.titulo,
             tipo: v.tipo,
             url: url.toString(),

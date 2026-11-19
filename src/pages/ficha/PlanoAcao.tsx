@@ -31,6 +31,7 @@ export function PlanoAcaoAluna({ m }: { m: Reg }) {
   if (!dados) return <Carregando />
   const acoes = dados.acoes as Reg[]
   const encontros = dados.encontros as Reg[]
+  const livros = (dados.livros ?? []) as Reg[]
 
   async function passo(a: Reg, p: string) {
     try {
@@ -71,6 +72,7 @@ export function PlanoAcaoAluna({ m }: { m: Reg }) {
                       {a.prazo ? `Prazo: ${formatarData(a.prazo)}` : 'Sem prazo'}
                       {a.origem === 'transcricao' && ' · sugerida pela transcrição'}
                       {a.situacao === 'publicada' && ` · andamento da aluna: ${ANDAMENTO[a.andamento]}`}
+                      {a.livro_titulo && ` · leitura indicada: ${a.livro_titulo}`}
                     </p>
                     <p className="text-xs text-ink-muted">
                       Criada por {a.autor_nome ?? '—'}
@@ -156,15 +158,15 @@ export function PlanoAcaoAluna({ m }: { m: Reg }) {
         )}
       </Secao>
 
-      {(nova || editar) && <DialogAcao m={m} acao={editar} encontros={encontros} onFechar={() => (setNova(false), setEditar(null))} onConcluir={recarregar} />}
+      {(nova || editar) && <DialogAcao m={m} acao={editar} encontros={encontros} livros={livros} onFechar={() => (setNova(false), setEditar(null))} onConcluir={recarregar} />}
       {transcricao && <DialogTranscricao encontro={transcricao} onFechar={() => setTranscricao(null)} onConcluir={recarregar} />}
     </div>
   )
 }
 
-function DialogAcao({ m, acao, encontros, onFechar, onConcluir }: { m: Reg; acao: Reg | null; encontros: Reg[]; onFechar: () => void; onConcluir: () => void }) {
+function DialogAcao({ m, acao, encontros, livros, onFechar, onConcluir }: { m: Reg; acao: Reg | null; encontros: Reg[]; livros: Reg[]; onFechar: () => void; onConcluir: () => void }) {
   const fb = useFeedback()
-  const { valores, campo } = useValores({ titulo: acao?.titulo ?? '', descricao: acao?.descricao ?? '', prazo: acao?.prazo ?? '', ocorrencia_id: acao?.ocorrencia_id ?? '' })
+  const { valores, campo } = useValores({ titulo: acao?.titulo ?? '', descricao: acao?.descricao ?? '', prazo: acao?.prazo ?? '', ocorrencia_id: acao?.ocorrencia_id ?? '', conteudo_id: acao?.conteudo_id ?? '' })
   return (
     <FormDialog
       aberto
@@ -172,7 +174,7 @@ function DialogAcao({ m, acao, encontros, onFechar, onConcluir }: { m: Reg; acao
       descricao={acao?.situacao === 'publicada' ? 'Esta ação já está publicada: a aluna verá a mudança.' : 'Começa como rascunho. Só chega à aluna depois de revisada e publicada.'}
       onFechar={onFechar}
       onEnviar={async () => {
-        const corpo = { ...valores, prazo: valores.prazo || null, ocorrencia_id: valores.ocorrencia_id || null }
+        const corpo = { ...valores, prazo: valores.prazo || null, ocorrencia_id: valores.ocorrencia_id || null, conteudo_id: valores.conteudo_id || null }
         if (acao) await put(`/acoes/${acao.id}`, corpo)
         else await post(`/matriculas/${m.id}/acoes`, corpo)
         fb.sucesso('Ação salva.')
@@ -196,6 +198,19 @@ function DialogAcao({ m, acao, encontros, onFechar, onConcluir }: { m: Reg; acao
           )}
         </Campo>
       </div>
+      <Campo rotulo="Leitura indicada" dica="Livro da Biblioteca (seção Livros). No portal, a ação mostra o botão “Ir à Biblioteca”, que abre esse livro.">
+        {(p) => (
+          <select {...p} className="field-control" value={valores.conteudo_id} onChange={campo('conteudo_id')}>
+            <option value="">Sem livro indicado</option>
+            {livros.map((l) => (
+              <option key={l.id} value={l.id}>
+                {l.titulo}
+                {l.publicado ? '' : ' (não publicado: a aluna não verá o botão)'}
+              </option>
+            ))}
+          </select>
+        )}
+      </Campo>
     </FormDialog>
   )
 }
