@@ -73,7 +73,7 @@ Seis questões novas estão em “Decisões pendentes”: qual presença acompan
 - Vídeo do Vimeo toca dentro do portal. O próprio player informa o ponto alcançado e o servidor guarda o maior valor por aluna (a partir de 90% conta como assistido). A aluna vê "45% assistido" ou "Assistido" em cada vídeo e "X de Y vídeos assistidos" em cada estante; a equipe vê quantas alunas começaram e quantas assistiram até o fim.
 - Materiais da Biblioteca que já existiam continuam aparecendo soltos, pela categoria (ex.: Ferramentas).
 - Banco: migration `0005_ped_biblioteca_estantes.sql` (tabelas novas `ped_estantes` e `ped_conteudos_progresso`, coluna nova `estante_id` em `ped_conteudos`). Nada existente é apagado.
-- Limite: só vídeos do Vimeo são aceitos (é o que permite ler o quanto foi assistido sem script de terceiros). Link de YouTube é recusado com mensagem.
+- Limite (atualizado em 19/11/2026): além do Vimeo, links do YouTube (vídeo “Não listado”) também são aceitos, com o mesmo registro de quanto a aluna assistiu. Ver [limitacoes.md](limitacoes.md).
 
 ## Atualização de 12/11: Google Agenda com link do Google Meet
 

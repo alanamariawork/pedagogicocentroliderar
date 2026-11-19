@@ -1,7 +1,7 @@
 /**
  * Aulas gravadas por mês do plano.
  * Equipe (conteudos:editar): cadastra, publica e retira aulas. Aluna: vê as aulas do mês e o progresso,
- * que é gravado no servidor a partir do próprio player do Vimeo (nunca só no navegador).
+ * que é gravado no servidor a partir do próprio player (Vimeo ou YouTube; nunca só no navegador).
  */
 import { Router, type Req as Request } from '../http'
 import type { ContextoApp } from '../contexto'
@@ -9,7 +9,7 @@ import { z } from 'zod'
 import { agoraIso, novoId, type BD } from '../db'
 import { ErroHttp, exigir } from '../auth'
 import { auditar, hoje, texto, textoObrig, validar } from '../servicos'
-import { embedVimeo } from './acompanhamento'
+import { conferirVideo } from '../videos'
 import { matriculaDaAluna } from './portal'
 import { aulasDaAluna } from '../aulas'
 import { mesesDoPlano, MESES_MAXIMO, PERCENTUAL_ASSISTIDA, progressoDoMes } from '../../shared/linhaTempo'
@@ -72,8 +72,8 @@ export function rotasAulas(db: BD, _ctx: ContextoApp) {
     ordem: z.coerce.number().int().min(0).max(999).default(0),
   })
   const conferir = async (d: z.infer<typeof esquema>) => {
-    const embed = embedVimeo(d.video_url)
-    if (!embed) throw new ErroHttp(400, 'Use o endereço de um vídeo do Vimeo (https://vimeo.com/…).')
+    const embed = conferirVideo(d.video_url)
+    if (!embed) throw new ErroHttp(400, 'Informe o vídeo da aula.')
     if (d.programa_id && !(await db.get('SELECT 1 FROM ped_programas WHERE id = ?', d.programa_id))) throw new ErroHttp(400, 'Programa não encontrado.')
     return embed
   }

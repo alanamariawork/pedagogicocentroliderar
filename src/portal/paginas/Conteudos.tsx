@@ -3,7 +3,7 @@ import { BookOpen, CheckCircle2, Download, ExternalLink, Library, LibraryBig, Re
 import { Carregando, EstadoErro, EstadoVazio } from '../../components/Estados'
 import { useDados, type Reg } from '../../lib/api'
 import { tamanhoArquivo } from '../../lib/format'
-import { PlayerVimeo } from '../PlayerVimeo'
+import { PlayerVideo } from '../PlayerVideo'
 
 type Secao = 'rotina' | 'biblioteca' | 'livros'
 
@@ -89,7 +89,7 @@ function Item({ c, limite, onAssistido, destaque = false }: { c: Reg; limite: nu
   const assistido = c.percentual >= limite
   return (
     <li id={`material-${c.id}`} tabIndex={destaque ? -1 : undefined} aria-current={destaque ? 'true' : undefined} className={`card overflow-hidden scroll-mt-24 outline-none ${destaque ? 'ring-2 ring-gold ring-offset-2 ring-offset-surface' : ''}`}>
-      {c.video_url && <PlayerVimeo id={c.id} videoUrl={c.video_url} titulo={c.titulo} percentual={c.percentual ?? 0} limite={limite} endpoint={`/portal/conteudos/${c.id}/progresso`} onAssistido={onAssistido} />}
+      {c.video_url && <PlayerVideo id={c.id} videoUrl={c.video_url} titulo={c.titulo} percentual={c.percentual ?? 0} limite={limite} endpoint={`/portal/conteudos/${c.id}/progresso`} onAssistido={onAssistido} />}
       <div className="p-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h3 className="font-medium text-ink">{c.titulo}</h3>
