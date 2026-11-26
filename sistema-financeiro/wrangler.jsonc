@@ -9,8 +9,8 @@
     {
       "binding": "DB",
       "database_name": "financeiro",
-      // Preenchido no primeiro deploy (wrangler d1 create financeiro)
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      // Conta Cloudflare: financeiro-centro-liderar
+      "database_id": "8c157403-b9b0-4249-90ef-e4089511eb70",
       "migrations_dir": "migrations"
     }
   ],
