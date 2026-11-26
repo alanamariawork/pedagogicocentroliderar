@@ -1,4 +1,4 @@
-# Sistema de controle de pagamento das alunas – Centro Liderar
+# Contas a Receber – Centro Liderar
 
 Aplicação web no Cloudflare (Workers + banco D1) que reúne a rotina do Assistente Financeiro: alunas de todos os cursos, contratações com a condição negociada, parcelas por forma de pagamento, conferência (C6, Stone, C6 Pay, Conta Azul), mensagens de cobrança, inadimplência, relatório do dia para a Elayne e projeção.
 

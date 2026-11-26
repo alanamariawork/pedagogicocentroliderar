@@ -43,9 +43,9 @@ export function pagina({ titulo, usuario, corpo, nonce, aviso, caminho = "/" }) 
   const menu = usuario ? MENU.filter(([, , a]) => pode(usuario, a)).map(([href, t]) =>
     html`<a href="${href}" class="${(href === "/" ? caminho === "/" : caminho.startsWith(href)) ? "ativo" : ""}">${t}</a>`) : [];
   return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>${esc(titulo)} · Financeiro Centro Liderar</title><meta name="robots" content="noindex,nofollow">
+<title>${esc(titulo)} · Contas a Receber · Centro Liderar</title><meta name="robots" content="noindex,nofollow">
 <style nonce="${nonce}">${CSS}</style></head><body>
-${usuario ? html`<header><div class="marca">Financeiro <b>Centro Liderar</b></div><nav>${menu}</nav>
+${usuario ? html`<header><div class="marca"><b>Contas a Receber</b> · Centro Liderar</div><nav>${menu}</nav>
 <form method="post" action="/logout" class="sair"><span>${usuario.nome} · ${usuario.perfil}</span><button class="link">Sair</button></form></header>` : ""}
 <main>${aviso ? html`<div class="aviso ${aviso.tipo || ""}">${aviso.texto}</div>` : ""}${corpo}</main>
 <script nonce="${nonce}">${JS}</script></body></html>`;

@@ -129,7 +129,7 @@ async function login(req, db, view, url) {
   return view("Entrar", telaLogin(null, vazio), null);
 }
 function telaLogin(erro, vazio) {
-  return html`<div class="login"><h1>Financeiro · Centro Liderar</h1><div class="caixa">
+  return html`<div class="login"><h1>Contas a Receber</h1><p class="mut">Centro Liderar</p><div class="caixa">
   ${erro ? html`<div class="aviso erro">${erro}</div>` : ""}
   <form method="post" action="/login" class="grade" data-col1>
   <label>E-mail<input name="email" type="email" autocomplete="username" required></label>
