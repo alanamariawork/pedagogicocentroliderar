@@ -10,7 +10,7 @@ Aplicação web no Cloudflare (Workers + banco D1) que reúne a rotina do Assist
 | Nova venda | Cadastra a aluna exatamente como foi negociado (entrada, nº de parcelas, forma, link, mensal ou a cada N dias) e gera as parcelas |
 | Mensagens | Fila do dia: lembrete D-1, link no dia (pedido à Elayne em D-1), vencida D+1, atraso D+3. Botão abre o WhatsApp com o texto pronto; quem envia é uma pessoa |
 | Conferência | Importa o extrato (CSV) do C6, Stone, C6 Pay ou Conta Azul, junta o mesmo pagamento numa transação só e sugere a parcela |
-| Inadimplência | Relatório para o grupo com a Jace, por faixa de atraso, jurídico separado, e respostas a perguntas com "inadimplência" |
+| Inadimplência | Relatório para o grupo do Setor Financeiro, por faixa de atraso, jurídico separado, e respostas a perguntas com "inadimplência" |
 | Relatório do dia | Resumo para a Elayne, com botão para o WhatsApp dela |
 | Projeção | Saldo em aberto por mês e por forma de pagamento |
 | Importar | Carga da planilha (CSV) com prévia e registro da autorização |

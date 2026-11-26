@@ -3,7 +3,7 @@
 import * as R from "./regras.js";
 import * as A from "./auth.js";
 import * as D from "./db.js";
-import { html, raw, esc, pagina, selo, dinheiro, data, forma } from "./html.js";
+import { html, raw, esc, pagina, selo, dinheiro, data, forma, LOGO } from "./html.js";
 
 const PERFIS = ["admin", "financeiro", "comercial", "juridico", "consulta"];
 const FONTES = { c6: "C6 (extrato/boleto)", stone: "Stone (boleto)", c6pay: "C6 Pay (cartão)", conta_azul: "Conta Azul", comprovante: "Comprovante da aluna", planilha: "Planilha", manual: "Manual" };
@@ -129,7 +129,7 @@ async function login(req, db, view, url) {
   return view("Entrar", telaLogin(null, vazio), null);
 }
 function telaLogin(erro, vazio) {
-  return html`<div class="login"><h1>Contas a Receber</h1><p class="mut">Centro Liderar</p><div class="caixa">
+  return html`<div class="login"><div class="logo">${raw(LOGO)}</div><h1>Contas a Receber</h1><p class="mut">Centro Liderar · Setor Financeiro</p><div class="caixa">
   ${erro ? html`<div class="aviso erro">${erro}</div>` : ""}
   <form method="post" action="/login" class="grade" data-col1>
   <label>E-mail<input name="email" type="email" autocomplete="username" required></label>
@@ -175,7 +175,10 @@ async function painel({ db, u, view, aviso }) {
   const saldo = (p) => p.valor - (p.valor_pago || 0);
   const soma = (xs) => xs.reduce((s, p) => s + saldo(p), 0);
   const vAmanha = abertas.filter((p) => p.vencimento === amanha), vHoje = abertas.filter((p) => p.vencimento === hoje);
-  const recebidoMes = (await db.prepare("SELECT COALESCE(SUM(valor),0) s, COUNT(*) n FROM transacoes WHERE status = 'confirmada' AND substr(data,1,7) = ?").bind(mes).first());
+  // Recebido no mês: parcelas pagas no mês (inclui as marcadas como pagas na planilha) + pagamentos confirmados ainda sem parcela
+  const rp = await db.prepare("SELECT COALESCE(SUM(valor_pago),0) s, COUNT(*) n FROM parcelas WHERE status = 'paga' AND substr(pago_em,1,7) = ?").bind(mes).first();
+  const rt = await db.prepare("SELECT COALESCE(SUM(valor),0) s, COUNT(*) n FROM transacoes WHERE status = 'confirmada' AND parcela_id IS NULL AND substr(data,1,7) = ?").bind(mes).first();
+  const recebidoMes = { s: rp.s + rt.s, n: rp.n + rt.n };
   const previstoMes = todas.filter((p) => p.vencimento.slice(0, 7) === mes && p.status !== "transferida" && p.status !== "cancelada").reduce((s, p) => s + p.valor, 0);
   const aConferir = (await db.prepare("SELECT COUNT(*) n, COALESCE(SUM(valor),0) s FROM transacoes WHERE status = 'a_conferir'").first());
   const fila = (await db.prepare("SELECT status, COUNT(*) n FROM mensagens WHERE data_prevista = ? GROUP BY status").bind(hoje).all()).results;
@@ -185,7 +188,7 @@ async function painel({ db, u, view, aviso }) {
   const corpo = html`<h1>Painel de ${data(hoje)}</h1>
   ${!conferidoHoje ? html`<div class="aviso">A conferência de hoje ainda não foi registrada (última: ${cfg.ultima_conferencia || "nenhuma"}). Enquanto isso, as cobranças ficam bloqueadas pela regra R6. <a href="/conferencia">Ir para a conferência</a></div>` : ""}
   <div class="cards">
-    <div class="card"><div class="r">Recebido no mês (confirmado)</div><div class="n">${dinheiro(u, recebidoMes.s)}</div><div class="r">${recebidoMes.n} pagamento(s) · previsto ${dinheiro(u, previstoMes)}</div></div>
+    <div class="card"><div class="r">Recebido no mês</div><div class="n">${dinheiro(u, recebidoMes.s)}</div><div class="r">${recebidoMes.n} pagamento(s) · previsto ${dinheiro(u, previstoMes)}</div></div>
     <div class="card"><div class="r">Vencem hoje / amanhã</div><div class="n">${vHoje.length} / ${vAmanha.length}</div><div class="r">${dinheiro(u, soma(vHoje))} / ${dinheiro(u, soma(vAmanha))}</div></div>
     <div class="card"><div class="r">Inadimplência</div><div class="n">${inad.financeiro.length} alunas</div><div class="r">${dinheiro(u, inad.financeiro.reduce((s, r) => s + r.valor, 0))} · ${inad.financeiro.filter((r) => r.dias > corte).length} acima de ${corte} dias</div></div>
     <div class="card"><div class="r">A conferir</div><div class="n">${aConferir.n}</div><div class="r">${dinheiro(u, aConferir.s)}</div></div>
@@ -539,15 +542,15 @@ async function inadimplencia({ db, u, view, aviso }, pergunta, autor) {
   const fontes = D.fontesTexto(cfg);
   const texto = R.textoInadimplencia(dados, hoje, fontes, corte);
   let resposta = null;
-  if (pergunta != null) resposta = R.responderGrupo(pergunta, autor, ["Jaciara", "Jace", "Bruna", u.nome], dados, hoje, fontes, corte)
+  if (pergunta != null) resposta = R.responderGrupo(pergunta, autor, ["Jaciara", "Jace", "Bruna", "Elayne", u.nome], dados, hoje, fontes, corte)
     ?? "(Sem resposta: a mensagem não cita \"inadimplência\" ou a pessoa não está autorizada.)";
-  const grupo = cfg.grupo_jace || "grupo com a Jace (nome ainda não cadastrado)";
+  const grupo = "grupo " + (cfg.grupo_jace || "Setor Financeiro");
   const tabela = (xs) => html`<table><tr><th>Aluna</th><th>Curso</th><th class="num">Parcelas</th><th class="num">Valor vencido</th><th class="num">Dias</th><th>Faixa</th><th>Contatos</th><th>Obs.</th></tr>
     ${xs.map((r) => html`<tr><td><a href="/alunas/${r.id}">${r.nome}</a></td><td>${r.cursos}</td><td class="num">${r.parcelas}</td><td class="num">${dinheiro(u, r.valor)}</td><td class="num">${r.dias}</td><td>${selo(r.dias > corte ? "vencida" : "pendente")} ${r.faixa}</td><td class="peq">${r.contatos.join(", ")}</td><td class="peq">${r.obs}${r.a_conferir ? ` · ${r.a_conferir} a conferir` : ""}</td></tr>`)}</table>`;
   const corpo = html`<h1>Inadimplência</h1>
   <div class="aviso">Corte de ${corte} dias é provisório (regra R1, Jaciara define). Dias contados da parcela mais antiga em aberto. Fontes: ${fontes}.</div>
   <div class="caixa"><h2 class="t0">Texto para o ${grupo}</h2><pre class="msg" id="relinad">${texto}</pre><button type="button" data-copiar="relinad">Copiar relatório</button></div>
-  <div class="caixa"><h2 class="t0">Responder uma pergunta do grupo</h2><p class="mut peq">Cole a mensagem que chegou no grupo. O sistema só responde quando ela cita "inadimplência" e vem de pessoa autorizada (Jaciara, Bruna).</p>
+  <div class="caixa"><h2 class="t0">Responder uma pergunta do grupo</h2><p class="mut peq">Cole a mensagem que chegou no grupo. O sistema só responde quando ela cita "inadimplência" e vem de pessoa autorizada (Jaciara, Bruna, Elayne).</p>
   <form method="post" action="/grupo" class="grade"><label>Quem perguntou<input name="autor" value="${autor || "Jaciara"}"></label><label class="larga">Mensagem<input name="pergunta" value="${pergunta || ""}" placeholder="Ex.: Como está a inadimplência da Ana?"></label><div><button>Gerar resposta</button></div></form>
   ${resposta ? html`<pre class="msg" id="respgrupo">${resposta}</pre><button type="button" class="sec" data-copiar="respgrupo">Copiar resposta</button>` : ""}</div>
   <div class="caixa"><h2 class="t0">Financeiro (${dados.financeiro.length})</h2>${dados.financeiro.length ? tabela(dados.financeiro) : html`<p class="mut">Ninguém em atraso.</p>`}</div>
@@ -647,7 +650,7 @@ async function configuracoes({ db, u, view, aviso }) {
   const corpo = html`<h1>Configurações</h1>
   <div class="caixa"><h2 class="t0">Contatos e rotina</h2><form method="post" action="/config/geral" class="grade">
     <label>Nome da Elayne<input name="elayne_nome" value="${cfg.elayne_nome || ""}"></label><label>WhatsApp da Elayne (55 + DDD + número)<input name="elayne_telefone" value="${cfg.elayne_telefone || ""}"></label>
-    <label>Nome do grupo com a Jace<input name="grupo_jace" value="${cfg.grupo_jace || ""}"></label><label>Corte de inadimplência (dias, R1)<input name="corte_inadimplencia_dias" type="number" min="1" value="${cfg.corte_inadimplencia_dias || 30}"></label>
+    <label>Nome do grupo do WhatsApp (relatório de inadimplência)<input name="grupo_jace" value="${cfg.grupo_jace || "Setor Financeiro"}"></label><label>Corte de inadimplência (dias, R1)<input name="corte_inadimplencia_dias" type="number" min="1" value="${cfg.corte_inadimplencia_dias || 30}"></label>
     <div><button>Salvar</button></div></form>
     <p class="mut peq">Rotina automática (dias úteis): 8h40 gera a fila de mensagens; 17h30 salva o relatório do dia; segunda 9h salva o relatório de inadimplência.</p></div>
   <div class="caixa"><h2 class="t0">Regras</h2><table><tr><th>Código</th><th>Regra</th><th>Situação</th><th>Como funciona hoje</th><th></th></tr>

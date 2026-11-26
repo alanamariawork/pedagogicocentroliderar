@@ -166,7 +166,7 @@ export function textoInadimplencia(dados, hoje, fontes, corte = 30) {
   return L.join("\n");
 }
 
-// Resposta a uma mensagem do grupo com a Jace
+// Resposta a uma mensagem do grupo do Setor Financeiro
 export function responderGrupo(msg, autor, autorizados, dados, hoje, fontes, corte = 30) {
   const t = normaliza(msg);
   if (!t.includes("inadimpl")) return null;
