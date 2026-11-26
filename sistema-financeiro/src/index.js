@@ -184,20 +184,54 @@ async function painel({ db, u, view, aviso }) {
   const fila = (await db.prepare("SELECT status, COUNT(*) n FROM mensagens WHERE data_prevista = ? GROUP BY status").bind(hoje).all()).results;
   const nFila = (s) => fila.find((x) => x.status === s)?.n || 0;
   const conferidoHoje = (cfg.ultima_conferencia || "").slice(0, 10) === hoje;
-  const linha = (p) => html`<tr><td><a href="/alunas/${p.aluna.id}">${p.aluna.nome}</a><div class="mut peq">${p.curso}</div></td><td>${p.numero}</td><td>${data(p.vencimento)}</td><td>${forma(p.forma)}</td><td class="num">${dinheiro(u, saldo(p))}</td><td>${selo(p.status)}</td></tr>`;
-  const corpo = html`<h1>Painel de ${data(hoje)}</h1>
-  ${!conferidoHoje ? html`<div class="aviso">A conferência de hoje ainda não foi registrada (última: ${cfg.ultima_conferencia || "nenhuma"}). Enquanto isso, as cobranças ficam bloqueadas pela regra R6. <a href="/conferencia">Ir para a conferência</a></div>` : ""}
+  const linha = (p) => html`<tr><td><a href="/alunas/${p.aluna.id}">${p.aluna.nome}</a><div class="mut peq">${p.curso}</div></td><td>${p.numero}</td><td>${p.vencimento === hoje ? "Hoje" : "Amanhã"} · ${data(p.vencimento)}</td><td>${forma(p.forma)}</td><td class="num">${dinheiro(u, saldo(p))}</td><td>${selo(p.status)}</td></tr>`;
+  // Situação geral (todas as parcelas carregadas)
+  const fin = todas.filter((p) => p.aluna.responsavel !== "juridico");
+  const pagas = fin.filter((p) => p.status === "paga");
+  const totPago = pagas.reduce((s, p) => s + (p.valor_pago || p.valor), 0);
+  const vencidas = abertas.filter((p) => p.vencimento < hoje && p.aluna.responsavel !== "juridico");
+  const aVencer = abertas.filter((p) => p.vencimento >= hoje && p.aluna.responsavel !== "juridico");
+  const estimadas = aVencer.filter((p) => /estimad/i.test(p.obs || ""));
+  const juridico = abertas.filter((p) => p.aluna.responsavel === "juridico");
+  const totInad = inad.financeiro.reduce((s, r) => s + r.valor, 0);
+  const pct = (x, t) => (t > 0 ? Math.round((x / t) * 100) : 0);
+  const contratado = totPago + soma(vencidas) + soma(aVencer);
+  const faltaMes = abertas.filter((p) => p.vencimento.slice(0, 7) === mes && p.aluna.responsavel !== "juridico");
+  const MES = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"][Number(mes.slice(5, 7)) - 1] + "/" + mes.slice(0, 4);
+  const FAIXAS = ["até 15 dias", "16 a 30 dias", "31 a 60 dias", "mais de 60 dias"];
+  const porFaixa = FAIXAS.map((f) => { const xs = inad.financeiro.filter((r) => r.faixa === f); return { f, n: xs.length, v: xs.reduce((s, r) => s + r.valor, 0) }; });
+  const ultimaCarga = await db.prepare("SELECT quando, resumo FROM execucoes WHERE tipo LIKE '%import%' OR tipo LIKE '%carga%' ORDER BY quando DESC LIMIT 1").first().catch(() => null);
+  const corpo = html`<h1>Painel</h1><p class="subtitulo">${data(hoje)} · resumo do que já entrou, do que vence e de quem está em atraso. Valores das alunas no jurídico ficam separados.</p>
+  ${!conferidoHoje ? html`<div class="aviso">A conferência de hoje ainda não foi feita (última: ${cfg.ultima_conferencia ? data(cfg.ultima_conferencia.slice(0, 10)) : "nenhuma"}). Enquanto isso, nenhuma cobrança sai. <a href="/conferencia">Fazer a conferência</a></div>` : ""}
+  <p class="secao">Situação geral</p>
   <div class="cards">
-    <div class="card"><div class="r">Recebido no mês</div><div class="n">${dinheiro(u, recebidoMes.s)}</div><div class="r">${recebidoMes.n} pagamento(s) · previsto ${dinheiro(u, previstoMes)}</div></div>
-    <div class="card"><div class="r">Vencem hoje / amanhã</div><div class="n">${vHoje.length} / ${vAmanha.length}</div><div class="r">${dinheiro(u, soma(vHoje))} / ${dinheiro(u, soma(vAmanha))}</div></div>
-    <div class="card"><div class="r">Inadimplência</div><div class="n">${inad.financeiro.length} alunas</div><div class="r">${dinheiro(u, inad.financeiro.reduce((s, r) => s + r.valor, 0))} · ${inad.financeiro.filter((r) => r.dias > corte).length} acima de ${corte} dias</div></div>
-    <div class="card"><div class="r">A conferir</div><div class="n">${aConferir.n}</div><div class="r">${dinheiro(u, aConferir.s)}</div></div>
-    <div class="card"><div class="r">Mensagens de hoje</div><div class="n">${nFila("preparada")} a enviar</div><div class="r">${nFila("enviada")} enviadas · ${nFila("bloqueada")} bloqueadas</div></div>
+    <div class="card"><div class="t">Já recebido</div><div class="n">${dinheiro(u, totPago)}</div><div class="r"><span class="pos">${pct(totPago, contratado)}% do total</span> · ${pagas.length} parcelas pagas</div></div>
+    <div class="card"><div class="t">Em atraso</div><div class="n">${dinheiro(u, totInad)}</div><div class="r"><span class="neg">${inad.financeiro.length} alunas</span> · ${vencidas.length} parcelas · ${inad.financeiro.filter((r) => r.dias > corte).length} há mais de ${corte} dias</div></div>
+    <div class="card"><div class="t">A vencer</div><div class="n">${dinheiro(u, soma(aVencer))}</div><div class="r">${aVencer.length} parcelas${estimadas.length ? html` · <span class="ale">${estimadas.length} estimadas</span>` : ""}</div></div>
+    <div class="card"><div class="t">No jurídico</div><div class="n">${dinheiro(u, soma(juridico))}</div><div class="r">${new Set(juridico.map((p) => p.aluna.id)).size} alunas · fora da cobrança</div></div>
   </div>
-  <div class="caixa"><h2 class="t0">Vencem hoje e amanhã</h2>${vHoje.length + vAmanha.length ? html`<table><tr><th>Aluna</th><th>Parcela</th><th>Vencimento</th><th>Forma</th><th class="num">Saldo</th><th>Situação</th></tr>${[...vHoje, ...vAmanha].map(linha)}</table>` : html`<p class="mut">Nenhuma parcela.</p>`}</div>
-  <div class="caixa"><h2 class="t0">Maiores atrasos</h2>${inad.financeiro.length ? html`<table><tr><th>Aluna</th><th>Curso</th><th class="num">Parcelas</th><th class="num">Valor vencido</th><th class="num">Dias</th><th>Faixa</th></tr>
-    ${inad.financeiro.slice(0, 10).map((r) => html`<tr><td><a href="/alunas/${r.id}">${r.nome}</a></td><td>${r.cursos}</td><td class="num">${r.parcelas}</td><td class="num">${dinheiro(u, r.valor)}</td><td class="num">${r.dias}</td><td>${selo(r.dias > corte ? "vencida" : "pendente")} ${r.faixa}</td></tr>`)}</table>
-    <p><a href="/inadimplencia">Ver relatório completo</a></p>` : html`<p class="mut">Nenhuma parcela vencida.</p>`}</div>`;
+  <p class="secao">Este mês · ${MES}</p>
+  <div class="cards">
+    <div class="card"><div class="t">Recebido no mês</div><div class="n">${dinheiro(u, recebidoMes.s)}</div><div class="r">${recebidoMes.n} pagamento(s)</div></div>
+    <div class="card"><div class="t">Previsto para o mês</div><div class="n">${dinheiro(u, previstoMes)}</div><div class="r">soma das parcelas que vencem no mês</div></div>
+    <div class="card"><div class="t">Falta receber no mês</div><div class="n">${dinheiro(u, soma(faltaMes))}</div><div class="r">${faltaMes.length} parcelas em aberto</div></div>
+  </div>
+  <p class="secao">Hoje</p>
+  <div class="cards">
+    <div class="card"><div class="t">Vencem hoje</div><div class="n">${vHoje.length}</div><div class="r">${dinheiro(u, soma(vHoje))}</div></div>
+    <div class="card"><div class="t">Vencem amanhã</div><div class="n">${vAmanha.length}</div><div class="r">${dinheiro(u, soma(vAmanha))}</div></div>
+    <div class="card"><div class="t">Pagamentos a conferir</div><div class="n">${aConferir.n}</div><div class="r">${dinheiro(u, aConferir.s)} · comprovantes e Conta Azul</div></div>
+    <div class="card"><div class="t">Mensagens de hoje</div><div class="n">${nFila("preparada")} a enviar</div><div class="r">${nFila("enviada")} enviadas · ${nFila("bloqueada")} bloqueadas</div></div>
+  </div>
+  ${estimadas.length ? html`<div class="nota">${estimadas.length} parcelas futuras foram estimadas a partir da condição de pagamento (a planilha não lista todas). Elas aparecem com a observação "estimada" na ficha da aluna e devem ser confirmadas com a Bruna.</div>` : ""}
+  <div class="caixa"><h2 class="t0">Vencem hoje e amanhã</h2>${vHoje.length + vAmanha.length ? html`<table><tr><th>Aluna</th><th>Parcela</th><th>Vencimento</th><th>Forma</th><th class="num">Saldo</th><th>Situação</th></tr>${[...vHoje, ...vAmanha].map(linha)}</table>` : html`<p class="mut">Nenhuma parcela vence hoje ou amanhã.</p>`}</div>
+  <div class="caixa"><h2 class="t0">Atraso por tempo</h2>${inad.financeiro.length ? html`<table><tr><th>Tempo de atraso</th><th class="num">Alunas</th><th class="num">Valor</th><th>Parte do total em atraso</th></tr>
+    ${porFaixa.map((x) => html`<tr><td>${x.f}</td><td class="num">${x.n}</td><td class="num">${dinheiro(u, x.v)}</td><td><div class="barra"><span class="w${Math.round(pct(x.v, totInad) / 5) * 5}"></span></div><span class="mut peq">${pct(x.v, totInad)}%</span></td></tr>`)}
+    <tr class="total"><td>Total</td><td class="num">${inad.financeiro.length}</td><td class="num">${dinheiro(u, totInad)}</td><td></td></tr></table>` : html`<p class="mut">Ninguém em atraso.</p>`}</div>
+  <div class="caixa"><h2 class="t0">Maiores atrasos</h2>${inad.financeiro.length ? html`<table><tr><th>Aluna</th><th>Curso</th><th class="num">Parcelas vencidas</th><th class="num">Valor vencido</th><th class="num">Dias de atraso</th></tr>
+    ${inad.financeiro.slice(0, 10).map((r) => html`<tr><td><a href="/alunas/${r.id}">${r.nome}</a>${r.obs ? html`<div class="mut peq">${r.obs}</div>` : ""}</td><td>${r.cursos}</td><td class="num">${r.parcelas}</td><td class="num">${dinheiro(u, r.valor)}</td><td class="num">${selo(r.dias > corte ? "vencida" : "pendente")} ${r.dias}</td></tr>`)}</table>
+    <p><a href="/inadimplencia">Ver todas as ${inad.financeiro.length} alunas em atraso</a></p>` : html`<p class="mut">Nenhuma parcela vencida.</p>`}</div>
+  <p class="mut peq">Fonte: planilha "1 LIDERAR GESTÃO"${ultimaCarga ? html` (carregada em ${data(String(ultimaCarga.quando).slice(0, 10))})` : ""} e conferências registradas no sistema. "Pago" na planilha (pg/OK) conta como recebido.</p>`;
   return view("Painel", corpo, u, aviso);
 }
 
@@ -211,16 +245,18 @@ async function listaAlunas({ db, u, url, view, aviso }) {
     const ab = a.parcelas.filter((p) => p.status === "aberta" || p.status === "a_conferir");
     const venc = ab.filter((p) => p.vencimento < hoje);
     const prox = ab.filter((p) => p.vencimento >= hoje)[0];
-    return { a, saldo: ab.reduce((s, p) => s + p.valor - (p.valor_pago || 0), 0), vencido: venc.reduce((s, p) => s + p.valor - (p.valor_pago || 0), 0), nVenc: venc.length, prox, cursos: [...new Set(a.parcelas.map((p) => p.curso))].join(", ") };
+    return { a, pago: a.parcelas.filter((p) => p.status === "paga").reduce((s, p) => s + (p.valor_pago || p.valor), 0), saldo: ab.reduce((s, p) => s + p.valor - (p.valor_pago || 0), 0), vencido: venc.reduce((s, p) => s + p.valor - (p.valor_pago || 0), 0), nVenc: venc.length, prox, cursos: [...new Set(a.parcelas.map((p) => (!p.curso || p.curso === "?" ? "Curso não informado" : p.curso)))].join(", ") };
   }).filter((r) => (!q || R.normaliza(r.a.nome + " " + r.cursos + " " + (r.a.telefone || "")).includes(q))
     && (!filtro || (filtro === "vencidas" && r.nVenc) || (filtro === "juridico" && r.a.responsavel === "juridico") || (filtro === "em_dia" && !r.nVenc) || filtro === r.a.situacao_mentoria));
   const corpo = html`<h1>Alunas</h1>
   <form class="busca" method="get"><input name="q" placeholder="Buscar por nome, curso ou telefone" value="${url.searchParams.get("q") || ""}">
   <select name="filtro"><option value="">Todas</option>${[["vencidas", "Com parcela vencida"], ["em_dia", "Em dia"], ["juridico", "No jurídico"], ["ativa", "Mentoria ativa"], ["pausada", "Pausada"], ["encerrada", "Encerrada"], ["cancelada", "Cancelada"]].map(([v, t]) => html`<option value="${v}" ${filtro === v ? raw("selected") : ""}>${t}</option>`)}</select>
   <button class="sec">Filtrar</button>${A.pode(u, "vender") ? html`<a class="botao" href="/alunas/nova">Nova venda</a>` : ""}</form>
-  <div class="caixa"><table><tr><th>Aluna</th><th>Curso</th><th>Mentoria</th><th>Responsável</th><th class="num">Saldo</th><th class="num">Vencido</th><th>Próximo vencimento</th></tr>
-  ${linhas.map((r) => html`<tr><td><a href="/alunas/${r.a.id}">${r.a.nome}</a></td><td>${r.cursos}</td><td>${selo(r.a.situacao_mentoria === "cancelada" ? "cancelada_m" : r.a.situacao_mentoria)}</td><td>${r.a.responsavel}</td>
-  <td class="num">${dinheiro(u, r.saldo)}</td><td class="num">${r.nVenc ? html`<span class="selo erro">${A.pode(u, "valores") ? "R$ " + R.brl(r.vencido) : r.nVenc + " vencida(s)"}</span>` : html`<span class="mut">—</span>`}</td><td>${r.prox ? `${data(r.prox.vencimento)} · ${forma(r.prox.forma)}` : "—"}</td></tr>`)}
+  <p class="mut peq">${linhas.length} aluna(s) · ${linhas.filter((r) => r.nVenc).length} com parcela vencida. "Em aberto" é tudo o que ainda falta pagar (vencido + a vencer).</p>
+  <div class="caixa"><table><tr><th>Aluna</th><th>Curso</th><th>Mentoria</th><th>Responsável</th><th class="num">Já pagou</th><th class="num">Em aberto</th><th class="num">Em atraso</th><th>Próximo vencimento</th></tr>
+  ${linhas.map((r) => html`<tr><td><a href="/alunas/${r.a.id}">${r.a.nome}</a></td><td>${r.cursos}</td><td>${selo(r.a.situacao_mentoria === "cancelada" ? "cancelada_m" : r.a.situacao_mentoria)}</td><td>${r.a.responsavel === "juridico" ? "Jurídico" : "Financeiro"}</td>
+  <td class="num">${dinheiro(u, r.pago)}</td><td class="num">${dinheiro(u, r.saldo)}</td><td class="num">${r.nVenc ? html`<span class="selo erro">${A.pode(u, "valores") ? "R$ " + R.brl(r.vencido) : r.nVenc + " vencida(s)"}</span>` : html`<span class="mut">—</span>`}</td><td>${r.prox ? `${data(r.prox.vencimento)} · ${forma(r.prox.forma)}` : "—"}</td></tr>`)}
+  ${linhas.length ? html`<tr class="total"><td>Total</td><td></td><td></td><td></td><td class="num">${dinheiro(u, linhas.reduce((s, r) => s + r.pago, 0))}</td><td class="num">${dinheiro(u, linhas.reduce((s, r) => s + r.saldo, 0))}</td><td class="num">${dinheiro(u, linhas.reduce((s, r) => s + r.vencido, 0))}</td><td></td></tr>` : ""}
   </table>${linhas.length ? "" : html`<p class="mut">Nenhuma aluna encontrada.</p>`}</div>`;
   return view("Alunas", corpo, u, aviso);
 }
