@@ -1,0 +1,17 @@
+{
+  "name": "centro-liderar-financeiro",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Controle de pagamento das alunas do Centro Liderar (Cloudflare Workers + D1)",
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "dev": "wrangler dev",
+    "db:local": "wrangler d1 migrations apply financeiro --local",
+    "db:remote": "wrangler d1 migrations apply financeiro --remote",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "4.158.0"
+  }
+}

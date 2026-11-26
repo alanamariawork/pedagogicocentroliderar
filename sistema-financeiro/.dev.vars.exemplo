@@ -1,0 +1,2 @@
+# Copie para .dev.vars só no ambiente local. Em produção use: npx wrangler secret put SETUP_TOKEN
+SETUP_TOKEN=troque-por-um-codigo-longo

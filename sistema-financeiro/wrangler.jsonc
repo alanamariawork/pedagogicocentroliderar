@@ -1,0 +1,19 @@
+{
+  // Sistema de controle de pagamento das alunas – Centro Liderar
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "centro-liderar-financeiro",
+  "main": "src/index.js",
+  "compatibility_date": "2026-11-01",
+  "observability": { "enabled": true },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "financeiro",
+      // Preenchido no primeiro deploy (wrangler d1 create financeiro)
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "migrations"
+    }
+  ],
+  // UTC: 11:40 = 8h40 Fortaleza (fila do dia) · 20:30 = 17h30 (relatório do dia) · seg 12:00 = 9h (inadimplência)
+  "triggers": { "crons": ["40 11 * * 1-5", "30 20 * * 1-5", "0 12 * * 1"] }
+}
