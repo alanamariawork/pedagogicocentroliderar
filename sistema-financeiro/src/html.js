@@ -130,7 +130,7 @@ h2{font-weight:600;font-size:15.5px;margin:22px 0 10px;color:var(--tx)}
 .caixa{background:var(--card);border:1px solid var(--li);border-radius:10px;padding:16px 18px;margin-bottom:14px;overflow-x:auto;box-shadow:var(--sombra)}
 .nota{background:var(--infob);border:1px solid var(--infor);border-radius:8px;padding:10px 14px;color:var(--tx2);font-size:13px;margin-bottom:14px}
 table{width:100%;border-collapse:collapse;font-size:13.5px}th{text-align:left;color:var(--mut);font-weight:500;font-size:12px;white-space:nowrap;background:#faf8f5}
-th,td{padding:10px 12px;border-bottom:1px solid var(--li);vertical-align:top}tr:hover td{background:#fcfbf9}tr:last-child td{border-bottom:0}td.num,th.num{text-align:right;white-space:nowrap}tr.total td{font-weight:700;background:#faf8f5}
+th,td{padding:10px 12px;border-bottom:1px solid var(--li);vertical-align:top}tr:hover td{background:#fcfbf9}tr:last-child td{border-bottom:0}td.num,th.num{text-align:right;white-space:nowrap}tr.total td{font-weight:700;background:#faf8f5}tr.linha-alerta td{background:#fdf6e6}tr.linha-erro td{background:#fcefed}
 .selo{display:inline-block;padding:1px 8px;border-radius:99px;font-size:12px;font-weight:600;white-space:nowrap}
 .ok{background:var(--okb);color:var(--ok)}.alerta{background:var(--alb);color:var(--al)}.erro{background:var(--erb);color:var(--er)}.neutro{background:#f1ede7;color:var(--mut)}
 .aviso{padding:10px 14px;border-radius:8px;margin-bottom:16px;background:var(--alb);border:1px solid var(--alr);color:var(--al)}.aviso a{color:var(--al);font-weight:600}.aviso.erro{background:var(--erb);border-color:#efc9c5;color:var(--er)}.aviso.ok{background:var(--okb);border-color:#c6e2cf;color:var(--ok)}

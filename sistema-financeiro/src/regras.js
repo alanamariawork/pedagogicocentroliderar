@@ -4,9 +4,43 @@
 export const TIPOS = ["lembrete", "link", "vencida", "atraso"]; // ordem de avanço
 const OFFSET = { lembrete: -1, pedido_link: -1, link: 0, vencida: 1, atraso: 3 };
 export const FORMAS = {
-  pix: "Pix", boleto_c6: "Boleto C6", boleto_stone: "Boleto Stone", cartao: "Cartão (C6 Pay)",
-  cartao_recorrente: "Cartão recorrente", link: "Link de pagamento", outra: "Outra",
+  pix: "Pix", boleto: "Boleto (banco não informado)", boleto_c6: "Boleto C6", boleto_stone: "Boleto Stone",
+  cartao_ni: "Cartão (não informado)", cartao: "Cartão (C6 Pay)", cartao_recorrente: "Cartão recorrente",
+  link: "Link de pagamento", a_conferir: "A conferir", outra: "Outra",
 };
+
+/**
+ * Lê a forma de pagamento escrita na planilha sem inventar informação.
+ * Devolve { forma, original, convertida, aConferir }:
+ * - forma: código usado pela rotina (cadência de mensagens);
+ * - original: o texto exatamente como veio (guardado na parcela);
+ * - convertida: true quando o texto não é igual ao nome da forma (destacar na prévia);
+ * - aConferir: true quando o texto não se encaixa numa forma só (fica "A conferir").
+ * Banco só é registrado quando a planilha diz qual é (C6 ou Stone).
+ */
+export function formaDaPlanilha(texto) {
+  const original = String(texto ?? "").trim();
+  const t = normaliza(original);
+  const res = (forma, aConferir = false) => ({
+    forma, original, aConferir,
+    convertida: !!original && normaliza(FORMAS[forma] || "") !== t && t !== forma,
+  });
+  if (!t) return { forma: "a_conferir", original, aConferir: true, convertida: false };
+  if (FORMAS[original]) return { forma: original, original, aConferir: original === "a_conferir", convertida: false };
+  const boleto = t.includes("boleto"), cartao = /cart/.test(t), pix = /\bpix\b/.test(t), link = t.includes("link");
+  const tem = [boleto, cartao && !link, pix].filter(Boolean).length;
+  // texto com mais de uma forma (ex.: "BOLETO e DEPOIS CARTÃO") não vira uma forma só
+  if (tem > 1 || /depois|ou\b|\/|\+/.test(t) && (boleto || cartao || pix)) return res("a_conferir", true);
+  if (boleto && t.includes("stone")) return res("boleto_stone");
+  if (boleto && t.includes("c6")) return res("boleto_c6");
+  if (boleto) return res("boleto");
+  if (t.includes("recorr")) return res("cartao_recorrente");
+  if (link) return res("link");
+  if (cartao && (t.includes("c6") || t.includes("pay"))) return res("cartao");
+  if (cartao) return res("cartao_ni");
+  if (pix) return res("pix");
+  return res("a_conferir", true);
+}
 
 // ---------- datas (AAAA-MM-DD, sem fuso) ----------
 export function hojeFortaleza(agora = new Date()) {
@@ -52,6 +86,7 @@ export function bloqueio(aluna, parcela, fonteDoDia, hoje) {
   if (aluna.promessa_ate) return "R3 pendente (promessa vencida: Bruna decide a retomada)";
   if (Number(aluna.em_analise_jaciara)) return "R4 pendente (em análise por Jaciara)";
   if (parcela.status === "a_conferir") return "comprovante em conferência";
+  if (parcela.forma === "a_conferir") return `forma de pagamento a conferir${parcela.forma_planilha ? ` (planilha: "${parcela.forma_planilha}")` : ""}`;
   if (parcela.forma === "cartao_recorrente") return "cartão recorrente: só cobrar se a cobrança for recusada (P16 pendente)";
   if (!fonteDoDia) return "R6: conferência não é de hoje; reconferir antes de enviar";
   return null;

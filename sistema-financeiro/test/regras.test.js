@@ -176,3 +176,27 @@ test("projeção por mês", () => {
   assert.equal(pr[0].total, 1000);
   assert.equal(pr[0].vencido, 500);
 });
+
+test("forma da planilha: não inventa banco e guarda o texto original", () => {
+  const f = (t) => R.formaDaPlanilha(t);
+  assert.equal(f("BOLETO").forma, "boleto");
+  assert.equal(f("BOLETO").original, "BOLETO");
+  assert.equal(f("BOLETO - STONE").forma, "boleto_stone");
+  assert.equal(f("Boleto C6").forma, "boleto_c6");
+  assert.equal(f("CARTÃO").forma, "cartao_ni");
+  assert.equal(f("CARTÃO - MANDAR LINK").forma, "link");
+  assert.equal(f("CARTÃO - MANDAR LINK").convertida, true);
+  assert.equal(f("PIX MENSALMENTE").forma, "pix");
+  const misto = f("BOLETO e DEPOIS CARTÃO");
+  assert.equal(misto.forma, "a_conferir"); assert.equal(misto.aConferir, true);
+  assert.equal(f("A conferir").forma, "a_conferir");
+  assert.equal(f("").forma, "a_conferir");
+  assert.equal(f("transferência").forma, "a_conferir");
+});
+
+test("forma a conferir bloqueia a cobrança e mostra o texto da planilha", () => {
+  const a = { responsavel: "financeiro", situacao_mentoria: "ativa" };
+  const m = R.bloqueio(a, { status: "aberta", forma: "a_conferir", forma_planilha: "BOLETO e DEPOIS CARTÃO" }, true, "2026-11-27");
+  assert.match(m, /forma de pagamento a conferir/);
+  assert.match(m, /BOLETO e DEPOIS CARTÃO/);
+});

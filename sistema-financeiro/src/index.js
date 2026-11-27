@@ -77,6 +77,7 @@ export default {
       if (p === "/relatorio-dia") return await relatorioDia(ctx);
       if (p === "/projecao") return await projecao(ctx);
       if (p === "/importar") return await importarParcelas(ctx);
+      if ((m = p.match(/^\/importar\/lotes\/(\d+)\/desfazer$/)) && form) return await desfazerLote(ctx, +m[1]);
       if (p === "/config") return await configuracoes(ctx);
       if (p.startsWith("/config/") && form) return await salvarConfig(ctx, p.slice(8));
       return view("Não encontrado", html`<h1>Página não encontrada</h1><p><a href="/">Voltar ao painel</a></p>`, u);
@@ -353,7 +354,7 @@ async function detalheAluna({ db, u, view, aviso, req }, id) {
     ${c.saldo_transferido ? html`<p class="mut">Saldo transferido para nova contratação: ${dinheiro(u, c.saldo_transferido)} (transferido não é pago)</p>` : ""}
     <table><tr><th>Parcela</th><th>Vencimento</th><th>Forma</th><th class="num">Valor</th><th class="num">Pago</th><th>Situação</th><th>Link / obs.</th><th></th></tr>
     ${parc.filter((p) => p.contratacao_id === c.id).map((p) => html`<tr><td>${p.numero}</td><td>${data(p.vencimento)}${(p.status === "aberta" || p.status === "a_conferir") && p.vencimento < hoje ? html` <span class="selo erro">${R.diasEntre(p.vencimento, hoje)} dias</span>` : ""}</td>
-      <td>${forma(p.forma)}${p.quem_gera ? html`<div class="mut peq">gera: ${p.quem_gera}</div>` : ""}</td><td class="num">${dinheiro(u, p.valor)}</td><td class="num">${dinheiro(u, p.valor_pago)}</td><td>${selo(p.status)}</td>
+      <td>${forma(p.forma)}${p.forma_planilha && R.normaliza(p.forma_planilha) !== R.normaliza(forma(p.forma)) ? html`<div class="mut peq">na planilha: “${p.forma_planilha}”</div>` : ""}${p.quem_gera ? html`<div class="mut peq">gera: ${p.quem_gera}</div>` : ""}</td><td class="num">${dinheiro(u, p.valor)}</td><td class="num">${dinheiro(u, p.valor_pago)}</td><td>${selo(p.status)}</td>
       <td class="peq">${p.link_pagamento ? html`<a href="${p.link_pagamento}" rel="noopener noreferrer" target="_blank">link</a> ` : ""}${p.obs || ""}</td>
       <td>${pg || ed ? html`<details><summary>Ações</summary>
         ${pg && p.status !== "paga" ? html`<form method="post" action="/parcelas/${p.id}/pagamento" class="grade" data-min260>
@@ -423,10 +424,12 @@ async function editarParcela({ db, u, f }, pid) {
   const valor = num(f("valor")), venc = R.lerData(f("vencimento"));
   if (!ref || !Number.isFinite(valor) || !venc) return redirect(`/alunas/${ref?.aluna_id || ""}?erro=${encodeURIComponent("Valor ou vencimento inválido.")}`);
   const link = f("link_pagamento");
+  if (!R.FORMAS[f("forma")]) return redirect(`/alunas/${ref?.aluna_id || ""}?erro=${encodeURIComponent("Forma de pagamento inválida.")}`);
+  const antes = await db.prepare("SELECT vencimento, valor, forma, forma_planilha, status FROM parcelas WHERE id = ?").bind(pid).first();
   if (link && !/^https:\/\//i.test(link)) return redirect(`/alunas/${ref.aluna_id}?erro=${encodeURIComponent("O link de pagamento precisa começar com https://")}`);
   await db.prepare("UPDATE parcelas SET vencimento = ?, valor = ?, forma = ?, link_pagamento = ?, status = ?, obs = ? WHERE id = ?")
     .bind(venc, valor, f("forma"), link || null, f("status"), f("obs") || null, pid).run();
-  await D.auditar(db, u, "editar_parcela", "parcelas", pid, { venc, valor, forma: f("forma"), status: f("status"), link: !!link });
+  await D.auditar(db, u, "editar_parcela", "parcelas", pid, { antes, depois: { venc, valor, forma: f("forma"), status: f("status"), link: !!link } });
   return redirect(`/alunas/${ref.aluna_id}?ok=${encodeURIComponent("Parcela atualizada.")}`);
 }
 
@@ -625,21 +628,53 @@ async function projecao({ db, u, view }) {
 }
 
 // ================= importar planilha =================
+// Cargas antigas (feitas antes dos lotes): agrupa pelas execuções "importar_planilha" registradas.
+async function identificarCargasAntigas(db) {
+  const exec = (await db.prepare("SELECT id, quando, resumo, por FROM execucoes WHERE tipo = 'importar_planilha' ORDER BY quando, id").all()).results;
+  const feitas = new Set((await db.prepare("SELECT descricao FROM importacoes").all()).results.map((r) => r.descricao));
+  let anterior = "0000-00-00 00:00:00";
+  for (const e of exec) {
+    const desc = `Carga registrada na execução #${e.id}`;
+    const ini = anterior; anterior = e.quando;
+    if (feitas.has(desc)) continue;
+    const cs = (await db.prepare("SELECT id FROM contratacoes WHERE origem = 'planilha' AND lote_id IS NULL AND criado_em > ? AND criado_em <= ?").bind(ini, e.quando).all()).results;
+    if (!cs.length) continue;
+    const autoriz = (String(e.resumo || "").match(/Autoriza[çc][ãa]o:\s*(.*)$/) || [])[1] || null;
+    const r = await db.prepare("INSERT INTO importacoes (quando, descricao, por, autorizacao) VALUES (?, ?, ?, ?)").bind(e.quando, desc, e.por, autoriz).run();
+    const lote = r.meta.last_row_id;
+    await db.prepare("UPDATE contratacoes SET lote_id = ? WHERE origem = 'planilha' AND lote_id IS NULL AND criado_em > ? AND criado_em <= ?").bind(lote, ini, e.quando).run();
+    await db.prepare("UPDATE parcelas SET lote_id = ? WHERE lote_id IS NULL AND contratacao_id IN (SELECT id FROM contratacoes WHERE lote_id = ?)").bind(lote, lote).run();
+    // aluna entra no lote só se foi criada nessa carga e todas as contratações dela são da carga
+    await db.prepare(`UPDATE alunas SET lote_id = ? WHERE lote_id IS NULL AND criado_em > ? AND criado_em <= ?
+      AND EXISTS (SELECT 1 FROM contratacoes c WHERE c.aluna_id = alunas.id AND c.lote_id = ?)
+      AND NOT EXISTS (SELECT 1 FROM contratacoes c WHERE c.aluna_id = alunas.id AND (c.lote_id IS NULL OR c.lote_id != ?))`).bind(lote, ini, e.quando, lote, lote).run();
+    await contarLote(db, lote);
+  }
+}
+async function contarLote(db, lote) {
+  await db.prepare(`UPDATE importacoes SET n_alunas = (SELECT COUNT(*) FROM alunas WHERE lote_id = ?1),
+    n_contratacoes = (SELECT COUNT(*) FROM contratacoes WHERE lote_id = ?1), n_parcelas = (SELECT COUNT(*) FROM parcelas WHERE lote_id = ?1) WHERE id = ?1`).bind(lote).run();
+}
+
 async function importarParcelas({ db, u, f, form, view, aviso }) {
   exigir(u, "importar");
-  const exemplo = "aluna;telefone;curso;parcela;vencimento;valor;forma;situacao;valor_pago\n[TESTE] Ana Souza;86999990000;Mentoria Diamante;1/6;10/12/2026;1.000,00;pix;aberta;0";
+  const exemplo = "aluna;telefone;curso;parcela;vencimento;valor;forma;situacao;valor_pago;condicao\n[TESTE] Ana Souza;86999990000;Mentoria Diamante;1/6;10/12/2026;1.000,00;BOLETO;aberta;0;6x no boleto";
   let previa = null, erro = null;
   if (form) {
     const linhas = R.lerCSV(f("csv"));
-    const itens = linhas.map((l, i) => ({ i: i + 2, aluna: l.aluna || l.nome, telefone: (l.telefone || "").replace(/\D/g, ""), curso: l.curso || "Não informado", numero: l.parcela || l.numero || "1/1",
-      vencimento: R.lerData(l.vencimento), valor: num(l.valor), forma: R.FORMAS[l.forma] ? l.forma : (R.normaliza(l.forma).includes("link") ? "link" : R.normaliza(l.forma).includes("stone") ? "boleto_stone" : R.normaliza(l.forma).includes("boleto") ? "boleto_c6" : R.normaliza(l.forma).includes("recorr") ? "cartao_recorrente" : R.normaliza(l.forma).includes("cart") ? "cartao" : "pix"),
-      status: ["paga", "pg", "ok", "pago"].includes(R.normaliza(l.situacao)) ? "paga" : "aberta", valor_pago: num(l.valor_pago || "0") || 0, condicao: l.condicao || null }));
+    const itens = linhas.map((l, i) => {
+      const fp = R.formaDaPlanilha(l.forma);
+      return { i: i + 2, aluna: l.aluna || l.nome, telefone: (l.telefone || "").replace(/\D/g, ""), curso: l.curso || "Não informado", numero: l.parcela || l.numero || "1/1",
+        vencimento: R.lerData(l.vencimento), valor: num(l.valor), forma: fp.forma, forma_planilha: fp.original || null, convertida: fp.convertida, formaAConferir: fp.aConferir,
+        status: ["paga", "pg", "ok", "pago"].includes(R.normaliza(l.situacao)) ? "paga" : "aberta", valor_pago: num(l.valor_pago || "0") || 0, condicao: l.condicao || null };
+    });
     const ruins = itens.filter((x) => !x.aluna || !x.vencimento || !Number.isFinite(x.valor));
     if (!itens.length) erro = "Nenhuma linha encontrada.";
     else if (f("confirmar") === "sim") {
       if (f("autorizacao").length < 5) erro = "Descreva a autorização para importar (quem autorizou e quando).";
       else {
         const ok = itens.filter((x) => !ruins.includes(x));
+        const lote = (await db.prepare("INSERT INTO importacoes (descricao, por, autorizacao) VALUES (?, ?, ?)").bind(f("descricao") || "Importação pela tela Importar", u.email, f("autorizacao")).run()).meta.last_row_id;
         const porChave = new Map();
         for (const x of ok) {
           const k = R.normaliza(x.aluna) + "|" + R.normaliza(x.curso);
@@ -650,28 +685,74 @@ async function importarParcelas({ db, u, f, form, view, aviso }) {
         for (const grupo of porChave.values()) {
           const x0 = grupo[0];
           let a = await db.prepare("SELECT id FROM alunas WHERE lower(nome) = lower(?)").bind(x0.aluna).first();
-          if (!a) { const r = await db.prepare("INSERT INTO alunas (nome, telefone) VALUES (?, ?)").bind(x0.aluna, x0.telefone || null).run(); a = { id: r.meta.last_row_id }; nA++; }
-          const c = await db.prepare("INSERT INTO contratacoes (aluna_id, curso, valor_total, condicao_negociada, origem) VALUES (?, ?, ?, ?, 'planilha')").bind(a.id, x0.curso, grupo.reduce((s, x) => s + x.valor, 0), x0.condicao).run();
-          const ins = db.prepare("INSERT INTO parcelas (contratacao_id, numero, vencimento, valor, forma, status, valor_pago, obs) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
-          await db.batch(grupo.map((x) => ins.bind(c.meta.last_row_id, x.numero, x.vencimento, x.valor, x.forma, x.status, x.status === "paga" ? x.valor : Math.min(x.valor_pago, x.valor), x.status === "paga" ? "marcada como paga na planilha (pg/OK conferido pela Bruna)" : null)));
+          if (!a) { const r = await db.prepare("INSERT INTO alunas (nome, telefone, lote_id) VALUES (?, ?, ?)").bind(x0.aluna, x0.telefone || null, lote).run(); a = { id: r.meta.last_row_id }; nA++; }
+          const c = await db.prepare("INSERT INTO contratacoes (aluna_id, curso, valor_total, condicao_negociada, origem, lote_id) VALUES (?, ?, ?, ?, 'planilha', ?)").bind(a.id, x0.curso, grupo.reduce((s, x) => s + x.valor, 0), x0.condicao, lote).run();
+          const ins = db.prepare("INSERT INTO parcelas (contratacao_id, numero, vencimento, valor, forma, forma_planilha, status, valor_pago, obs, lote_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+          await db.batch(grupo.map((x) => ins.bind(c.meta.last_row_id, x.numero, x.vencimento, x.valor, x.forma, x.forma_planilha, x.status, x.status === "paga" ? x.valor : Math.min(x.valor_pago, x.valor),
+            [x.status === "paga" ? "marcada como paga na planilha (pg/OK conferido pela Bruna)" : "", x.formaAConferir ? "forma de pagamento a conferir" : ""].filter(Boolean).join("; ") || null, lote)));
           nP += grupo.length;
         }
-        await D.auditar(db, u, "importar_planilha", null, null, { alunas_novas: nA, parcelas: nP, ignoradas: ruins.length, autorizacao: f("autorizacao") });
-        await db.prepare("INSERT INTO execucoes (tipo, resumo, por) VALUES ('importar_planilha', ?, ?)").bind(`${nA} alunas novas, ${nP} parcelas, ${ruins.length} linhas com erro. Autorização: ${f("autorizacao")}`, u.email).run();
-        return redirect("/alunas?ok=" + encodeURIComponent(`Importação concluída: ${nA} alunas novas e ${nP} parcelas. ${ruins.length} linhas com erro foram ignoradas.`));
+        await contarLote(db, lote);
+        const nConv = ok.filter((x) => x.convertida).length, nConf = ok.filter((x) => x.formaAConferir).length;
+        await D.auditar(db, u, "importar_planilha", "importacoes", lote, { alunas_novas: nA, parcelas: nP, ignoradas: ruins.length, formas_interpretadas: nConv, formas_a_conferir: nConf, autorizacao: f("autorizacao") });
+        await db.prepare("INSERT INTO execucoes (tipo, resumo, por) VALUES ('importar_lote', ?, ?)").bind(`Lote #${lote}: ${nA} alunas novas, ${nP} parcelas, ${ruins.length} linhas com erro, ${nConf} formas a conferir. Autorização: ${f("autorizacao")}`, u.email).run();
+        return redirect("/importar?ok=" + encodeURIComponent(`Importação concluída (lote #${lote}): ${nA} alunas novas e ${nP} parcelas. ${nConf} parcelas ficaram com a forma "a conferir". ${ruins.length} linhas com erro foram ignoradas.`));
       }
     }
     previa = { itens, ruins };
   }
+  if (A.pode(u, "config")) await identificarCargasAntigas(db);
+  const lotes = (await db.prepare("SELECT * FROM importacoes ORDER BY quando DESC, id DESC").all()).results;
+  const nConv = previa ? previa.itens.filter((x) => x.convertida && !x.formaAConferir).length : 0, nConf = previa ? previa.itens.filter((x) => x.formaAConferir).length : 0;
   const corpo = html`<h1>Importar planilha</h1>
   <div class="aviso erro"><b>Dados reais:</b> importar a planilha da Bruna grava dados de alunas na base de produção. Faça isso só com autorização de quem responde pelos dados, e informe a autorização abaixo. Dados de teste devem ter "[TESTE]" no nome e não devem ir para a produção.</div>
-  <div class="caixa"><p class="mut peq">Salve a aba da planilha como CSV e cole aqui. Colunas: <b>aluna; telefone; curso; parcela; vencimento; valor; forma; situacao; valor_pago; condicao</b>. Situação "pg", "OK" ou "paga" entra como paga. Primeiro aparece uma prévia; nada é gravado sem confirmar.</p>
+  <div class="caixa"><p class="mut peq">Salve a aba da planilha como CSV e cole aqui. Colunas: <b>aluna; telefone; curso; parcela; vencimento; valor; forma; situacao; valor_pago; condicao</b>. Situação "pg", "OK" ou "paga" entra como paga. O texto da coluna <b>forma</b> é guardado exatamente como está na planilha. Banco só é registrado quando a planilha diz qual é (C6 ou Stone); texto com mais de uma forma, vazio ou desconhecido fica "A conferir". Primeiro aparece uma prévia; nada é gravado sem confirmar.</p>
   <form method="post" class="grade"><label class="larga">CSV<textarea name="csv" required placeholder="${exemplo}">${f("csv")}</textarea></label>
-  ${previa && !previa.ruins.length || (previa && previa.itens.length > previa.ruins.length) ? html`<input type="hidden" name="confirmar" value="sim"><label class="larga">Autorização (quem autorizou e quando)<input name="autorizacao" required placeholder="Ex.: Jaciara, mensagem de 27/11/2026"></label>` : ""}
+  ${previa && previa.itens.length > previa.ruins.length ? html`<input type="hidden" name="confirmar" value="sim"><label class="larga">Descrição da carga<input name="descricao" placeholder="Ex.: Reimportação fiel à planilha de 26/11/2026" value="${f("descricao")}"></label><label class="larga">Autorização (quem autorizou e quando)<input name="autorizacao" required placeholder="Ex.: Jaciara, mensagem de 27/11/2026"></label>` : ""}
   <div><button>${previa ? "Confirmar importação" : "Ver prévia"}</button></div></form></div>
-  ${previa ? html`<div class="caixa"><h2 class="t0">Prévia: ${previa.itens.length} linhas, ${previa.ruins.length} com erro</h2><table><tr><th>Linha</th><th>Aluna</th><th>Curso</th><th>Parcela</th><th>Vencimento</th><th class="num">Valor</th><th>Forma</th><th>Situação</th></tr>
-    ${previa.itens.slice(0, 200).map((x) => html`<tr><td>${x.i}</td><td>${x.aluna || html`<span class="selo erro">sem nome</span>`}</td><td>${x.curso}</td><td>${x.numero}</td><td>${x.vencimento ? data(x.vencimento) : html`<span class="selo erro">inválido</span>`}</td><td class="num">${Number.isFinite(x.valor) ? R.brl(x.valor) : html`<span class="selo erro">inválido</span>`}</td><td>${forma(x.forma)}</td><td>${selo(x.status)}</td></tr>`)}</table></div>` : ""}`;
+  ${previa ? html`<div class="caixa"><h2 class="t0">Prévia: ${previa.itens.length} linhas, ${previa.ruins.length} com erro</h2>
+    <p class="peq">${nConv ? html`<span class="selo alerta">${nConv} linha(s) com a forma interpretada</span> ` : ""}${nConf ? html`<span class="selo erro">${nConf} com forma "A conferir"</span> ` : ""}${!nConv && !nConf ? html`<span class="selo ok">Todas as formas iguais à planilha</span>` : html`<span class="mut">As linhas destacadas mostram o texto da planilha e como o sistema vai tratar. O texto original fica guardado na parcela.</span>`}</p>
+    <table><tr><th>Linha</th><th>Aluna</th><th>Curso</th><th>Parcela</th><th>Vencimento</th><th class="num">Valor</th><th>Forma na planilha</th><th>Forma no sistema</th><th>Situação</th></tr>
+    ${previa.itens.slice(0, 300).map((x) => html`<tr class="${x.formaAConferir ? "linha-erro" : x.convertida ? "linha-alerta" : ""}"><td>${x.i}</td><td>${x.aluna || html`<span class="selo erro">sem nome</span>`}</td><td>${x.curso}</td><td>${x.numero}</td><td>${x.vencimento ? data(x.vencimento) : html`<span class="selo erro">inválido</span>`}</td><td class="num">${Number.isFinite(x.valor) ? R.brl(x.valor) : html`<span class="selo erro">inválido</span>`}</td>
+      <td>${x.forma_planilha || html`<span class="mut">(vazio)</span>`}</td><td>${forma(x.forma)}${x.formaAConferir ? html` <span class="selo erro">a conferir</span>` : x.convertida ? html` <span class="selo alerta">interpretada</span>` : ""}</td><td>${selo(x.status)}</td></tr>`)}</table></div>` : ""}
+  <div class="caixa"><h2 class="t0">Cargas feitas</h2>${lotes.length ? html`<table><tr><th>Lote</th><th>Quando (UTC)</th><th>Descrição / autorização</th><th class="num">Alunas novas</th><th class="num">Contratações</th><th class="num">Parcelas</th><th>Situação</th><th></th></tr>
+    ${lotes.map((l) => html`<tr><td>#${l.id}</td><td class="peq">${l.quando}</td><td class="peq">${l.descricao || ""}<div class="mut">${l.por || ""}${l.autorizacao ? " · " + l.autorizacao : ""}</div>${l.situacao === "desfeita" ? html`<div class="mut">Desfeita em ${l.desfeita_em} por ${l.desfeita_por}: ${l.desfeita_autorizacao || ""}</div>` : ""}</td>
+      <td class="num">${l.n_alunas}</td><td class="num">${l.n_contratacoes}</td><td class="num">${l.n_parcelas}</td><td>${selo(l.situacao === "desfeita" ? "cancelada" : "ativa")}</td>
+      <td>${A.pode(u, "config") && l.situacao === "ativa" ? html`<details><summary>Desfazer</summary><form method="post" action="/importar/lotes/${l.id}/desfazer" class="grade" data-min260 data-confirmar="Apagar todas as alunas novas, contratações e parcelas do lote #${l.id}? Isso não pode ser desfeito.">
+        <p class="peq mut larga">Apaga só o que esta carga criou: ${l.n_parcelas} parcelas, ${l.n_contratacoes} contratações e ${l.n_alunas} alunas novas. Alunas que já existiam continuam. Se houver pagamento, mensagem enviada ou decisão ligada a esses registros, nada é apagado.</p>
+        <label class="larga">Autorização (quem autorizou e quando)<input name="autorizacao" required minlength="5"></label><label class="larga">Digite DESFAZER para confirmar<input name="confirma" required pattern="DESFAZER"></label><button>Desfazer carga #${l.id}</button></form></details>` : ""}</td></tr>`)}</table>` : html`<p class="mut">Nenhuma carga registrada.</p>`}</div>`;
   return view("Importar", corpo, u, erro ? { tipo: "erro", texto: erro } : aviso);
+}
+
+async function desfazerLote({ db, u, f }, lote) {
+  exigir(u, "config");
+  const l = await db.prepare("SELECT * FROM importacoes WHERE id = ?").bind(lote).first();
+  const volta = (t, ok) => redirect(`/importar?${ok ? "ok" : "erro"}=${encodeURIComponent(t)}`);
+  if (!l || l.situacao !== "ativa") return volta("Carga não encontrada ou já desfeita.");
+  if (f("confirma") !== "DESFAZER" || f("autorizacao").length < 5) return volta("Para desfazer, informe a autorização e digite DESFAZER.");
+  const parc = (await db.prepare("SELECT id FROM parcelas WHERE lote_id = ?").bind(lote).all()).results.map((r) => r.id);
+  const alunas = (await db.prepare("SELECT id FROM alunas WHERE lote_id = ?").bind(lote).all()).results.map((r) => r.id);
+  const pset = new Set(parc), aset = new Set(alunas);
+  // impedimentos: nada que já tenha história fora da carga é apagado
+  const trans = (await db.prepare("SELECT id, aluna_id, parcela_id FROM transacoes").all()).results.filter((t) => pset.has(t.parcela_id) || aset.has(t.aluna_id));
+  const msgs = (await db.prepare("SELECT id, aluna_id, parcela_ids, status FROM mensagens").all()).results
+    .filter((m) => aset.has(m.aluna_id) || String(m.parcela_ids || "").split(/[^0-9]+/).some((x) => pset.has(+x)));
+  const enviadas = msgs.filter((m) => ["enviada", "sem_confirmacao"].includes(m.status));
+  const dec = (await db.prepare("SELECT id, aluna_id FROM decisoes").all()).results.filter((d) => aset.has(d.aluna_id));
+  const outras = (await db.prepare("SELECT COUNT(*) n FROM contratacoes WHERE (lote_id IS NULL OR lote_id != ?) AND contratacao_origem_id IN (SELECT id FROM contratacoes WHERE lote_id = ?)").bind(lote, lote).first()).n;
+  const imp = [trans.length ? `${trans.length} pagamento(s)` : "", enviadas.length ? `${enviadas.length} mensagem(ns) já enviada(s)` : "", dec.length ? `${dec.length} decisão(ões)` : "", outras ? `${outras} renegociação(ões) feitas a partir desta carga` : ""].filter(Boolean);
+  if (imp.length) return volta(`Nada foi apagado. A carga #${lote} tem registros ligados: ${imp.join(", ")}. Resolva esses itens antes (ou ajuste as parcelas uma a uma).`);
+  const del = msgs.map((m) => m.id);
+  const st = [];
+  if (del.length) st.push(db.prepare(`DELETE FROM mensagens WHERE id IN (${del.map(() => "?").join(",")})`).bind(...del));
+  st.push(db.prepare("DELETE FROM parcelas WHERE lote_id = ?").bind(lote));
+  st.push(db.prepare("DELETE FROM contratacoes WHERE lote_id = ?").bind(lote));
+  st.push(db.prepare("DELETE FROM alunas WHERE lote_id = ? AND NOT EXISTS (SELECT 1 FROM contratacoes c WHERE c.aluna_id = alunas.id)").bind(lote));
+  st.push(db.prepare("UPDATE importacoes SET situacao = 'desfeita', desfeita_em = datetime('now'), desfeita_por = ?, desfeita_autorizacao = ? WHERE id = ?").bind(u.email, f("autorizacao"), lote));
+  st.push(db.prepare("INSERT INTO execucoes (tipo, resumo, por) VALUES ('desfazer_lote', ?, ?)").bind(`Lote #${lote} desfeito: ${parc.length} parcelas, ${l.n_contratacoes} contratações, ${alunas.length} alunas, ${del.length} mensagens não enviadas. Autorização: ${f("autorizacao")}`, u.email));
+  await db.batch(st);
+  await D.auditar(db, u, "desfazer_lote", "importacoes", lote, { parcelas: parc.length, contratacoes: l.n_contratacoes, alunas: alunas.length, mensagens_nao_enviadas: del.length, autorizacao: f("autorizacao") });
+  return volta(`Carga #${lote} desfeita: ${parc.length} parcelas, ${l.n_contratacoes} contratações e ${alunas.length} alunas removidas.`, true);
 }
 
 // ================= configurações =================
